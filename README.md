@@ -62,6 +62,24 @@ The API will be available at:
 
 `DATABASE_URL` may use either `postgresql://...` or `postgresql+psycopg://...`; the backend normalizes plain PostgreSQL URLs to the psycopg v3 SQLAlchemy driver internally.
 
+## Frontend Setup
+
+Install and run the React dashboard from the `frontend` directory:
+
+```powershell
+cd frontend
+npm install
+npm run dev
+```
+
+The frontend reads the backend URL from `VITE_API_BASE_URL`. The documented default in `.env.example` is:
+
+```text
+VITE_API_BASE_URL=http://localhost:8000
+```
+
+The Phase 1 frontend includes the main dashboard shell, sidebar navigation, reusable table/card/badge UI, and pages for Dashboard, Companies, Employees, Teams, Projects, Work Objects, Leaves, Events, and Notifications.
+
 ## Alembic
 
 Run migrations from the `backend` directory:
