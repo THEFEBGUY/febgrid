@@ -1,6 +1,6 @@
 # FebGrid
 
-FebGrid is a Business Operating System built around Work Objects, Events, Company Pulse, Employee Digital Twins, Company Memory, and FebGuyAI.
+FebGrid is a Business Operating System built around Work Objects, Events, Company Memory, searchable operations, and an AI-readable foundation.
 
 ## Core Philosophy
 
@@ -10,9 +10,89 @@ FebGrid is a Business Operating System built around Work Objects, Events, Compan
 - Everything is AI-readable.
 - Everything contributes to Company Memory.
 
+## Phase 1 Scope
+
+Phase 1 focuses on the backend foundation:
+
+- FastAPI application setup
+- PostgreSQL / Supabase database connection
+- SQLAlchemy models with UUID primary keys and `company_id` tenant separation
+- Alembic migrations
+- CRUD APIs for companies, employees, teams, projects, work objects, leave requests, attachments, notifications, events, and AI jobs
+- Health check, universal timeline, and basic operational search
+- Mock-only AI boundary in `backend/app/services/ai_service.py`
+
+Not included in Phase 1: billing, WhatsApp/SMS, advanced AI, MCP servers, enterprise dashboards, or production FebGuyAI.
+
 ## Stack
 
 Frontend: React + Vite + TypeScript + Tailwind CSS  
 Backend: Python + FastAPI  
 Database: PostgreSQL / Supabase  
-AI Layer: FebGuyAI via ai_service.py abstraction
+ORM: SQLAlchemy  
+Migrations: Alembic  
+Validation: Pydantic  
+AI Layer: `ai_service.py` mock abstraction
+
+## Backend Setup
+
+Create your local environment file from the documented template:
+
+```powershell
+Copy-Item .env.example .env
+```
+
+Fill in `DATABASE_URL` and other local values in `.env`. Do not commit `.env`.
+
+Install and run the backend:
+
+```powershell
+cd backend
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
+python -m alembic upgrade head
+python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+```
+
+The API will be available at:
+
+- Health: `GET http://127.0.0.1:8000/api/v1/health`
+- Docs: `http://127.0.0.1:8000/docs`
+
+`DATABASE_URL` may use either `postgresql://...` or `postgresql+psycopg://...`; the backend normalizes plain PostgreSQL URLs to the psycopg v3 SQLAlchemy driver internally.
+
+## Alembic
+
+Run migrations from the `backend` directory:
+
+```powershell
+python -m alembic upgrade head
+```
+
+Create future migrations after model changes:
+
+```powershell
+python -m alembic revision --autogenerate -m "describe change"
+```
+
+## API Surface
+
+All Phase 1 endpoints are mounted under `/api/v1`.
+
+- `/companies`
+- `/employees`
+- `/teams`
+- `/projects`
+- `/work-objects`
+- `/leaves`
+- `/attachments`
+- `/uploads`
+- `/files`
+- `/events`
+- `/timeline`
+- `/notifications`
+- `/ai-jobs`
+- `/search`
+
+Major create/update/status/approval actions record events for the universal timeline. Notification creation also records a `notification.sent` event.
