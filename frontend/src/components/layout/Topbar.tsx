@@ -1,6 +1,7 @@
-import { Bell, Menu, Search, ShieldCheck } from "lucide-react";
+import { Bell, LogOut, Menu, Search, ShieldCheck } from "lucide-react";
 
-import type { Company } from "../../types/api";
+import type { AuthUser, Company } from "../../types/api";
+import { formatLabel } from "../../utils/format";
 import { Button } from "../ui/Button";
 
 interface TopbarProps {
@@ -9,10 +10,21 @@ interface TopbarProps {
   onOpenSidebar: () => void;
   companies: Company[];
   selectedCompanyId: string | null;
+  currentUser: AuthUser | null;
   onSelectCompany: (companyId: string) => void;
+  onLogout: () => void;
 }
 
-export function Topbar({ title, description, onOpenSidebar, companies, selectedCompanyId, onSelectCompany }: TopbarProps): JSX.Element {
+export function Topbar({
+  title,
+  description,
+  onOpenSidebar,
+  companies,
+  selectedCompanyId,
+  currentUser,
+  onSelectCompany,
+  onLogout,
+}: TopbarProps): JSX.Element {
   return (
     <header className="sticky top-0 z-20 border-b border-grid-200 bg-grid-50/90 backdrop-blur">
       <div className="flex min-h-20 flex-col gap-4 px-4 py-4 lg:flex-row lg:items-center lg:justify-between lg:px-8">
@@ -61,6 +73,13 @@ export function Topbar({ title, description, onOpenSidebar, companies, selectedC
             <Button icon={<ShieldCheck className="size-4" aria-hidden="true" />}>Tenant safe</Button>
             <Button aria-label="Notifications" className="size-10 px-0" icon={<Bell className="size-4" aria-hidden="true" />}>
               <span className="sr-only">Notifications</span>
+            </Button>
+            <div className="hidden min-w-0 rounded-md border border-grid-200 bg-white px-3 py-1.5 shadow-sm xl:block">
+              <p className="max-w-40 truncate text-sm font-bold text-ink-950">{currentUser?.full_name ?? "User"}</p>
+              <p className="text-xs font-semibold text-ink-500">{formatLabel(currentUser?.role)}</p>
+            </div>
+            <Button aria-label="Logout" className="size-10 px-0" icon={<LogOut className="size-4" aria-hidden="true" />} onClick={onLogout}>
+              <span className="sr-only">Logout</span>
             </Button>
           </div>
         </div>

@@ -2,6 +2,7 @@ from fastapi import APIRouter
 
 from app.api.routes import (
     attachments,
+    auth,
     ai_jobs,
     companies,
     employees,
@@ -17,6 +18,7 @@ from app.api.routes import (
 
 api_router = APIRouter()
 api_router.include_router(health.router)
+api_router.include_router(auth.router)
 api_router.include_router(companies.router)
 api_router.include_router(employees.router)
 api_router.include_router(teams.router)

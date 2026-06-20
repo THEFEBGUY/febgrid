@@ -42,6 +42,10 @@ interface FebGridDataState {
   createLeave: (payload: Omit<LeaveCreatePayload, "company_id">) => Promise<void>;
 }
 
+interface UseFebGridDataOptions {
+  enabled?: boolean;
+}
+
 function getErrorMessage(error: unknown): string {
   if (error instanceof ApiError) return error.message;
   if (error instanceof Error) return error.message;
@@ -77,7 +81,7 @@ function findCompany(companies: Company[], companyId: string | null): Company | 
   return companies.find((company) => company.id === companyId);
 }
 
-export function useFebGridData(): FebGridDataState {
+export function useFebGridData({ enabled = true }: UseFebGridDataOptions = {}): FebGridDataState {
   const [data, setData] = useState<FebGridData>(emptyData);
   const [selectedCompanyId, setSelectedCompanyId] = useState<string | null>(() => getStoredCompanyId());
   const [isLoadingCompanies, setIsLoadingCompanies] = useState(true);
@@ -109,6 +113,16 @@ export function useFebGridData(): FebGridDataState {
   }, []);
 
   const refreshCompanies = useCallback(async (): Promise<void> => {
+    if (!enabled) {
+      setData(emptyData);
+      setModuleErrors({});
+      setError(null);
+      setIsLoadingCompanies(false);
+      setIsLoadingModules(false);
+      setSelectedCompanyIdOnce(null);
+      return;
+    }
+
     setIsLoadingCompanies(true);
     setError(null);
     try {
@@ -136,10 +150,10 @@ export function useFebGridData(): FebGridDataState {
     } finally {
       setIsLoadingCompanies(false);
     }
-  }, [setSelectedCompanyIdOnce]);
+  }, [enabled, setSelectedCompanyIdOnce]);
 
   const refreshModules = useCallback(async (): Promise<void> => {
-    if (!selectedCompanyId) {
+    if (!enabled || !selectedCompanyId) {
       moduleRequestIdRef.current += 1;
       setData((current) => ({ ...emptyData, companies: current.companies }));
       setModuleErrors({});
@@ -193,7 +207,7 @@ export function useFebGridData(): FebGridDataState {
     setData((current) => ({ ...current, ...nextData }));
     setModuleErrors(nextErrors);
     setIsLoadingModules(false);
-  }, [selectedCompanyId]);
+  }, [enabled, selectedCompanyId]);
 
   useEffect(() => {
     void refreshCompanies();

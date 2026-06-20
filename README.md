@@ -62,6 +62,8 @@ The API will be available at:
 
 `DATABASE_URL` may use either `postgresql://...` or `postgresql+psycopg://...`; the backend normalizes plain PostgreSQL URLs to the psycopg v3 SQLAlchemy driver internally.
 
+For local auth, set a development value for `JWT_SECRET_KEY`. If it is omitted, the backend uses a process-local development signing key and existing sessions are invalidated when the server restarts.
+
 ## Frontend Setup
 
 Install and run the React dashboard from the `frontend` directory:
@@ -98,6 +100,10 @@ python -m alembic revision --autogenerate -m "describe change"
 
 All Phase 1 endpoints are mounted under `/api/v1`.
 
+- `/auth/register`
+- `/auth/login`
+- `/auth/logout`
+- `/auth/me`
 - `/companies`
 - `/employees`
 - `/teams`

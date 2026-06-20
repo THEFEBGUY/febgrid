@@ -1,9 +1,11 @@
 import { useEffect, useState } from "react";
 
 import { AppLayout } from "./components/layout/AppLayout";
-import { ErrorState } from "./components/ui/States";
+import { ErrorState, LoadingState } from "./components/ui/States";
 import { navigationItems } from "./data/navigation";
+import { useAuth } from "./hooks/useAuth";
 import { useFebGridData } from "./hooks/useFebGridData";
+import { AuthPage } from "./pages/AuthPage";
 import { CompaniesPage } from "./pages/CompaniesPage";
 import { DashboardPage } from "./pages/DashboardPage";
 import { EmployeesPage } from "./pages/EmployeesPage";
@@ -24,7 +26,8 @@ function getPageFromHash(): PageKey {
 export function App(): JSX.Element {
   const [activePage, setActivePage] = useState<PageKey>(() => getPageFromHash());
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const febGrid = useFebGridData();
+  const auth = useAuth();
+  const febGrid = useFebGridData({ enabled: auth.isAuthenticated });
 
   useEffect(() => {
     const handleHashChange = (): void => {
@@ -86,12 +89,30 @@ export function App(): JSX.Element {
     }
   }
 
+  if (auth.isLoading) {
+    return <LoadingState label="Loading FebGrid session" />;
+  }
+
+  if (!auth.isAuthenticated) {
+    return (
+      <AuthPage
+        error={auth.error}
+        isSubmitting={auth.isSubmitting}
+        onClearError={auth.clearError}
+        onLogin={auth.login}
+        onRegister={auth.register}
+      />
+    );
+  }
+
   return (
     <AppLayout
       activePage={activePage}
       isSidebarOpen={isSidebarOpen}
       companies={febGrid.data.companies}
+      currentUser={auth.user}
       onCloseSidebar={() => setIsSidebarOpen(false)}
+      onLogout={auth.logout}
       onNavigate={handleNavigate}
       onOpenSidebar={() => setIsSidebarOpen(true)}
       onSelectCompany={febGrid.selectCompany}

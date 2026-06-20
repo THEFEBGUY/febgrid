@@ -25,6 +25,47 @@ export interface CompanyCreatePayload {
   settings: Record<string, unknown>;
 }
 
+export type UserRole = "company_owner" | "admin" | "manager" | "employee";
+
+export interface AuthUser extends Timestamped {
+  id: string;
+  company_id: string;
+  full_name: string;
+  email: string;
+  role: UserRole;
+  auth_provider: string;
+  is_active: boolean;
+  last_login_at: string | null;
+}
+
+export interface AuthSession {
+  access_token: string;
+  token_type: "bearer";
+  user: AuthUser;
+  company: Company;
+}
+
+export interface AuthMe {
+  user: AuthUser;
+  company: Company;
+}
+
+export interface LoginPayload {
+  email: string;
+  password: string;
+}
+
+export interface RegisterPayload {
+  full_name: string;
+  email: string;
+  password: string;
+  company_name: string;
+  company_slug: string;
+  industry?: string | null;
+  size?: string | null;
+  timezone: string;
+}
+
 export interface Employee extends Timestamped {
   id: string;
   company_id: string;

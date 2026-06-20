@@ -4,14 +4,16 @@ from fastapi import APIRouter, Depends, Query, Response, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.api.deps import db_session
+from app.api.deps import db_session, get_optional_current_user
 from app.api.serializers import serialize_events
 from app.api.utils import ensure_company, get_or_404, update_model
+from app.core.permissions import MANAGER_ROLES, ensure_company_access, ensure_role
 from app.models.attachment import Attachment
 from app.models.company import Company
 from app.models.employee import Employee
 from app.models.event import Event
 from app.models.project import Project
+from app.models.user import User
 from app.models.work_object import WorkObject
 from app.schemas.attachment import AttachmentCreate, AttachmentRead, WorkObjectAttachmentCreate
 from app.schemas.event import EventRead
@@ -36,7 +38,13 @@ def validate_work_object_refs(db: Session, payload: WorkObjectCreate | WorkObjec
 
 
 @router.post("", response_model=WorkObjectRead, status_code=status.HTTP_201_CREATED)
-def create_work_object(payload: WorkObjectCreate, db: Session = Depends(db_session)) -> WorkObject:
+def create_work_object(
+    payload: WorkObjectCreate,
+    db: Session = Depends(db_session),
+    current_user: User | None = Depends(get_optional_current_user),
+) -> WorkObject:
+    ensure_company_access(current_user, payload.company_id)
+    ensure_role(current_user, MANAGER_ROLES)
     get_or_404(db, Company, payload.company_id, label="Company")
     validate_work_object_refs(db, payload, payload.company_id)
     work_object = WorkObject(**payload.model_dump())
@@ -72,6 +80,7 @@ def create_work_object(payload: WorkObjectCreate, db: Session = Depends(db_sessi
 def list_work_objects(
     company_id: UUID,
     db: Session = Depends(db_session),
+    current_user: User | None = Depends(get_optional_current_user),
     status_filter: str | None = Query(default=None, alias="status"),
     project_id: UUID | None = None,
     assigned_to_employee_id: UUID | None = None,
@@ -79,6 +88,7 @@ def list_work_objects(
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
 ) -> list[WorkObject]:
+    ensure_company_access(current_user, company_id)
     statement = select(WorkObject).where(WorkObject.company_id == company_id)
     if status_filter:
         statement = statement.where(WorkObject.status == status_filter)
@@ -93,7 +103,13 @@ def list_work_objects(
 
 
 @router.get("/{work_object_id}", response_model=WorkObjectRead)
-def get_work_object(work_object_id: UUID, company_id: UUID, db: Session = Depends(db_session)) -> WorkObject:
+def get_work_object(
+    work_object_id: UUID,
+    company_id: UUID,
+    db: Session = Depends(db_session),
+    current_user: User | None = Depends(get_optional_current_user),
+) -> WorkObject:
+    ensure_company_access(current_user, company_id)
     work_object = get_or_404(db, WorkObject, work_object_id, label="Work object")
     ensure_company(work_object, company_id, label="Work object")
     return work_object
@@ -105,7 +121,10 @@ def update_work_object(
     company_id: UUID,
     payload: WorkObjectUpdate,
     db: Session = Depends(db_session),
+    current_user: User | None = Depends(get_optional_current_user),
 ) -> WorkObject:
+    ensure_company_access(current_user, company_id)
+    ensure_role(current_user, MANAGER_ROLES)
     work_object = get_or_404(db, WorkObject, work_object_id, label="Work object")
     ensure_company(work_object, company_id, label="Work object")
     validate_work_object_refs(db, payload, company_id)
@@ -144,7 +163,10 @@ def delete_work_object(
     company_id: UUID,
     actor_employee_id: UUID | None = None,
     db: Session = Depends(db_session),
+    current_user: User | None = Depends(get_optional_current_user),
 ) -> Response:
+    ensure_company_access(current_user, company_id)
+    ensure_role(current_user, MANAGER_ROLES)
     work_object = get_or_404(db, WorkObject, work_object_id, label="Work object")
     ensure_company(work_object, company_id, label="Work object")
     EventService.record_event(
@@ -166,7 +188,9 @@ def update_work_object_status(
     work_object_id: UUID,
     payload: WorkObjectStatusUpdate,
     db: Session = Depends(db_session),
+    current_user: User | None = Depends(get_optional_current_user),
 ) -> WorkObject:
+    ensure_company_access(current_user, payload.company_id)
     work_object = get_or_404(db, WorkObject, work_object_id, label="Work object")
     ensure_company(work_object, payload.company_id, label="Work object")
     old_status = work_object.status
@@ -191,8 +215,10 @@ def get_work_object_timeline(
     work_object_id: UUID,
     company_id: UUID,
     db: Session = Depends(db_session),
+    current_user: User | None = Depends(get_optional_current_user),
     limit: int = Query(default=50, ge=1, le=200),
 ) -> list[EventRead]:
+    ensure_company_access(current_user, company_id)
     work_object = get_or_404(db, WorkObject, work_object_id, label="Work object")
     ensure_company(work_object, company_id, label="Work object")
     statement = (
@@ -213,7 +239,9 @@ def add_work_object_attachment(
     work_object_id: UUID,
     payload: WorkObjectAttachmentCreate,
     db: Session = Depends(db_session),
+    current_user: User | None = Depends(get_optional_current_user),
 ) -> Attachment:
+    ensure_company_access(current_user, payload.company_id)
     work_object = get_or_404(db, WorkObject, work_object_id, label="Work object")
     ensure_company(work_object, payload.company_id, label="Work object")
     attachment_payload = AttachmentCreate(
@@ -244,8 +272,10 @@ def list_work_object_attachments(
     work_object_id: UUID,
     company_id: UUID,
     db: Session = Depends(db_session),
+    current_user: User | None = Depends(get_optional_current_user),
     limit: int = Query(default=50, ge=1, le=200),
 ) -> list[Attachment]:
+    ensure_company_access(current_user, company_id)
     work_object = get_or_404(db, WorkObject, work_object_id, label="Work object")
     ensure_company(work_object, company_id, label="Work object")
     statement = (

@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { X } from "lucide-react";
 
-import type { Company } from "../../types/api";
+import type { AuthUser, Company } from "../../types/api";
 import type { PageKey } from "../../types/domain";
 import { navigationItems } from "../../data/navigation";
 import { Button } from "../ui/Button";
@@ -16,7 +16,9 @@ interface AppLayoutProps {
   onOpenSidebar: () => void;
   companies: Company[];
   selectedCompanyId: string | null;
+  currentUser: AuthUser | null;
   onSelectCompany: (companyId: string) => void;
+  onLogout: () => void;
   children: ReactNode;
 }
 
@@ -28,7 +30,9 @@ export function AppLayout({
   onOpenSidebar,
   companies,
   selectedCompanyId,
+  currentUser,
   onSelectCompany,
+  onLogout,
   children,
 }: AppLayoutProps): JSX.Element {
   const activeNavigation = navigationItems.find((item) => item.key === activePage) ?? navigationItems[0];
@@ -64,8 +68,10 @@ export function AppLayout({
           description={activeNavigation.description}
           companies={companies}
           selectedCompanyId={selectedCompanyId}
+          currentUser={currentUser}
           onOpenSidebar={onOpenSidebar}
           onSelectCompany={onSelectCompany}
+          onLogout={onLogout}
         />
         <main className="mx-auto w-full max-w-7xl px-4 py-6 lg:px-8">{children}</main>
       </div>

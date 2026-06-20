@@ -25,5 +25,6 @@ class Company(TimestampMixin, Base):
     projects = relationship("Project", back_populates="company", cascade="all, delete-orphan")
     work_objects = relationship("WorkObject", back_populates="company", cascade="all, delete-orphan")
     events = relationship("Event", back_populates="company", cascade="all, delete-orphan")
+    users = relationship("User", back_populates="company", cascade="all, delete-orphan")
 
     __table_args__ = (Index("idx_companies_active", "is_active"),)

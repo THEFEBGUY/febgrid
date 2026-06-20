@@ -7,6 +7,7 @@ from app.models.leave_request import LeaveRequest
 from app.models.notification import Notification
 from app.models.project import Project
 from app.models.team import Team, TeamMember
+from app.models.user import User
 from app.models.work_object import WorkObject
 
 __all__ = [
@@ -20,5 +21,6 @@ __all__ = [
     "Project",
     "Team",
     "TeamMember",
+    "User",
     "WorkObject",
 ]

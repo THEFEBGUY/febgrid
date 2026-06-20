@@ -1,4 +1,6 @@
 import type {
+  AuthMe,
+  AuthSession,
   Company,
   CompanyCreatePayload,
   Employee,
@@ -6,14 +8,21 @@ import type {
   Event,
   LeaveCreatePayload,
   LeaveRequest,
+  LoginPayload,
   Notification,
   Project,
+  RegisterPayload,
   Team,
   WorkObject,
   WorkObjectCreatePayload,
 } from "../types/api";
 
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, "") ?? "http://127.0.0.1:8000";
+let authToken: string | null = null;
+
+export function setApiAuthToken(token: string | null): void {
+  authToken = token;
+}
 
 export class ApiError extends Error {
   constructor(
@@ -28,6 +37,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE_URL}/api/v1${path}`, {
     headers: {
       "Content-Type": "application/json",
+      ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
       ...init?.headers,
     },
     ...init,
@@ -67,6 +77,10 @@ function companyPath(path: string, companyId: string): string {
 
 export const api = {
   health: () => request<{ status: string; service: string; environment: string }>("/health"),
+  register: (payload: RegisterPayload) => request<AuthSession>("/auth/register", jsonInit("POST", payload)),
+  login: (payload: LoginPayload) => request<AuthSession>("/auth/login", jsonInit("POST", payload)),
+  logout: () => request<{ status: string }>("/auth/logout", { method: "POST" }),
+  me: () => request<AuthMe>("/auth/me"),
   companies: () => request<Company[]>("/companies"),
   createCompany: (payload: CompanyCreatePayload) => request<Company>("/companies", jsonInit("POST", payload)),
   employees: (companyId: string) => request<Employee[]>(companyPath("/employees", companyId)),

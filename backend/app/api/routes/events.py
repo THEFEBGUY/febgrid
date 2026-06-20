@@ -4,11 +4,13 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.api.deps import db_session
+from app.api.deps import db_session, get_optional_current_user
 from app.api.serializers import serialize_event, serialize_events
 from app.api.utils import ensure_company, get_or_404
+from app.core.permissions import ensure_company_access
 from app.models.company import Company
 from app.models.event import Event
+from app.models.user import User
 from app.schemas.event import EventCreate, EventRead
 from app.services.event_service import EventService
 
@@ -17,7 +19,12 @@ timeline_router = APIRouter(tags=["timeline"])
 
 
 @router.post("", response_model=EventRead)
-def create_event(payload: EventCreate, db: Session = Depends(db_session)) -> EventRead:
+def create_event(
+    payload: EventCreate,
+    db: Session = Depends(db_session),
+    current_user: User | None = Depends(get_optional_current_user),
+) -> EventRead:
+    ensure_company_access(current_user, payload.company_id)
     get_or_404(db, Company, payload.company_id, label="Company")
     event = EventService.record_event(
         db,
@@ -39,6 +46,7 @@ def create_event(payload: EventCreate, db: Session = Depends(db_session)) -> Eve
 def list_events(
     company_id: UUID,
     db: Session = Depends(db_session),
+    current_user: User | None = Depends(get_optional_current_user),
     event_type: str | None = None,
     actor_employee_id: UUID | None = None,
     target_entity_type: str | None = None,
@@ -46,6 +54,7 @@ def list_events(
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
 ) -> list[EventRead]:
+    ensure_company_access(current_user, company_id)
     statement = select(Event).where(Event.company_id == company_id)
     if event_type:
         statement = statement.where(Event.event_type == event_type)
@@ -60,7 +69,13 @@ def list_events(
 
 
 @router.get("/{event_id}", response_model=EventRead)
-def get_event(event_id: UUID, company_id: UUID, db: Session = Depends(db_session)) -> EventRead:
+def get_event(
+    event_id: UUID,
+    company_id: UUID,
+    db: Session = Depends(db_session),
+    current_user: User | None = Depends(get_optional_current_user),
+) -> EventRead:
+    ensure_company_access(current_user, company_id)
     event = get_or_404(db, Event, event_id, label="Event")
     ensure_company(event, company_id, label="Event")
     return serialize_event(event)
@@ -70,10 +85,12 @@ def get_event(event_id: UUID, company_id: UUID, db: Session = Depends(db_session
 def universal_timeline(
     company_id: UUID,
     db: Session = Depends(db_session),
+    current_user: User | None = Depends(get_optional_current_user),
     event_type: str | None = None,
     limit: int = Query(default=100, ge=1, le=300),
     offset: int = Query(default=0, ge=0),
 ) -> list[EventRead]:
+    ensure_company_access(current_user, company_id)
     statement = select(Event).where(Event.company_id == company_id)
     if event_type:
         statement = statement.where(Event.event_type == event_type)

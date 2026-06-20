@@ -4,9 +4,11 @@ from fastapi import APIRouter, Depends, Query, Response, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.api.deps import db_session
+from app.api.deps import db_session, get_optional_current_user
 from app.api.utils import get_or_404, update_model
+from app.core.permissions import OWNER_ADMIN_ROLES, ensure_company_access, ensure_role
 from app.models.company import Company
+from app.models.user import User
 from app.schemas.company import CompanyCreate, CompanyRead, CompanyUpdate
 from app.services.event_service import EventService
 
@@ -42,10 +44,18 @@ def create_company(payload: CompanyCreate, db: Session = Depends(db_session)) ->
 @router.get("", response_model=list[CompanyRead])
 def list_companies(
     db: Session = Depends(db_session),
+    current_user: User | None = Depends(get_optional_current_user),
     include_inactive: bool = False,
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
 ) -> list[Company]:
+    if current_user is not None:
+        statement = select(Company).where(Company.id == current_user.company_id)
+        if not include_inactive:
+            statement = statement.where(Company.is_active.is_(True))
+        company = db.scalar(statement)
+        return [company] if company is not None else []
+
     statement = select(Company).order_by(Company.created_at.desc()).limit(limit).offset(offset)
     if not include_inactive:
         statement = statement.where(Company.is_active.is_(True))
@@ -53,12 +63,24 @@ def list_companies(
 
 
 @router.get("/{company_id}", response_model=CompanyRead)
-def get_company(company_id: UUID, db: Session = Depends(db_session)) -> Company:
+def get_company(
+    company_id: UUID,
+    db: Session = Depends(db_session),
+    current_user: User | None = Depends(get_optional_current_user),
+) -> Company:
+    ensure_company_access(current_user, company_id)
     return get_or_404(db, Company, company_id, label="Company")
 
 
 @router.put("/{company_id}", response_model=CompanyRead)
-def update_company(company_id: UUID, payload: CompanyUpdate, db: Session = Depends(db_session)) -> Company:
+def update_company(
+    company_id: UUID,
+    payload: CompanyUpdate,
+    db: Session = Depends(db_session),
+    current_user: User | None = Depends(get_optional_current_user),
+) -> Company:
+    ensure_company_access(current_user, company_id)
+    ensure_role(current_user, OWNER_ADMIN_ROLES)
     company = get_or_404(db, Company, company_id, label="Company")
     changed = update_model(company, payload, alias_fields={"settings": "settings_json"})
     if changed:
@@ -77,7 +99,13 @@ def update_company(company_id: UUID, payload: CompanyUpdate, db: Session = Depen
 
 
 @router.delete("/{company_id}", status_code=status.HTTP_204_NO_CONTENT)
-def deactivate_company(company_id: UUID, db: Session = Depends(db_session)) -> Response:
+def deactivate_company(
+    company_id: UUID,
+    db: Session = Depends(db_session),
+    current_user: User | None = Depends(get_optional_current_user),
+) -> Response:
+    ensure_company_access(current_user, company_id)
+    ensure_role(current_user, OWNER_ADMIN_ROLES)
     company = get_or_404(db, Company, company_id, label="Company")
     company.is_active = False
     EventService.record_event(
