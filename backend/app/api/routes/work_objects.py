@@ -5,6 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps import db_session
+from app.api.serializers import serialize_events
 from app.api.utils import ensure_company, get_or_404, update_model
 from app.models.attachment import Attachment
 from app.models.company import Company
@@ -191,7 +192,7 @@ def get_work_object_timeline(
     company_id: UUID,
     db: Session = Depends(db_session),
     limit: int = Query(default=50, ge=1, le=200),
-) -> list[Event]:
+) -> list[EventRead]:
     work_object = get_or_404(db, WorkObject, work_object_id, label="Work object")
     ensure_company(work_object, company_id, label="Work object")
     statement = (
@@ -204,7 +205,7 @@ def get_work_object_timeline(
         .order_by(Event.created_at.desc())
         .limit(limit)
     )
-    return list(db.scalars(statement).all())
+    return serialize_events(db.scalars(statement).all())
 
 
 @router.post("/{work_object_id}/attachments", response_model=AttachmentRead, status_code=status.HTTP_201_CREATED)

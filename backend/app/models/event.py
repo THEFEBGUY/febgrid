@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import DateTime, ForeignKey, Index, String, Text
@@ -27,7 +28,7 @@ class Event(Base):
     event_type: Mapped[str] = mapped_column(String(120), nullable=False)
     title: Mapped[str] = mapped_column(String(220), nullable=False)
     description: Mapped[str | None] = mapped_column(Text)
-    metadata_json = json_dict(name="metadata")
+    metadata_json: Mapped[dict[str, Any]] = json_dict(name="metadata")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
 
     company = relationship("Company", back_populates="events")

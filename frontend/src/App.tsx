@@ -1,7 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 
 import { AppLayout } from "./components/layout/AppLayout";
+import { ErrorState } from "./components/ui/States";
 import { navigationItems } from "./data/navigation";
+import { useFebGridData } from "./hooks/useFebGridData";
 import { CompaniesPage } from "./pages/CompaniesPage";
 import { DashboardPage } from "./pages/DashboardPage";
 import { EmployeesPage } from "./pages/EmployeesPage";
@@ -13,18 +15,6 @@ import { TeamsPage } from "./pages/TeamsPage";
 import { WorkObjectsPage } from "./pages/WorkObjectsPage";
 import type { PageKey } from "./types/domain";
 
-const pageComponents: Record<PageKey, JSX.Element> = {
-  dashboard: <DashboardPage />,
-  companies: <CompaniesPage />,
-  employees: <EmployeesPage />,
-  teams: <TeamsPage />,
-  projects: <ProjectsPage />,
-  "work-objects": <WorkObjectsPage />,
-  leaves: <LeavesPage />,
-  events: <EventsPage />,
-  notifications: <NotificationsPage />,
-};
-
 function getPageFromHash(): PageKey {
   const hash = window.location.hash.replace("#/", "");
   const match = navigationItems.find((item) => item.key === hash);
@@ -34,6 +24,7 @@ function getPageFromHash(): PageKey {
 export function App(): JSX.Element {
   const [activePage, setActivePage] = useState<PageKey>(() => getPageFromHash());
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const febGrid = useFebGridData();
 
   useEffect(() => {
     const handleHashChange = (): void => {
@@ -45,8 +36,6 @@ export function App(): JSX.Element {
     return () => window.removeEventListener("hashchange", handleHashChange);
   }, []);
 
-  const visiblePage = useMemo(() => pageComponents[activePage], [activePage]);
-
   function handleNavigate(page: PageKey): void {
     if (page === activePage) {
       setIsSidebarOpen(false);
@@ -55,15 +44,60 @@ export function App(): JSX.Element {
     window.location.hash = `/${page}`;
   }
 
+  function renderPage(): JSX.Element {
+    if (febGrid.error) {
+      return <ErrorState message={febGrid.error} onRetry={febGrid.refreshCompanies} />;
+    }
+
+    const sharedProps = {
+      data: febGrid.data,
+      selectedCompany: febGrid.selectedCompany,
+      isLoadingCompanies: febGrid.isLoadingCompanies,
+      isLoadingModules: febGrid.isLoadingModules,
+      isMutating: febGrid.isMutating,
+      onRetry: febGrid.refreshModules,
+    };
+
+    const withModuleError = (moduleError: string | null) => ({
+      ...sharedProps,
+      moduleError,
+    });
+
+    switch (activePage) {
+      case "companies":
+        return <CompaniesPage {...withModuleError(null)} onCreateCompany={febGrid.createCompany} />;
+      case "employees":
+        return <EmployeesPage {...withModuleError(febGrid.moduleErrors.employees ?? null)} onCreateEmployee={febGrid.createEmployee} />;
+      case "teams":
+        return <TeamsPage {...withModuleError(febGrid.moduleErrors.teams ?? null)} />;
+      case "projects":
+        return <ProjectsPage {...withModuleError(febGrid.moduleErrors.projects ?? null)} />;
+      case "work-objects":
+        return <WorkObjectsPage {...withModuleError(febGrid.moduleErrors.workObjects ?? null)} onCreateWorkObject={febGrid.createWorkObject} />;
+      case "leaves":
+        return <LeavesPage {...withModuleError(febGrid.moduleErrors.leaves ?? null)} onCreateLeave={febGrid.createLeave} />;
+      case "events":
+        return <EventsPage {...withModuleError(febGrid.moduleErrors.events ?? null)} />;
+      case "notifications":
+        return <NotificationsPage {...withModuleError(febGrid.moduleErrors.notifications ?? null)} />;
+      case "dashboard":
+      default:
+        return <DashboardPage {...withModuleError(null)} />;
+    }
+  }
+
   return (
     <AppLayout
       activePage={activePage}
       isSidebarOpen={isSidebarOpen}
+      companies={febGrid.data.companies}
       onCloseSidebar={() => setIsSidebarOpen(false)}
       onNavigate={handleNavigate}
       onOpenSidebar={() => setIsSidebarOpen(true)}
+      onSelectCompany={febGrid.selectCompany}
+      selectedCompanyId={febGrid.selectedCompanyId}
     >
-      {visiblePage}
+      {renderPage()}
     </AppLayout>
   );
 }

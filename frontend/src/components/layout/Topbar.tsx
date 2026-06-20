@@ -1,14 +1,18 @@
 import { Bell, Menu, Search, ShieldCheck } from "lucide-react";
 
+import type { Company } from "../../types/api";
 import { Button } from "../ui/Button";
 
 interface TopbarProps {
   title: string;
   description: string;
   onOpenSidebar: () => void;
+  companies: Company[];
+  selectedCompanyId: string | null;
+  onSelectCompany: (companyId: string) => void;
 }
 
-export function Topbar({ title, description, onOpenSidebar }: TopbarProps): JSX.Element {
+export function Topbar({ title, description, onOpenSidebar, companies, selectedCompanyId, onSelectCompany }: TopbarProps): JSX.Element {
   return (
     <header className="sticky top-0 z-20 border-b border-grid-200 bg-grid-50/90 backdrop-blur">
       <div className="flex min-h-20 flex-col gap-4 px-4 py-4 lg:flex-row lg:items-center lg:justify-between lg:px-8">
@@ -28,6 +32,22 @@ export function Topbar({ title, description, onOpenSidebar }: TopbarProps): JSX.
         </div>
 
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+          <label className="block min-w-0 sm:w-56">
+            <span className="sr-only">Active company</span>
+            <select
+              className="h-10 w-full rounded-md border border-grid-200 bg-white px-3 text-sm font-bold text-ink-900 shadow-sm disabled:bg-grid-100 disabled:text-ink-500"
+              disabled={companies.length === 0}
+              value={selectedCompanyId ?? ""}
+              onChange={(event) => onSelectCompany(event.target.value)}
+            >
+              {companies.length === 0 ? <option value="">No companies</option> : null}
+              {companies.map((company) => (
+                <option key={company.id} value={company.id}>
+                  {company.name}
+                </option>
+              ))}
+            </select>
+          </label>
           <label className="relative block min-w-0 sm:w-72">
             <span className="sr-only">Search operations</span>
             <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-ink-500" aria-hidden="true" />

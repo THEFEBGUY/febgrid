@@ -1,27 +1,36 @@
 import { Plus } from "lucide-react";
 
-import { teams } from "../data/sampleData";
 import { Button } from "../components/ui/Button";
 import { DataTable, type DataTableColumn } from "../components/ui/DataTable";
+import { ModuleBoundary } from "../components/ui/ModuleBoundary";
 import { SectionPanel } from "../components/ui/SectionPanel";
-import type { TeamRecord } from "../types/domain";
+import type { Team } from "../types/api";
+import type { ModulePageProps } from "../types/page";
 
-const columns: DataTableColumn<TeamRecord>[] = [
+const columns: DataTableColumn<Team>[] = [
   { key: "name", label: "Team", render: (team) => <span className="font-bold text-ink-950">{team.name}</span> },
-  { key: "department", label: "Department", render: (team) => team.department },
-  { key: "lead", label: "Lead", render: (team) => team.lead },
-  { key: "members", label: "Members", render: (team) => team.members.toString(), className: "text-right" },
-  { key: "workload", label: "Workload", render: (team) => <span className="font-bold text-ink-950">{team.workload}</span>, className: "text-right" },
+  { key: "department", label: "Department", render: (team) => team.department ?? "Not set" },
+  { key: "lead", label: "Lead", render: (team) => team.lead_employee_id ? "Assigned" : "No lead" },
+  { key: "description", label: "Description", render: (team) => team.description ?? "No description" },
 ];
 
-export function TeamsPage(): JSX.Element {
+export function TeamsPage({ data, selectedCompany, isLoadingModules, moduleError, onRetry }: ModulePageProps): JSX.Element {
   return (
     <SectionPanel
-      eyebrow="Operating groups"
+      eyebrow={selectedCompany?.name ?? "Operating groups"}
       title="Teams"
-      action={<Button variant="primary" icon={<Plus className="size-4" aria-hidden="true" />}>Create team</Button>}
+      action={<Button disabled variant="primary" icon={<Plus className="size-4" aria-hidden="true" />}>Create team</Button>}
     >
-      <DataTable columns={columns} rows={teams} getRowKey={(team) => team.id} />
+      <ModuleBoundary
+        emptyDescription="Teams will appear here after they are created through the backend API."
+        emptyTitle="No teams yet"
+        error={moduleError}
+        isEmpty={data.teams.length === 0}
+        isLoading={isLoadingModules}
+        onRetry={onRetry}
+      >
+        <DataTable columns={columns} rows={data.teams} getRowKey={(team) => team.id} />
+      </ModuleBoundary>
     </SectionPanel>
   );
 }

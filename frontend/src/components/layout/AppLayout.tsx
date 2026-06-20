@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { X } from "lucide-react";
 
+import type { Company } from "../../types/api";
 import type { PageKey } from "../../types/domain";
 import { navigationItems } from "../../data/navigation";
 import { Button } from "../ui/Button";
@@ -13,6 +14,9 @@ interface AppLayoutProps {
   onNavigate: (page: PageKey) => void;
   onCloseSidebar: () => void;
   onOpenSidebar: () => void;
+  companies: Company[];
+  selectedCompanyId: string | null;
+  onSelectCompany: (companyId: string) => void;
   children: ReactNode;
 }
 
@@ -22,6 +26,9 @@ export function AppLayout({
   onNavigate,
   onCloseSidebar,
   onOpenSidebar,
+  companies,
+  selectedCompanyId,
+  onSelectCompany,
   children,
 }: AppLayoutProps): JSX.Element {
   const activeNavigation = navigationItems.find((item) => item.key === activePage) ?? navigationItems[0];
@@ -52,7 +59,14 @@ export function AppLayout({
       ) : null}
 
       <div className="lg:pl-72">
-        <Topbar title={activeNavigation.label} description={activeNavigation.description} onOpenSidebar={onOpenSidebar} />
+        <Topbar
+          title={activeNavigation.label}
+          description={activeNavigation.description}
+          companies={companies}
+          selectedCompanyId={selectedCompanyId}
+          onOpenSidebar={onOpenSidebar}
+          onSelectCompany={onSelectCompany}
+        />
         <main className="mx-auto w-full max-w-7xl px-4 py-6 lg:px-8">{children}</main>
       </div>
     </div>

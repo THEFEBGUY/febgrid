@@ -5,6 +5,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import db_session
+from app.api.serializers import serialize_events
 from app.api.utils import ensure_company, get_or_404, update_model
 from app.models.company import Company
 from app.models.employee import Employee
@@ -165,7 +166,7 @@ def get_employee_activity(
     company_id: UUID,
     db: Session = Depends(db_session),
     limit: int = Query(default=50, ge=1, le=200),
-) -> list[Event]:
+) -> list[EventRead]:
     employee = get_or_404(db, Employee, employee_id, label="Employee")
     ensure_company(employee, company_id, label="Employee")
     statement = (
@@ -180,4 +181,4 @@ def get_employee_activity(
         .order_by(Event.created_at.desc())
         .limit(limit)
     )
-    return list(db.scalars(statement).all())
+    return serialize_events(db.scalars(statement).all())

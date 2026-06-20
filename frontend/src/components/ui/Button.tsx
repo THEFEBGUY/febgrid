@@ -15,7 +15,7 @@ export function Button({ children, icon, variant = "secondary", className = "", 
   return (
     <button
       type={type}
-      className={`inline-flex h-10 items-center justify-center gap-2 rounded-md px-3 text-sm font-semibold transition ${variantClasses[variant]} ${className}`}
+      className={`inline-flex h-10 items-center justify-center gap-2 rounded-md px-3 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-50 ${variantClasses[variant]} ${className}`}
       {...props}
     >
       {icon}

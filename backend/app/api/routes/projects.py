@@ -5,6 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps import db_session
+from app.api.serializers import serialize_events
 from app.api.utils import ensure_company, get_or_404, update_model
 from app.models.company import Company
 from app.models.employee import Employee
@@ -124,7 +125,7 @@ def get_project_timeline(
     company_id: UUID,
     db: Session = Depends(db_session),
     limit: int = Query(default=50, ge=1, le=200),
-) -> list[Event]:
+) -> list[EventRead]:
     project = get_or_404(db, Project, project_id, label="Project")
     ensure_company(project, company_id, label="Project")
     statement = (
@@ -137,7 +138,7 @@ def get_project_timeline(
         .order_by(Event.created_at.desc())
         .limit(limit)
     )
-    return list(db.scalars(statement).all())
+    return serialize_events(db.scalars(statement).all())
 
 
 @router.get("/{project_id}/work-objects", response_model=list[WorkObjectRead])

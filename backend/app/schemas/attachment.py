@@ -1,7 +1,7 @@
 from typing import Any
 from uuid import UUID
 
-from pydantic import AliasChoices, Field
+from pydantic import AliasChoices, Field, field_validator
 
 from app.schemas.common import FebGridModel, Timestamped
 
@@ -18,9 +18,16 @@ class AttachmentBase(FebGridModel):
     ai_processing_status: str = Field(default="pending", max_length=40)
     metadata: dict[str, Any] = Field(
         default_factory=dict,
-        validation_alias=AliasChoices("metadata", "metadata_json"),
+        validation_alias=AliasChoices("metadata_json", "metadata"),
         serialization_alias="metadata",
     )
+
+    @field_validator("metadata", mode="before")
+    @classmethod
+    def ensure_metadata_dict(cls, value: Any) -> dict[str, Any]:
+        if isinstance(value, dict):
+            return value
+        return {}
 
 
 class AttachmentCreate(AttachmentBase):
@@ -37,7 +44,7 @@ class WorkObjectAttachmentCreate(FebGridModel):
     ai_processing_status: str = Field(default="pending", max_length=40)
     metadata: dict[str, Any] = Field(
         default_factory=dict,
-        validation_alias=AliasChoices("metadata", "metadata_json"),
+        validation_alias=AliasChoices("metadata_json", "metadata"),
         serialization_alias="metadata",
     )
 
