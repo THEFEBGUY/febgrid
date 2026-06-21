@@ -9,6 +9,9 @@ import type {
   EmployeeUpdatePayload,
   FebGridData,
   LeaveCreatePayload,
+  ProjectCreatePayload,
+  ProjectMemberCreatePayload,
+  ProjectUpdatePayload,
   TeamCreatePayload,
   WorkObjectCreatePayload,
 } from "../types/api";
@@ -47,6 +50,13 @@ interface FebGridDataState {
   updateEmployeeStatus: (employeeId: string, currentStatus: string) => Promise<void>;
   createDepartment: (payload: Omit<DepartmentCreatePayload, "company_id">) => Promise<void>;
   createTeam: (payload: Omit<TeamCreatePayload, "company_id">) => Promise<void>;
+  createProject: (payload: Omit<ProjectCreatePayload, "company_id">) => Promise<void>;
+  updateProject: (projectId: string, payload: ProjectUpdatePayload) => Promise<void>;
+  deactivateProject: (projectId: string) => Promise<void>;
+  updateProjectStatus: (projectId: string, status: string) => Promise<void>;
+  updateProjectPriority: (projectId: string, priority: string) => Promise<void>;
+  addProjectMember: (projectId: string, payload: Omit<ProjectMemberCreatePayload, "company_id">) => Promise<void>;
+  removeProjectMember: (projectId: string, employeeId: string) => Promise<void>;
   createWorkObject: (payload: Omit<WorkObjectCreatePayload, "company_id">) => Promise<void>;
   createLeave: (payload: Omit<LeaveCreatePayload, "company_id">) => Promise<void>;
 }
@@ -308,6 +318,62 @@ export function useFebGridData({ enabled = true }: UseFebGridDataOptions = {}): 
     });
   }
 
+  async function createProject(payload: Omit<ProjectCreatePayload, "company_id">): Promise<void> {
+    if (!selectedCompanyId) return;
+    await runMutation(async () => {
+      await api.createProject({ ...payload, company_id: selectedCompanyId });
+      await refreshModules();
+    });
+  }
+
+  async function updateProject(projectId: string, payload: ProjectUpdatePayload): Promise<void> {
+    if (!selectedCompanyId) return;
+    await runMutation(async () => {
+      await api.updateProject(projectId, selectedCompanyId, payload);
+      await refreshModules();
+    });
+  }
+
+  async function deactivateProject(projectId: string): Promise<void> {
+    if (!selectedCompanyId) return;
+    await runMutation(async () => {
+      await api.deactivateProject(projectId, selectedCompanyId);
+      await refreshModules();
+    });
+  }
+
+  async function updateProjectStatus(projectId: string, statusValue: string): Promise<void> {
+    if (!selectedCompanyId) return;
+    await runMutation(async () => {
+      await api.updateProjectStatus(projectId, { company_id: selectedCompanyId, status: statusValue });
+      await refreshModules();
+    });
+  }
+
+  async function updateProjectPriority(projectId: string, priority: string): Promise<void> {
+    if (!selectedCompanyId) return;
+    await runMutation(async () => {
+      await api.updateProjectPriority(projectId, { company_id: selectedCompanyId, priority });
+      await refreshModules();
+    });
+  }
+
+  async function addProjectMember(projectId: string, payload: Omit<ProjectMemberCreatePayload, "company_id">): Promise<void> {
+    if (!selectedCompanyId) return;
+    await runMutation(async () => {
+      await api.addProjectMember(projectId, { ...payload, company_id: selectedCompanyId });
+      await refreshModules();
+    });
+  }
+
+  async function removeProjectMember(projectId: string, employeeId: string): Promise<void> {
+    if (!selectedCompanyId) return;
+    await runMutation(async () => {
+      await api.removeProjectMember(projectId, selectedCompanyId, employeeId);
+      await refreshModules();
+    });
+  }
+
   async function createWorkObject(payload: Omit<WorkObjectCreatePayload, "company_id">): Promise<void> {
     if (!selectedCompanyId) return;
     await runMutation(async () => {
@@ -343,6 +409,13 @@ export function useFebGridData({ enabled = true }: UseFebGridDataOptions = {}): 
     updateEmployeeStatus,
     createDepartment,
     createTeam,
+    createProject,
+    updateProject,
+    deactivateProject,
+    updateProjectStatus,
+    updateProjectPriority,
+    addProjectMember,
+    removeProjectMember,
     createWorkObject,
     createLeave,
   };

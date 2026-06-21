@@ -20,6 +20,7 @@ Phase 1 focuses on the backend foundation:
 - Alembic migrations
 - CRUD APIs for companies, employees, teams, projects, work objects, leave requests, attachments, notifications, events, and AI jobs
 - Sprint 3 employee management foundation for departments, teams, employee profiles, employee status, and tenant-aware people operations
+- Phase 1 project management foundation for project ownership, members, status, priority, progress, timeline, and linked work object lists
 - Health check, universal timeline, and basic operational search
 - Mock-only AI boundary in `backend/app/services/ai_service.py`
 
@@ -81,7 +82,7 @@ The frontend reads the backend URL from `VITE_API_BASE_URL`. The documented defa
 VITE_API_BASE_URL=http://localhost:8000
 ```
 
-The Phase 1 frontend includes the main dashboard shell, sidebar navigation, reusable table/card/badge UI, and pages for Dashboard, Companies, Employees, Teams, Projects, Work Objects, Leaves, Events, and Notifications. Sprint 3 adds authenticated employee directory management, employee profile modals, status controls, department creation, and team creation.
+The Phase 1 frontend includes the main dashboard shell, sidebar navigation, reusable table/card/badge UI, and pages for Dashboard, Companies, Employees, Teams, Projects, Work Objects, Leaves, Events, and Notifications. Sprint 3 adds authenticated employee directory management, employee profile modals, status controls, department creation, and team creation. The project foundation adds create/edit project workflows, status and priority controls, project members, detail view, timeline, and linked work object readiness for Sprint 4.
 
 ## Alembic
 

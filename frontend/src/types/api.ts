@@ -169,14 +169,72 @@ export interface Project extends Timestamped {
   id: string;
   company_id: string;
   owner_employee_id: string | null;
+  owner_user_id: string | null;
+  department_id: string | null;
+  team_id: string | null;
   name: string;
+  code: string | null;
   description: string | null;
   status: string;
   priority: string;
   start_date: string | null;
   due_date: string | null;
   progress_percent: number;
+  risk_level: string | null;
+  is_active: boolean;
   tags: string[];
+}
+
+export interface ProjectCreatePayload {
+  company_id: string;
+  owner_employee_id?: string | null;
+  owner_user_id?: string | null;
+  department_id?: string | null;
+  team_id?: string | null;
+  name: string;
+  code?: string | null;
+  description?: string | null;
+  status: string;
+  priority: string;
+  start_date?: string | null;
+  due_date?: string | null;
+  progress_percent: number;
+  risk_level?: string | null;
+  is_active?: boolean;
+  tags: string[];
+}
+
+export interface ProjectUpdatePayload {
+  owner_employee_id?: string | null;
+  owner_user_id?: string | null;
+  department_id?: string | null;
+  team_id?: string | null;
+  name?: string;
+  code?: string | null;
+  description?: string | null;
+  status?: string;
+  priority?: string;
+  start_date?: string | null;
+  due_date?: string | null;
+  progress_percent?: number;
+  risk_level?: string | null;
+  is_active?: boolean;
+  tags?: string[];
+}
+
+export interface ProjectMember extends Timestamped {
+  id: string;
+  project_id: string;
+  company_id: string;
+  employee_id: string;
+  role_on_project: string | null;
+  is_active: boolean;
+}
+
+export interface ProjectMemberCreatePayload {
+  company_id: string;
+  employee_id: string;
+  role_on_project?: string | null;
 }
 
 export interface WorkObject extends Timestamped {

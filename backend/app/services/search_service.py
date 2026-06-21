@@ -38,7 +38,11 @@ class SearchService:
 
         projects = db.scalars(
             select(Project)
-            .where(Project.company_id == company_id, or_(Project.name.ilike(term), Project.description.ilike(term)))
+            .where(
+                Project.company_id == company_id,
+                Project.is_active.is_(True),
+                or_(Project.name.ilike(term), Project.code.ilike(term), Project.description.ilike(term)),
+            )
             .limit(limit)
         ).all()
         results.extend(
@@ -47,7 +51,7 @@ class SearchService:
                 id=str(project.id),
                 title=project.name,
                 subtitle=project.status,
-                metadata={"priority": project.priority},
+                metadata={"priority": project.priority, "code": project.code, "risk_level": project.risk_level},
             )
             for project in projects
         )

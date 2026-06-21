@@ -24,6 +24,7 @@ class Company(TimestampMixin, Base):
     departments = relationship("Department", back_populates="company", cascade="all, delete-orphan")
     teams = relationship("Team", back_populates="company", cascade="all, delete-orphan")
     projects = relationship("Project", back_populates="company", cascade="all, delete-orphan")
+    project_members = relationship("ProjectMember", cascade="all, delete-orphan")
     work_objects = relationship("WorkObject", back_populates="company", cascade="all, delete-orphan")
     events = relationship("Event", back_populates="company", cascade="all, delete-orphan")
     users = relationship("User", back_populates="company", cascade="all, delete-orphan")

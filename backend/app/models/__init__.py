@@ -6,7 +6,7 @@ from app.models.employee import Employee
 from app.models.event import Event
 from app.models.leave_request import LeaveRequest
 from app.models.notification import Notification
-from app.models.project import Project
+from app.models.project import Project, ProjectMember
 from app.models.team import Team, TeamMember
 from app.models.user import User
 from app.models.work_object import WorkObject
@@ -21,6 +21,7 @@ __all__ = [
     "LeaveRequest",
     "Notification",
     "Project",
+    "ProjectMember",
     "Team",
     "TeamMember",
     "User",

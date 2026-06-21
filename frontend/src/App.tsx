@@ -88,7 +88,18 @@ export function App(): JSX.Element {
           />
         );
       case "projects":
-        return <ProjectsPage {...withModuleError(febGrid.moduleErrors.projects ?? null)} />;
+        return (
+          <ProjectsPage
+            {...withModuleError(febGrid.moduleErrors.projects ?? null)}
+            onAddProjectMember={febGrid.addProjectMember}
+            onCreateProject={febGrid.createProject}
+            onDeactivateProject={febGrid.deactivateProject}
+            onRemoveProjectMember={febGrid.removeProjectMember}
+            onUpdateProject={febGrid.updateProject}
+            onUpdateProjectPriority={febGrid.updateProjectPriority}
+            onUpdateProjectStatus={febGrid.updateProjectStatus}
+          />
+        );
       case "work-objects":
         return <WorkObjectsPage {...withModuleError(febGrid.moduleErrors.workObjects ?? null)} onCreateWorkObject={febGrid.createWorkObject} />;
       case "leaves":

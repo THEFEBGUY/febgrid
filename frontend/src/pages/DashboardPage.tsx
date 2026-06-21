@@ -1,4 +1,4 @@
-import { AlertTriangle, CalendarDays, CheckCircle2, Clock3, Users } from "lucide-react";
+import { AlertTriangle, CalendarDays, CheckCircle2, Clock3, FolderKanban, Users } from "lucide-react";
 import { useMemo } from "react";
 
 import { Badge } from "../components/ui/Badge";
@@ -11,22 +11,24 @@ import type { Metric } from "../types/domain";
 import type { ModulePageProps } from "../types/page";
 import { compactList, formatDate, formatLabel, formatTime } from "../utils/format";
 
-const metricIcons = [Users, CheckCircle2, AlertTriangle, CalendarDays] as const;
+const metricIcons = [Users, FolderKanban, CheckCircle2, AlertTriangle, CalendarDays] as const;
 
 export function DashboardPage({ data, selectedCompany, isLoadingCompanies, isLoadingModules, moduleError, onRetry }: ModulePageProps): JSX.Element {
   const metrics = useMemo<Metric[]>(() => {
     const activeEmployees = data.employees.filter((employee) => !["offline", "on_leave"].includes(employee.current_status)).length;
+    const activeProjects = data.projects.filter((project) => project.is_active && project.status === "active").length;
+    const projectRisks = data.projects.filter((project) => project.is_active && ["delayed", "on_hold"].includes(project.status)).length;
     const openWork = data.workObjects.filter((workObject) => !["completed", "archived", "rejected"].includes(workObject.status)).length;
-    const blockedWork = data.workObjects.filter((workObject) => workObject.status === "blocked").length;
     const pendingLeaves = data.leaves.filter((leave) => leave.status === "pending").length;
 
     return [
       { label: "Active employees", value: activeEmployees.toString(), tone: "green", delta: `${data.employees.length} total employees` },
+      { label: "Active projects", value: activeProjects.toString(), tone: "blue", delta: `${data.projects.length} total projects` },
       { label: "Open work objects", value: openWork.toString(), tone: "blue", delta: `${data.workObjects.length} total objects` },
-      { label: "Blocked work", value: blockedWork.toString(), tone: blockedWork > 0 ? "red" : "green", delta: blockedWork > 0 ? "Needs manager action" : "No blockers" },
+      { label: "Project risks", value: projectRisks.toString(), tone: projectRisks > 0 ? "amber" : "green", delta: projectRisks > 0 ? "Delayed or on hold" : "No project risk" },
       { label: "Pending leaves", value: pendingLeaves.toString(), tone: pendingLeaves > 0 ? "amber" : "green", delta: `${data.leaves.length} total leave requests` },
     ];
-  }, [data.employees, data.leaves, data.workObjects]);
+  }, [data.employees, data.leaves, data.projects, data.workObjects]);
 
   const employeeNames = useMemo(
     () => Object.fromEntries(data.employees.map((employee) => [employee.id, employee.full_name])),
@@ -56,7 +58,7 @@ export function DashboardPage({ data, selectedCompany, isLoadingCompanies, isLoa
 
   return (
     <div className="space-y-6">
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
         {metrics.map((metric, index) => (
           <MetricCard key={metric.label} metric={metric} icon={metricIcons[index]} />
         ))}
