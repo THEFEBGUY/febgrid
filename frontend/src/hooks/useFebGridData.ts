@@ -14,6 +14,7 @@ import type {
   ProjectUpdatePayload,
   TeamCreatePayload,
   WorkObjectCreatePayload,
+  WorkObjectUpdatePayload,
 } from "../types/api";
 
 const emptyData: FebGridData = {
@@ -58,6 +59,12 @@ interface FebGridDataState {
   addProjectMember: (projectId: string, payload: Omit<ProjectMemberCreatePayload, "company_id">) => Promise<void>;
   removeProjectMember: (projectId: string, employeeId: string) => Promise<void>;
   createWorkObject: (payload: Omit<WorkObjectCreatePayload, "company_id">) => Promise<void>;
+  updateWorkObject: (workObjectId: string, payload: WorkObjectUpdatePayload) => Promise<void>;
+  deactivateWorkObject: (workObjectId: string) => Promise<void>;
+  assignWorkObject: (workObjectId: string, assigneeEmployeeId: string | null) => Promise<void>;
+  updateWorkObjectStatus: (workObjectId: string, status: string) => Promise<void>;
+  updateWorkObjectPriority: (workObjectId: string, priority: string) => Promise<void>;
+  completeWorkObject: (workObjectId: string) => Promise<void>;
   createLeave: (payload: Omit<LeaveCreatePayload, "company_id">) => Promise<void>;
 }
 
@@ -382,6 +389,54 @@ export function useFebGridData({ enabled = true }: UseFebGridDataOptions = {}): 
     });
   }
 
+  async function updateWorkObject(workObjectId: string, payload: WorkObjectUpdatePayload): Promise<void> {
+    if (!selectedCompanyId) return;
+    await runMutation(async () => {
+      await api.updateWorkObject(workObjectId, selectedCompanyId, payload);
+      await refreshModules();
+    });
+  }
+
+  async function deactivateWorkObject(workObjectId: string): Promise<void> {
+    if (!selectedCompanyId) return;
+    await runMutation(async () => {
+      await api.deactivateWorkObject(workObjectId, selectedCompanyId);
+      await refreshModules();
+    });
+  }
+
+  async function assignWorkObject(workObjectId: string, assigneeEmployeeId: string | null): Promise<void> {
+    if (!selectedCompanyId) return;
+    await runMutation(async () => {
+      await api.assignWorkObject(workObjectId, { company_id: selectedCompanyId, assignee_employee_id: assigneeEmployeeId });
+      await refreshModules();
+    });
+  }
+
+  async function updateWorkObjectStatus(workObjectId: string, statusValue: string): Promise<void> {
+    if (!selectedCompanyId) return;
+    await runMutation(async () => {
+      await api.updateWorkObjectStatus(workObjectId, { company_id: selectedCompanyId, status: statusValue });
+      await refreshModules();
+    });
+  }
+
+  async function updateWorkObjectPriority(workObjectId: string, priority: string): Promise<void> {
+    if (!selectedCompanyId) return;
+    await runMutation(async () => {
+      await api.updateWorkObjectPriority(workObjectId, { company_id: selectedCompanyId, priority });
+      await refreshModules();
+    });
+  }
+
+  async function completeWorkObject(workObjectId: string): Promise<void> {
+    if (!selectedCompanyId) return;
+    await runMutation(async () => {
+      await api.completeWorkObject(workObjectId, { company_id: selectedCompanyId });
+      await refreshModules();
+    });
+  }
+
   async function createLeave(payload: Omit<LeaveCreatePayload, "company_id">): Promise<void> {
     if (!selectedCompanyId) return;
     await runMutation(async () => {
@@ -417,6 +472,12 @@ export function useFebGridData({ enabled = true }: UseFebGridDataOptions = {}): 
     addProjectMember,
     removeProjectMember,
     createWorkObject,
+    updateWorkObject,
+    deactivateWorkObject,
+    assignWorkObject,
+    updateWorkObjectStatus,
+    updateWorkObjectPriority,
+    completeWorkObject,
     createLeave,
   };
 }

@@ -101,7 +101,18 @@ export function App(): JSX.Element {
           />
         );
       case "work-objects":
-        return <WorkObjectsPage {...withModuleError(febGrid.moduleErrors.workObjects ?? null)} onCreateWorkObject={febGrid.createWorkObject} />;
+        return (
+          <WorkObjectsPage
+            {...withModuleError(febGrid.moduleErrors.workObjects ?? null)}
+            onAssignWorkObject={febGrid.assignWorkObject}
+            onCompleteWorkObject={febGrid.completeWorkObject}
+            onCreateWorkObject={febGrid.createWorkObject}
+            onDeactivateWorkObject={febGrid.deactivateWorkObject}
+            onUpdateWorkObject={febGrid.updateWorkObject}
+            onUpdateWorkObjectPriority={febGrid.updateWorkObjectPriority}
+            onUpdateWorkObjectStatus={febGrid.updateWorkObjectStatus}
+          />
+        );
       case "leaves":
         return <LeavesPage {...withModuleError(febGrid.moduleErrors.leaves ?? null)} onCreateLeave={febGrid.createLeave} />;
       case "events":

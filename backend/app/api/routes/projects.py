@@ -612,7 +612,11 @@ def get_project_work_objects(
     project = get_project_for_user(db, current_user, project_id, company_id)
     statement = (
         select(WorkObject)
-        .where(WorkObject.company_id == company_id, WorkObject.project_id == project.id)
+        .where(
+            WorkObject.company_id == company_id,
+            WorkObject.project_id == project.id,
+            WorkObject.is_active.is_(True),
+        )
         .order_by(WorkObject.created_at.desc())
         .limit(limit)
         .offset(offset)

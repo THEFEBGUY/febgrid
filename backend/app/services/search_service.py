@@ -60,6 +60,7 @@ class SearchService:
             select(WorkObject)
             .where(
                 WorkObject.company_id == company_id,
+                WorkObject.is_active.is_(True),
                 or_(
                     WorkObject.title.ilike(term),
                     WorkObject.description.ilike(term),
@@ -74,7 +75,12 @@ class SearchService:
                 id=str(work_object.id),
                 title=work_object.title,
                 subtitle=work_object.status,
-                metadata={"priority": work_object.priority, "object_type": work_object.object_type},
+                metadata={
+                    "priority": work_object.priority,
+                    "object_type": work_object.object_type,
+                    "project_id": str(work_object.project_id) if work_object.project_id else None,
+                    "assignee_employee_id": str(work_object.assignee_employee_id) if work_object.assignee_employee_id else None,
+                },
             )
             for work_object in work_objects
         )

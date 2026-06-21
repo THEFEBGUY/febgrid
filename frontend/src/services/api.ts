@@ -23,6 +23,8 @@ import type {
   TeamCreatePayload,
   WorkObject,
   WorkObjectCreatePayload,
+  WorkObjectSummary,
+  WorkObjectUpdatePayload,
 } from "../types/api";
 
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, "") ?? "http://127.0.0.1:8000";
@@ -114,7 +116,16 @@ export const api = {
   projectTimeline: (projectId: string, companyId: string) => request<Event[]>(companyPath(`/projects/${projectId}/timeline`, companyId)),
   projectWorkObjects: (projectId: string, companyId: string) => request<WorkObject[]>(companyPath(`/projects/${projectId}/work-objects`, companyId)),
   workObjects: (companyId: string) => request<WorkObject[]>(companyPath("/work-objects", companyId)),
+  workObject: (workObjectId: string, companyId: string) => request<WorkObject>(companyPath(`/work-objects/${workObjectId}`, companyId)),
+  workObjectSummary: (companyId: string) => request<WorkObjectSummary>(companyPath("/work-objects/summary", companyId)),
   createWorkObject: (payload: WorkObjectCreatePayload) => request<WorkObject>("/work-objects", jsonInit("POST", payload)),
+  updateWorkObject: (workObjectId: string, companyId: string, payload: WorkObjectUpdatePayload) => request<WorkObject>(companyPath(`/work-objects/${workObjectId}`, companyId), jsonInit("PUT", payload)),
+  deactivateWorkObject: (workObjectId: string, companyId: string) => request<void>(companyPath(`/work-objects/${workObjectId}`, companyId), { method: "DELETE" }),
+  assignWorkObject: (workObjectId: string, payload: { company_id: string; assignee_employee_id?: string | null }) => request<WorkObject>(`/work-objects/${workObjectId}/assignee`, jsonInit("PATCH", payload)),
+  updateWorkObjectStatus: (workObjectId: string, payload: { company_id: string; status: string }) => request<WorkObject>(`/work-objects/${workObjectId}/status`, jsonInit("PATCH", payload)),
+  updateWorkObjectPriority: (workObjectId: string, payload: { company_id: string; priority: string }) => request<WorkObject>(`/work-objects/${workObjectId}/priority`, jsonInit("PATCH", payload)),
+  completeWorkObject: (workObjectId: string, payload: { company_id: string }) => request<WorkObject>(`/work-objects/${workObjectId}/complete`, jsonInit("POST", payload)),
+  workObjectTimeline: (workObjectId: string, companyId: string) => request<Event[]>(companyPath(`/work-objects/${workObjectId}/timeline`, companyId)),
   leaves: (companyId: string) => request<LeaveRequest[]>(companyPath("/leaves", companyId)),
   createLeave: (payload: LeaveCreatePayload) => request<LeaveRequest>("/leaves", jsonInit("POST", payload)),
   events: (companyId: string) => request<Event[]>(companyPath("/timeline", companyId)),

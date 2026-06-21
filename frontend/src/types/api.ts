@@ -241,33 +241,79 @@ export interface WorkObject extends Timestamped {
   id: string;
   company_id: string;
   project_id: string | null;
-  created_by_employee_id: string | null;
-  assigned_to_employee_id: string | null;
+  department_id: string | null;
+  team_id: string | null;
+  creator_employee_id: string | null;
+  creator_user_id: string | null;
+  assignee_employee_id: string | null;
   title: string;
   description: string | null;
   object_type: string;
   status: string;
   priority: string;
   due_date: string | null;
+  start_date: string | null;
+  completed_at: string | null;
   tags: string[];
+  metadata: Record<string, unknown>;
   custom_fields: Record<string, unknown>;
   ai_summary: string | null;
+  is_active: boolean;
 }
 
 export interface WorkObjectCreatePayload {
   company_id: string;
   project_id?: string | null;
-  created_by_employee_id?: string | null;
-  assigned_to_employee_id?: string | null;
+  department_id?: string | null;
+  team_id?: string | null;
+  creator_employee_id?: string | null;
+  creator_user_id?: string | null;
+  assignee_employee_id?: string | null;
   title: string;
   description?: string | null;
   object_type: string;
   status: string;
   priority: string;
   due_date?: string | null;
+  start_date?: string | null;
+  completed_at?: string | null;
   tags: string[];
+  metadata: Record<string, unknown>;
   custom_fields: Record<string, unknown>;
   ai_summary?: string | null;
+  is_active?: boolean;
+}
+
+export interface WorkObjectUpdatePayload {
+  project_id?: string | null;
+  department_id?: string | null;
+  team_id?: string | null;
+  creator_employee_id?: string | null;
+  creator_user_id?: string | null;
+  assignee_employee_id?: string | null;
+  title?: string;
+  description?: string | null;
+  object_type?: string;
+  status?: string;
+  priority?: string;
+  due_date?: string | null;
+  start_date?: string | null;
+  completed_at?: string | null;
+  tags?: string[];
+  metadata?: Record<string, unknown>;
+  custom_fields?: Record<string, unknown>;
+  ai_summary?: string | null;
+  is_active?: boolean;
+}
+
+export interface WorkObjectSummary {
+  company_id: string;
+  total: number;
+  open: number;
+  blocked: number;
+  completed: number;
+  due_soon: number;
+  overdue: number;
 }
 
 export interface LeaveRequest extends Timestamped {
