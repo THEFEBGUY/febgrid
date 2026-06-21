@@ -21,6 +21,7 @@ class Company(TimestampMixin, Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
     employees = relationship("Employee", back_populates="company", cascade="all, delete-orphan")
+    departments = relationship("Department", back_populates="company", cascade="all, delete-orphan")
     teams = relationship("Team", back_populates="company", cascade="all, delete-orphan")
     projects = relationship("Project", back_populates="company", cascade="all, delete-orphan")
     work_objects = relationship("WorkObject", back_populates="company", cascade="all, delete-orphan")

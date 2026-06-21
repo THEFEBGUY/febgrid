@@ -4,14 +4,18 @@ import { api, ApiError } from "../services/api";
 import type {
   Company,
   CompanyCreatePayload,
+  DepartmentCreatePayload,
   EmployeeCreatePayload,
+  EmployeeUpdatePayload,
   FebGridData,
   LeaveCreatePayload,
+  TeamCreatePayload,
   WorkObjectCreatePayload,
 } from "../types/api";
 
 const emptyData: FebGridData = {
   companies: [],
+  departments: [],
   employees: [],
   teams: [],
   projects: [],
@@ -38,6 +42,11 @@ interface FebGridDataState {
   refreshModules: () => Promise<void>;
   createCompany: (payload: CompanyCreatePayload) => Promise<void>;
   createEmployee: (payload: Omit<EmployeeCreatePayload, "company_id">) => Promise<void>;
+  updateEmployee: (employeeId: string, payload: EmployeeUpdatePayload) => Promise<void>;
+  deactivateEmployee: (employeeId: string) => Promise<void>;
+  updateEmployeeStatus: (employeeId: string, currentStatus: string) => Promise<void>;
+  createDepartment: (payload: Omit<DepartmentCreatePayload, "company_id">) => Promise<void>;
+  createTeam: (payload: Omit<TeamCreatePayload, "company_id">) => Promise<void>;
   createWorkObject: (payload: Omit<WorkObjectCreatePayload, "company_id">) => Promise<void>;
   createLeave: (payload: Omit<LeaveCreatePayload, "company_id">) => Promise<void>;
 }
@@ -168,7 +177,8 @@ export function useFebGridData({ enabled = true }: UseFebGridDataOptions = {}): 
     setModuleErrors({});
     setData((current) => ({ ...current, ...emptyData, companies: current.companies }));
 
-    const [employees, teams, projects, workObjects, leaves, events, notifications] = await Promise.allSettled([
+    const [departments, employees, teams, projects, workObjects, leaves, events, notifications] = await Promise.allSettled([
+      api.departments(selectedCompanyId),
       api.employees(selectedCompanyId),
       api.teams(selectedCompanyId),
       api.projects(selectedCompanyId),
@@ -180,6 +190,9 @@ export function useFebGridData({ enabled = true }: UseFebGridDataOptions = {}): 
 
     const nextData: Partial<FebGridData> = {};
     const nextErrors: ModuleErrors = {};
+
+    if (departments.status === "fulfilled") nextData.departments = departments.value;
+    else nextErrors.departments = getErrorMessage(departments.reason);
 
     if (employees.status === "fulfilled") nextData.employees = employees.value;
     else nextErrors.employees = getErrorMessage(employees.reason);
@@ -255,6 +268,46 @@ export function useFebGridData({ enabled = true }: UseFebGridDataOptions = {}): 
     });
   }
 
+  async function updateEmployee(employeeId: string, payload: EmployeeUpdatePayload): Promise<void> {
+    if (!selectedCompanyId) return;
+    await runMutation(async () => {
+      await api.updateEmployee(employeeId, selectedCompanyId, payload);
+      await refreshModules();
+    });
+  }
+
+  async function deactivateEmployee(employeeId: string): Promise<void> {
+    if (!selectedCompanyId) return;
+    await runMutation(async () => {
+      await api.deactivateEmployee(employeeId, selectedCompanyId);
+      await refreshModules();
+    });
+  }
+
+  async function updateEmployeeStatus(employeeId: string, currentStatus: string): Promise<void> {
+    if (!selectedCompanyId) return;
+    await runMutation(async () => {
+      await api.updateEmployeeStatus(employeeId, { company_id: selectedCompanyId, current_status: currentStatus });
+      await refreshModules();
+    });
+  }
+
+  async function createDepartment(payload: Omit<DepartmentCreatePayload, "company_id">): Promise<void> {
+    if (!selectedCompanyId) return;
+    await runMutation(async () => {
+      await api.createDepartment({ ...payload, company_id: selectedCompanyId });
+      await refreshModules();
+    });
+  }
+
+  async function createTeam(payload: Omit<TeamCreatePayload, "company_id">): Promise<void> {
+    if (!selectedCompanyId) return;
+    await runMutation(async () => {
+      await api.createTeam({ ...payload, company_id: selectedCompanyId });
+      await refreshModules();
+    });
+  }
+
   async function createWorkObject(payload: Omit<WorkObjectCreatePayload, "company_id">): Promise<void> {
     if (!selectedCompanyId) return;
     await runMutation(async () => {
@@ -285,6 +338,11 @@ export function useFebGridData({ enabled = true }: UseFebGridDataOptions = {}): 
     refreshModules,
     createCompany,
     createEmployee,
+    updateEmployee,
+    deactivateEmployee,
+    updateEmployeeStatus,
+    createDepartment,
+    createTeam,
     createWorkObject,
     createLeave,
   };

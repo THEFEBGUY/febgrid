@@ -4,10 +4,11 @@ from fastapi import APIRouter, Depends, Query, Response, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.api.deps import db_session, get_optional_current_user
+from app.api.deps import db_session, get_current_user
 from app.api.utils import ensure_company, get_or_404, update_model
 from app.core.permissions import OWNER_ADMIN_ROLES, ensure_company_access, ensure_role
 from app.models.company import Company
+from app.models.department import Department
 from app.models.employee import Employee
 from app.models.team import Team, TeamMember
 from app.models.user import User
@@ -17,25 +18,34 @@ from app.services.event_service import EventService
 router = APIRouter(prefix="/teams", tags=["teams"])
 
 
+def validate_team_refs(db: Session, company_id: UUID, department_id: UUID | None, lead_employee_id: UUID | None) -> None:
+    if department_id:
+        department = get_or_404(db, Department, department_id, label="Department")
+        ensure_company(department, company_id, label="Department")
+    if lead_employee_id:
+        lead = get_or_404(db, Employee, lead_employee_id, label="Team lead")
+        ensure_company(lead, company_id, label="Team lead")
+
+
 @router.post("", response_model=TeamRead, status_code=status.HTTP_201_CREATED)
 def create_team(
     payload: TeamCreate,
     db: Session = Depends(db_session),
-    current_user: User | None = Depends(get_optional_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> Team:
     ensure_company_access(current_user, payload.company_id)
     ensure_role(current_user, OWNER_ADMIN_ROLES)
     get_or_404(db, Company, payload.company_id, label="Company")
-    if payload.lead_employee_id:
-        lead = get_or_404(db, Employee, payload.lead_employee_id, label="Team lead")
-        ensure_company(lead, payload.company_id, label="Team lead")
+    validate_team_refs(db, payload.company_id, payload.department_id, payload.lead_employee_id)
 
     team = Team(
         company_id=payload.company_id,
+        department_id=payload.department_id,
         lead_employee_id=payload.lead_employee_id,
         name=payload.name,
         department=payload.department,
         description=payload.description,
+        is_active=payload.is_active,
     )
     db.add(team)
     db.flush()
@@ -47,7 +57,7 @@ def create_team(
         title=f"{team.name} created",
         target_entity_type="team",
         target_entity_id=team.id,
-        metadata={"department": team.department},
+        metadata={"department_id": str(team.department_id) if team.department_id else None},
     )
     db.commit()
     db.refresh(team)
@@ -58,18 +68,16 @@ def create_team(
 def list_teams(
     company_id: UUID,
     db: Session = Depends(db_session),
-    current_user: User | None = Depends(get_optional_current_user),
+    current_user: User = Depends(get_current_user),
+    include_inactive: bool = False,
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
 ) -> list[Team]:
     ensure_company_access(current_user, company_id)
-    statement = (
-        select(Team)
-        .where(Team.company_id == company_id)
-        .order_by(Team.name.asc())
-        .limit(limit)
-        .offset(offset)
-    )
+    statement = select(Team).where(Team.company_id == company_id)
+    if not include_inactive:
+        statement = statement.where(Team.is_active.is_(True))
+    statement = statement.order_by(Team.name.asc()).limit(limit).offset(offset)
     return list(db.scalars(statement).all())
 
 
@@ -78,7 +86,7 @@ def get_team(
     team_id: UUID,
     company_id: UUID,
     db: Session = Depends(db_session),
-    current_user: User | None = Depends(get_optional_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> Team:
     ensure_company_access(current_user, company_id)
     team = get_or_404(db, Team, team_id, label="Team")
@@ -92,15 +100,13 @@ def update_team(
     company_id: UUID,
     payload: TeamUpdate,
     db: Session = Depends(db_session),
-    current_user: User | None = Depends(get_optional_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> Team:
     ensure_company_access(current_user, company_id)
     ensure_role(current_user, OWNER_ADMIN_ROLES)
     team = get_or_404(db, Team, team_id, label="Team")
     ensure_company(team, company_id, label="Team")
-    if payload.lead_employee_id:
-        lead = get_or_404(db, Employee, payload.lead_employee_id, label="Team lead")
-        ensure_company(lead, company_id, label="Team lead")
+    validate_team_refs(db, company_id, payload.department_id, payload.lead_employee_id)
     changed = update_model(team, payload)
     if changed:
         EventService.record_event(
@@ -124,22 +130,22 @@ def delete_team(
     company_id: UUID,
     actor_employee_id: UUID | None = None,
     db: Session = Depends(db_session),
-    current_user: User | None = Depends(get_optional_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> Response:
     ensure_company_access(current_user, company_id)
     ensure_role(current_user, OWNER_ADMIN_ROLES)
     team = get_or_404(db, Team, team_id, label="Team")
     ensure_company(team, company_id, label="Team")
+    team.is_active = False
     EventService.record_event(
         db,
         company_id=company_id,
         actor_employee_id=actor_employee_id,
-        event_type="team.deleted",
-        title=f"{team.name} deleted",
+        event_type="team.deactivated",
+        title=f"{team.name} deactivated",
         target_entity_type="team",
         target_entity_id=team.id,
     )
-    db.delete(team)
     db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
@@ -149,7 +155,7 @@ def add_team_member(
     team_id: UUID,
     payload: TeamMemberCreate,
     db: Session = Depends(db_session),
-    current_user: User | None = Depends(get_optional_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> TeamMember:
     ensure_company_access(current_user, payload.company_id)
     ensure_role(current_user, OWNER_ADMIN_ROLES)
@@ -159,6 +165,7 @@ def add_team_member(
     ensure_company(employee, payload.company_id, label="Employee")
 
     member = TeamMember(company_id=payload.company_id, team_id=team_id, employee_id=payload.employee_id)
+    employee.team_id = team_id
     db.add(member)
     db.flush()
     EventService.record_event(
@@ -183,12 +190,14 @@ def remove_team_member(
     company_id: UUID,
     actor_employee_id: UUID | None = None,
     db: Session = Depends(db_session),
-    current_user: User | None = Depends(get_optional_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> Response:
     ensure_company_access(current_user, company_id)
     ensure_role(current_user, OWNER_ADMIN_ROLES)
     team = get_or_404(db, Team, team_id, label="Team")
     ensure_company(team, company_id, label="Team")
+    employee = get_or_404(db, Employee, employee_id, label="Employee")
+    ensure_company(employee, company_id, label="Employee")
     statement = select(TeamMember).where(
         TeamMember.company_id == company_id,
         TeamMember.team_id == team_id,
@@ -207,6 +216,8 @@ def remove_team_member(
         target_entity_id=team.id,
         metadata={"employee_id": str(employee_id)},
     )
+    if employee.team_id == team_id:
+        employee.team_id = None
     db.delete(member)
     db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)

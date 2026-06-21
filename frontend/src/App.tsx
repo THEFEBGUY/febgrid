@@ -70,9 +70,23 @@ export function App(): JSX.Element {
       case "companies":
         return <CompaniesPage {...withModuleError(null)} onCreateCompany={febGrid.createCompany} />;
       case "employees":
-        return <EmployeesPage {...withModuleError(febGrid.moduleErrors.employees ?? null)} onCreateEmployee={febGrid.createEmployee} />;
+        return (
+          <EmployeesPage
+            {...withModuleError(febGrid.moduleErrors.employees ?? febGrid.moduleErrors.departments ?? null)}
+            onCreateEmployee={febGrid.createEmployee}
+            onDeactivateEmployee={febGrid.deactivateEmployee}
+            onUpdateEmployee={febGrid.updateEmployee}
+            onUpdateEmployeeStatus={febGrid.updateEmployeeStatus}
+          />
+        );
       case "teams":
-        return <TeamsPage {...withModuleError(febGrid.moduleErrors.teams ?? null)} />;
+        return (
+          <TeamsPage
+            {...withModuleError(febGrid.moduleErrors.teams ?? febGrid.moduleErrors.departments ?? null)}
+            onCreateDepartment={febGrid.createDepartment}
+            onCreateTeam={febGrid.createTeam}
+          />
+        );
       case "projects":
         return <ProjectsPage {...withModuleError(febGrid.moduleErrors.projects ?? null)} />;
       case "work-objects":

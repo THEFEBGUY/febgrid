@@ -19,6 +19,7 @@ Phase 1 focuses on the backend foundation:
 - SQLAlchemy models with UUID primary keys and `company_id` tenant separation
 - Alembic migrations
 - CRUD APIs for companies, employees, teams, projects, work objects, leave requests, attachments, notifications, events, and AI jobs
+- Sprint 3 employee management foundation for departments, teams, employee profiles, employee status, and tenant-aware people operations
 - Health check, universal timeline, and basic operational search
 - Mock-only AI boundary in `backend/app/services/ai_service.py`
 
@@ -80,7 +81,7 @@ The frontend reads the backend URL from `VITE_API_BASE_URL`. The documented defa
 VITE_API_BASE_URL=http://localhost:8000
 ```
 
-The Phase 1 frontend includes the main dashboard shell, sidebar navigation, reusable table/card/badge UI, and pages for Dashboard, Companies, Employees, Teams, Projects, Work Objects, Leaves, Events, and Notifications.
+The Phase 1 frontend includes the main dashboard shell, sidebar navigation, reusable table/card/badge UI, and pages for Dashboard, Companies, Employees, Teams, Projects, Work Objects, Leaves, Events, and Notifications. Sprint 3 adds authenticated employee directory management, employee profile modals, status controls, department creation, and team creation.
 
 ## Alembic
 
@@ -105,6 +106,7 @@ All Phase 1 endpoints are mounted under `/api/v1`.
 - `/auth/logout`
 - `/auth/me`
 - `/companies`
+- `/departments`
 - `/employees`
 - `/teams`
 - `/projects`

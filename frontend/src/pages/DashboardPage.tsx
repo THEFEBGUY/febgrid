@@ -15,7 +15,7 @@ const metricIcons = [Users, CheckCircle2, AlertTriangle, CalendarDays] as const;
 
 export function DashboardPage({ data, selectedCompany, isLoadingCompanies, isLoadingModules, moduleError, onRetry }: ModulePageProps): JSX.Element {
   const metrics = useMemo<Metric[]>(() => {
-    const activeEmployees = data.employees.filter((employee) => !["offline", "on_leave"].includes(employee.status)).length;
+    const activeEmployees = data.employees.filter((employee) => !["offline", "on_leave"].includes(employee.current_status)).length;
     const openWork = data.workObjects.filter((workObject) => !["completed", "archived", "rejected"].includes(workObject.status)).length;
     const blockedWork = data.workObjects.filter((workObject) => workObject.status === "blocked").length;
     const pendingLeaves = data.leaves.filter((leave) => leave.status === "pending").length;

@@ -1,17 +1,18 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
-from app.api.deps import db_session, get_optional_current_user
+from app.api.deps import db_session, get_current_user
 from app.api.serializers import serialize_events
 from app.api.utils import ensure_company, get_or_404, update_model
 from app.core.permissions import OWNER_ADMIN_ROLES, ensure_company_access, ensure_role
 from app.models.company import Company
+from app.models.department import Department
 from app.models.employee import Employee
 from app.models.event import Event
-from app.models.team import TeamMember
+from app.models.team import Team, TeamMember
 from app.models.user import User
 from app.schemas.employee import EmployeeCreate, EmployeeRead, EmployeeStatusUpdate, EmployeeUpdate
 from app.schemas.event import EventRead
@@ -19,35 +20,87 @@ from app.services.event_service import EventService
 
 router = APIRouter(prefix="/employees", tags=["employees"])
 
+EMPLOYEE_STATUSES = {"working", "on_break", "offline", "on_leave", "done_for_the_day", "busy", "available"}
+
+
+def ensure_employee_status(status_value: str) -> None:
+    if status_value not in EMPLOYEE_STATUSES:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Invalid employee status",
+        )
+
+
+def validate_employee_refs(
+    db: Session,
+    *,
+    company_id: UUID,
+    user_id: UUID | None = None,
+    department_id: UUID | None = None,
+    team_id: UUID | None = None,
+    manager_id: UUID | None = None,
+) -> None:
+    if user_id:
+        user = get_or_404(db, User, user_id, label="User")
+        ensure_company_access(user, company_id)
+    if department_id:
+        department = get_or_404(db, Department, department_id, label="Department")
+        ensure_company(department, company_id, label="Department")
+    if team_id:
+        team = get_or_404(db, Team, team_id, label="Team")
+        ensure_company(team, company_id, label="Team")
+    if manager_id:
+        manager = get_or_404(db, Employee, manager_id, label="Manager")
+        ensure_company(manager, company_id, label="Manager")
+
+
+def can_view_employee(current_user: User | None, employee: Employee) -> bool:
+    if current_user is None:
+        return True
+    if current_user.role in {"company_owner", "admin", "manager"}:
+        return True
+    return employee.user_id == current_user.id
+
 
 @router.post("", response_model=EmployeeRead, status_code=status.HTTP_201_CREATED)
 def create_employee(
     payload: EmployeeCreate,
     db: Session = Depends(db_session),
-    current_user: User | None = Depends(get_optional_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> Employee:
     ensure_company_access(current_user, payload.company_id)
     ensure_role(current_user, OWNER_ADMIN_ROLES)
     get_or_404(db, Company, payload.company_id, label="Company")
-    if payload.manager_id:
-        manager = get_or_404(db, Employee, payload.manager_id, label="Manager")
-        ensure_company(manager, payload.company_id, label="Manager")
+    ensure_employee_status(payload.current_status)
+    validate_employee_refs(
+        db,
+        company_id=payload.company_id,
+        user_id=payload.user_id,
+        department_id=payload.department_id,
+        team_id=payload.team_id,
+        manager_id=payload.manager_id,
+    )
 
     employee = Employee(
         company_id=payload.company_id,
+        user_id=payload.user_id,
+        department_id=payload.department_id,
+        team_id=payload.team_id,
         manager_id=payload.manager_id,
         full_name=payload.full_name,
-        email=str(payload.email),
+        email=str(payload.email) if payload.email else None,
         phone=payload.phone,
-        role=payload.role,
+        role=payload.role_title,
         department=payload.department,
         employment_type=payload.employment_type,
-        status=payload.status,
+        status=payload.current_status,
         location=payload.location,
         profile_image_url=payload.profile_image_url,
         skills=payload.skills,
         metadata_json=payload.metadata,
     )
+    if payload.joined_at:
+        employee.joined_at = payload.joined_at
     db.add(employee)
     db.flush()
     EventService.record_event(
@@ -57,7 +110,7 @@ def create_employee(
         title=f"{employee.full_name} added",
         target_entity_type="employee",
         target_entity_id=employee.id,
-        metadata={"role": employee.role, "department": employee.department},
+        metadata={"role_title": employee.role, "department_id": str(employee.department_id) if employee.department_id else None},
     )
     db.commit()
     db.refresh(employee)
@@ -68,21 +121,32 @@ def create_employee(
 def list_employees(
     company_id: UUID,
     db: Session = Depends(db_session),
-    current_user: User | None = Depends(get_optional_current_user),
+    current_user: User = Depends(get_current_user),
     status_filter: str | None = Query(default=None, alias="status"),
     team_id: UUID | None = None,
+    include_inactive: bool = False,
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
 ) -> list[Employee]:
     ensure_company_access(current_user, company_id)
     statement = select(Employee).where(Employee.company_id == company_id)
+    if current_user is not None and current_user.role == "employee":
+        statement = statement.where(Employee.user_id == current_user.id)
+    if not include_inactive:
+        statement = statement.where(Employee.is_active.is_(True))
     if status_filter:
         statement = statement.where(Employee.status == status_filter)
     if team_id:
-        statement = statement.join(TeamMember, TeamMember.employee_id == Employee.id).where(
-            TeamMember.company_id == company_id,
-            TeamMember.team_id == team_id,
+        membership_exists = (
+            select(TeamMember.id)
+            .where(
+                TeamMember.company_id == company_id,
+                TeamMember.team_id == team_id,
+                TeamMember.employee_id == Employee.id,
+            )
+            .exists()
         )
+        statement = statement.where(or_(Employee.team_id == team_id, membership_exists))
     statement = statement.order_by(Employee.full_name.asc()).limit(limit).offset(offset)
     return list(db.scalars(statement).all())
 
@@ -92,11 +156,13 @@ def get_employee(
     employee_id: UUID,
     company_id: UUID,
     db: Session = Depends(db_session),
-    current_user: User | None = Depends(get_optional_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> Employee:
     ensure_company_access(current_user, company_id)
     employee = get_or_404(db, Employee, employee_id, label="Employee")
     ensure_company(employee, company_id, label="Employee")
+    if not can_view_employee(current_user, employee):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Employee not found")
     return employee
 
 
@@ -106,16 +172,27 @@ def update_employee(
     company_id: UUID,
     payload: EmployeeUpdate,
     db: Session = Depends(db_session),
-    current_user: User | None = Depends(get_optional_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> Employee:
     ensure_company_access(current_user, company_id)
     ensure_role(current_user, OWNER_ADMIN_ROLES)
     employee = get_or_404(db, Employee, employee_id, label="Employee")
     ensure_company(employee, company_id, label="Employee")
-    if "manager_id" in payload.model_fields_set and payload.manager_id:
-        manager = get_or_404(db, Employee, payload.manager_id, label="Manager")
-        ensure_company(manager, company_id, label="Manager")
-    changed = update_model(employee, payload, alias_fields={"metadata": "metadata_json"})
+    if payload.current_status is not None:
+        ensure_employee_status(payload.current_status)
+    validate_employee_refs(
+        db,
+        company_id=company_id,
+        user_id=payload.user_id,
+        department_id=payload.department_id,
+        team_id=payload.team_id,
+        manager_id=payload.manager_id,
+    )
+    changed = update_model(
+        employee,
+        payload,
+        alias_fields={"metadata": "metadata_json", "role_title": "role", "current_status": "status"},
+    )
     if changed:
         EventService.record_event(
             db,
@@ -137,22 +214,22 @@ def delete_employee(
     company_id: UUID,
     actor_employee_id: UUID | None = None,
     db: Session = Depends(db_session),
-    current_user: User | None = Depends(get_optional_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> Response:
     ensure_company_access(current_user, company_id)
     ensure_role(current_user, OWNER_ADMIN_ROLES)
     employee = get_or_404(db, Employee, employee_id, label="Employee")
     ensure_company(employee, company_id, label="Employee")
+    employee.is_active = False
     EventService.record_event(
         db,
         company_id=company_id,
         actor_employee_id=actor_employee_id,
-        event_type="employee.deleted",
-        title=f"{employee.full_name} removed",
+        event_type="employee.deactivated",
+        title=f"{employee.full_name} deactivated",
         target_entity_type="employee",
         target_entity_id=employee.id,
     )
-    db.delete(employee)
     db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
@@ -162,13 +239,16 @@ def update_employee_status(
     employee_id: UUID,
     payload: EmployeeStatusUpdate,
     db: Session = Depends(db_session),
-    current_user: User | None = Depends(get_optional_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> Employee:
     ensure_company_access(current_user, payload.company_id)
     employee = get_or_404(db, Employee, employee_id, label="Employee")
     ensure_company(employee, payload.company_id, label="Employee")
+    if current_user.role not in OWNER_ADMIN_ROLES and employee.user_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission for this action")
     old_status = employee.status
-    employee.status = payload.status
+    ensure_employee_status(payload.current_status)
+    employee.status = payload.current_status
     EventService.record_event(
         db,
         company_id=payload.company_id,
@@ -177,7 +257,7 @@ def update_employee_status(
         title=f"{employee.full_name} status changed",
         target_entity_type="employee",
         target_entity_id=employee.id,
-        metadata={"from": old_status, "to": payload.status},
+        metadata={"from": old_status, "to": payload.current_status},
     )
     db.commit()
     db.refresh(employee)
@@ -189,12 +269,14 @@ def get_employee_activity(
     employee_id: UUID,
     company_id: UUID,
     db: Session = Depends(db_session),
-    current_user: User | None = Depends(get_optional_current_user),
+    current_user: User = Depends(get_current_user),
     limit: int = Query(default=50, ge=1, le=200),
 ) -> list[EventRead]:
     ensure_company_access(current_user, company_id)
     employee = get_or_404(db, Employee, employee_id, label="Employee")
     ensure_company(employee, company_id, label="Employee")
+    if not can_view_employee(current_user, employee):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Employee not found")
     statement = (
         select(Event)
         .where(

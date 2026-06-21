@@ -69,43 +69,100 @@ export interface RegisterPayload {
 export interface Employee extends Timestamped {
   id: string;
   company_id: string;
+  user_id: string | null;
+  department_id: string | null;
+  team_id: string | null;
   manager_id: string | null;
   full_name: string;
-  email: string;
+  email: string | null;
   phone: string | null;
-  role: string;
+  role_title: string;
   department: string | null;
   employment_type: string;
-  status: string;
+  current_status: string;
   location: string | null;
   profile_image_url: string | null;
   skills: string[];
   metadata: Record<string, unknown>;
+  joined_at: string | null;
+  is_active: boolean;
 }
 
 export interface EmployeeCreatePayload {
   company_id: string;
+  user_id?: string | null;
+  department_id?: string | null;
+  team_id?: string | null;
   manager_id?: string | null;
   full_name: string;
-  email: string;
+  email?: string | null;
   phone?: string | null;
-  role: string;
+  role_title: string;
   department?: string | null;
   employment_type: string;
-  status: string;
+  current_status: string;
   location?: string | null;
   profile_image_url?: string | null;
   skills: string[];
   metadata: Record<string, unknown>;
+  joined_at?: string | null;
+  is_active?: boolean;
+}
+
+export interface EmployeeUpdatePayload {
+  user_id?: string | null;
+  department_id?: string | null;
+  team_id?: string | null;
+  manager_id?: string | null;
+  full_name?: string;
+  email?: string | null;
+  phone?: string | null;
+  role_title?: string;
+  department?: string | null;
+  employment_type?: string;
+  current_status?: string;
+  location?: string | null;
+  profile_image_url?: string | null;
+  skills?: string[];
+  metadata?: Record<string, unknown>;
+  joined_at?: string | null;
+  is_active?: boolean;
+}
+
+export interface Department extends Timestamped {
+  id: string;
+  company_id: string;
+  name: string;
+  description: string | null;
+  is_active: boolean;
+}
+
+export interface DepartmentCreatePayload {
+  company_id: string;
+  name: string;
+  description?: string | null;
+  is_active?: boolean;
 }
 
 export interface Team extends Timestamped {
   id: string;
   company_id: string;
+  department_id: string | null;
   lead_employee_id: string | null;
   name: string;
   department: string | null;
   description: string | null;
+  is_active: boolean;
+}
+
+export interface TeamCreatePayload {
+  company_id: string;
+  department_id?: string | null;
+  lead_employee_id?: string | null;
+  name: string;
+  department?: string | null;
+  description?: string | null;
+  is_active?: boolean;
 }
 
 export interface Project extends Timestamped {
@@ -209,6 +266,7 @@ export interface Notification {
 
 export interface FebGridData {
   companies: Company[];
+  departments: Department[];
   employees: Employee[];
   teams: Team[];
   projects: Project[];
