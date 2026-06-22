@@ -17,6 +17,7 @@ interface AppLayoutProps {
   companies: Company[];
   selectedCompanyId: string | null;
   currentUser: AuthUser | null;
+  unreadNotificationCount: number;
   onSelectCompany: (companyId: string) => void;
   onLogout: () => void;
   children: ReactNode;
@@ -31,6 +32,7 @@ export function AppLayout({
   companies,
   selectedCompanyId,
   currentUser,
+  unreadNotificationCount,
   onSelectCompany,
   onLogout,
   children,
@@ -69,8 +71,10 @@ export function AppLayout({
           companies={companies}
           selectedCompanyId={selectedCompanyId}
           currentUser={currentUser}
+          unreadNotificationCount={unreadNotificationCount}
           onOpenSidebar={onOpenSidebar}
           onSelectCompany={onSelectCompany}
+          onOpenNotifications={() => onNavigate("notifications")}
           onLogout={onLogout}
         />
         <main className="mx-auto w-full max-w-7xl px-4 py-6 lg:px-8">{children}</main>

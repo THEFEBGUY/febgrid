@@ -9,9 +9,12 @@ from app.schemas.common import FebGridModel
 
 class EventBase(FebGridModel):
     company_id: UUID
+    actor_user_id: UUID | None = None
     actor_employee_id: UUID | None = None
     target_entity_type: str | None = Field(default=None, max_length=80)
     target_entity_id: UUID | None = None
+    related_entity_type: str | None = Field(default=None, max_length=80)
+    related_entity_id: UUID | None = None
     event_type: str = Field(min_length=1, max_length=120)
     title: str = Field(min_length=1, max_length=220)
     description: str | None = None

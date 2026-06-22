@@ -11,7 +11,9 @@ interface TopbarProps {
   companies: Company[];
   selectedCompanyId: string | null;
   currentUser: AuthUser | null;
+  unreadNotificationCount: number;
   onSelectCompany: (companyId: string) => void;
+  onOpenNotifications: () => void;
   onLogout: () => void;
 }
 
@@ -22,7 +24,9 @@ export function Topbar({
   companies,
   selectedCompanyId,
   currentUser,
+  unreadNotificationCount,
   onSelectCompany,
+  onOpenNotifications,
   onLogout,
 }: TopbarProps): JSX.Element {
   return (
@@ -71,8 +75,18 @@ export function Topbar({
           </label>
           <div className="flex gap-2">
             <Button icon={<ShieldCheck className="size-4" aria-hidden="true" />}>Tenant safe</Button>
-            <Button aria-label="Notifications" className="size-10 px-0" icon={<Bell className="size-4" aria-hidden="true" />}>
+            <Button
+              aria-label="Notifications"
+              className="relative size-10 px-0"
+              icon={<Bell className="size-4" aria-hidden="true" />}
+              onClick={onOpenNotifications}
+            >
               <span className="sr-only">Notifications</span>
+              {unreadNotificationCount > 0 ? (
+                <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-rose-600 px-1 text-[10px] font-black leading-none text-white">
+                  {unreadNotificationCount > 99 ? "99+" : unreadNotificationCount}
+                </span>
+              ) : null}
             </Button>
             <div className="hidden min-w-0 rounded-md border border-grid-200 bg-white px-3 py-1.5 shadow-sm xl:block">
               <p className="max-w-40 truncate text-sm font-bold text-ink-950">{currentUser?.full_name ?? "User"}</p>

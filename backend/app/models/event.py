@@ -23,8 +23,14 @@ class Event(Base):
         PG_UUID(as_uuid=True),
         ForeignKey("employees.id", ondelete="SET NULL"),
     )
+    actor_user_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+    )
     target_entity_type: Mapped[str | None] = mapped_column(String(80))
     target_entity_id: Mapped[UUID | None] = mapped_column(PG_UUID(as_uuid=True))
+    related_entity_type: Mapped[str | None] = mapped_column(String(80))
+    related_entity_id: Mapped[UUID | None] = mapped_column(PG_UUID(as_uuid=True))
     event_type: Mapped[str] = mapped_column(String(120), nullable=False)
     title: Mapped[str] = mapped_column(String(220), nullable=False)
     description: Mapped[str | None] = mapped_column(Text)
@@ -33,9 +39,13 @@ class Event(Base):
 
     company = relationship("Company", back_populates="events")
     actor = relationship("Employee")
+    actor_user = relationship("User")
 
     __table_args__ = (
         Index("idx_events_company_id_created_at", "company_id", "created_at"),
         Index("idx_events_target", "target_entity_type", "target_entity_id"),
+        Index("idx_events_related", "related_entity_type", "related_entity_id"),
         Index("idx_events_actor_employee_id", "actor_employee_id"),
+        Index("idx_events_actor_user_id", "actor_user_id"),
+        Index("idx_events_company_type_created_at", "company_id", "event_type", "created_at"),
     )

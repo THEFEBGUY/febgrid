@@ -15,9 +15,12 @@ def serialize_event(event: Event) -> EventRead:
     return EventRead(
         id=event.id,
         company_id=event.company_id,
+        actor_user_id=event.actor_user_id,
         actor_employee_id=event.actor_employee_id,
         target_entity_type=event.target_entity_type,
         target_entity_id=event.target_entity_id,
+        related_entity_type=event.related_entity_type,
+        related_entity_id=event.related_entity_id,
         event_type=event.event_type,
         title=event.title,
         description=event.description,

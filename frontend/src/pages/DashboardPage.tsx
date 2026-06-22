@@ -1,4 +1,4 @@
-import { AlertTriangle, CalendarDays, CheckCircle2, Clock3, FolderKanban, Users } from "lucide-react";
+import { AlertTriangle, Bell, CalendarDays, CheckCircle2, Clock3, FolderKanban, Users } from "lucide-react";
 import { useMemo } from "react";
 
 import { Badge } from "../components/ui/Badge";
@@ -11,7 +11,7 @@ import type { Metric } from "../types/domain";
 import type { ModulePageProps } from "../types/page";
 import { compactList, formatDate, formatLabel, formatTime } from "../utils/format";
 
-const metricIcons = [Users, FolderKanban, CheckCircle2, AlertTriangle, CheckCircle2, CalendarDays, CalendarDays, CheckCircle2, Clock3] as const;
+const metricIcons = [Users, FolderKanban, CheckCircle2, AlertTriangle, CheckCircle2, CalendarDays, CalendarDays, CheckCircle2, Bell, Clock3] as const;
 
 export function DashboardPage({ data, selectedCompany, isLoadingCompanies, isLoadingModules, moduleError, onRetry }: ModulePageProps): JSX.Element {
   const metrics = useMemo<Metric[]>(() => {
@@ -22,6 +22,7 @@ export function DashboardPage({ data, selectedCompany, isLoadingCompanies, isLoa
     const completedWork = data.workObjects.filter((workObject) => workObject.is_active && workObject.status === "completed").length;
     const pendingLeaves = data.leaves.filter((leave) => leave.is_active && leave.status === "pending").length;
     const approvedLeaves = data.leaves.filter((leave) => leave.is_active && leave.status === "approved").length;
+    const unreadNotifications = data.notifications.filter((notification) => !notification.is_read && !notification.is_dismissed).length;
     const now = new Date();
     const soon = new Date(now);
     soon.setDate(soon.getDate() + 7);
@@ -42,9 +43,10 @@ export function DashboardPage({ data, selectedCompany, isLoadingCompanies, isLoa
       { label: "Due soon", value: dueSoon.toString(), tone: dueSoon > 0 ? "amber" : "green", delta: "Next 7 days" },
       { label: "Pending leaves", value: pendingLeaves.toString(), tone: pendingLeaves > 0 ? "amber" : "green", delta: "Awaiting review" },
       { label: "Approved leaves", value: approvedLeaves.toString(), tone: "green", delta: "Active records" },
+      { label: "Unread notifications", value: unreadNotifications.toString(), tone: unreadNotifications > 0 ? "amber" : "green", delta: "Pending action stream" },
       { label: "Leave requests", value: leaveRequestsThisMonth.toString(), tone: "blue", delta: "This month" },
     ];
-  }, [data.employees, data.leaves, data.projects, data.workObjects]);
+  }, [data.employees, data.leaves, data.notifications, data.projects, data.workObjects]);
 
   const employeeNames = useMemo(
     () => Object.fromEntries(data.employees.map((employee) => [employee.id, employee.full_name])),
@@ -54,6 +56,7 @@ export function DashboardPage({ data, selectedCompany, isLoadingCompanies, isLoa
   const priorityWork = data.workObjects
     .filter((workObject) => workObject.is_active && !["completed", "cancelled"].includes(workObject.status))
     .slice(0, 5);
+  const recentNotifications = data.notifications.filter((notification) => !notification.is_dismissed).slice(0, 3);
 
   if (!selectedCompany && !isLoadingCompanies && !isLoadingModules) {
     return (
@@ -136,17 +139,21 @@ export function DashboardPage({ data, selectedCompany, isLoadingCompanies, isLoa
       </section>
 
       <SectionPanel eyebrow="Notifications" title="Action stream">
-        {data.notifications.length === 0 ? (
+        {recentNotifications.length === 0 ? (
           <EmptyState description="Work assignments and leave review notifications will appear here." title="No notifications yet" />
         ) : (
           <div className="grid gap-3 p-5 md:grid-cols-3">
-            {data.notifications.slice(0, 3).map((notification) => (
+            {recentNotifications.map((notification) => (
               <article key={notification.id} className="rounded-lg border border-grid-200 bg-grid-50 p-4">
                 <div className="flex items-start justify-between gap-3">
                   <p className="min-w-0 truncate text-sm font-bold text-ink-950">{notification.title}</p>
                   <Badge label={notification.is_read ? "Read" : "Open"} tone={notification.is_read ? "slate" : "blue"} />
                 </div>
                 <p className="mt-2 line-clamp-2 text-sm text-ink-500">{notification.message}</p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <Badge label={formatLabel(notification.notification_type)} tone="teal" />
+                  <Badge label={formatLabel(notification.priority)} tone={notification.priority === "urgent" ? "red" : notification.priority === "high" ? "amber" : "slate"} />
+                </div>
               </article>
             ))}
           </div>

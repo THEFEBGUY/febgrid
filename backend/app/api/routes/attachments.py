@@ -103,12 +103,15 @@ def record_file_event(
     EventService.record_event(
         db,
         company_id=attachment.company_id,
+        actor_user_id=current_user.id if current_user is not None else None,
         actor_employee_id=actor_employee_id(db, current_user, attachment.uploaded_by_employee_id),
         event_type=event_type,
         title=title,
         description=description,
         target_entity_type="attachment",
         target_entity_id=attachment.id,
+        related_entity_type="work_object" if attachment.work_object_id else None,
+        related_entity_id=attachment.work_object_id,
         metadata=event_metadata,
     )
 

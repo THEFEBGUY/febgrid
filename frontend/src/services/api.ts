@@ -19,6 +19,7 @@ import type {
   LeaveUpdatePayload,
   LoginPayload,
   Notification,
+  NotificationUnreadCount,
   Project,
   ProjectCreatePayload,
   ProjectMember,
@@ -176,4 +177,9 @@ export const api = {
   leaveTimeline: (leaveId: string, companyId: string) => request<Event[]>(companyPath(`/leaves/${leaveId}/timeline`, companyId)),
   events: (companyId: string) => request<Event[]>(companyPath("/timeline", companyId)),
   notifications: (companyId: string) => request<Notification[]>(companyPath("/notifications", companyId)),
+  notificationUnreadCount: (companyId: string) => request<NotificationUnreadCount>(companyPath("/notifications/unread-count", companyId)),
+  markNotificationRead: (notificationId: string, companyId: string) => request<Notification>(companyPath(`/notifications/${notificationId}/read`, companyId), { method: "PATCH" }),
+  markNotificationUnread: (notificationId: string, companyId: string) => request<Notification>(companyPath(`/notifications/${notificationId}/unread`, companyId), { method: "PATCH" }),
+  markAllNotificationsRead: (companyId: string) => request<void>(companyPath("/notifications/read-all", companyId), { method: "PATCH" }),
+  dismissNotification: (notificationId: string, companyId: string) => request<Notification>(companyPath(`/notifications/${notificationId}/dismiss`, companyId), { method: "PATCH" }),
 };

@@ -28,6 +28,7 @@ export function App(): JSX.Element {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const auth = useAuth();
   const febGrid = useFebGridData({ enabled: auth.isAuthenticated });
+  const unreadNotificationCount = febGrid.data.notifications.filter((notification) => !notification.is_read && !notification.is_dismissed).length;
 
   useEffect(() => {
     const handleHashChange = (): void => {
@@ -128,7 +129,15 @@ export function App(): JSX.Element {
       case "events":
         return <EventsPage {...withModuleError(febGrid.moduleErrors.events ?? null)} />;
       case "notifications":
-        return <NotificationsPage {...withModuleError(febGrid.moduleErrors.notifications ?? null)} />;
+        return (
+          <NotificationsPage
+            {...withModuleError(febGrid.moduleErrors.notifications ?? null)}
+            onDismissNotification={febGrid.dismissNotification}
+            onMarkAllRead={febGrid.markAllNotificationsRead}
+            onMarkRead={febGrid.markNotificationRead}
+            onMarkUnread={febGrid.markNotificationUnread}
+          />
+        );
       case "dashboard":
       default:
         return <DashboardPage {...withModuleError(null)} />;
@@ -157,6 +166,7 @@ export function App(): JSX.Element {
       isSidebarOpen={isSidebarOpen}
       companies={febGrid.data.companies}
       currentUser={auth.user}
+      unreadNotificationCount={unreadNotificationCount}
       onCloseSidebar={() => setIsSidebarOpen(false)}
       onLogout={auth.logout}
       onNavigate={handleNavigate}

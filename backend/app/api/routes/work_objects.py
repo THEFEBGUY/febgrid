@@ -167,6 +167,7 @@ def record_work_event(
     return EventService.record_event(
         db,
         company_id=work_object.company_id,
+        actor_user_id=current_user.id if current_user is not None else None,
         actor_employee_id=actor_employee_id(db, current_user, fallback_actor_employee_id),
         event_type=event_type,
         title=title,
@@ -175,6 +176,15 @@ def record_work_event(
         target_entity_id=work_object.id,
         metadata=event_metadata,
     )
+
+
+def work_notification_recipients(work_object: WorkObject, actor_employee_id_value: UUID | None = None) -> list[UUID]:
+    recipients: list[UUID] = []
+    for employee_id in [work_object.assignee_employee_id, work_object.creator_employee_id]:
+        if employee_id is None or employee_id == actor_employee_id_value or employee_id in recipients:
+            continue
+        recipients.append(employee_id)
+    return recipients
 
 
 def build_work_object_data(payload: WorkObjectCreate | WorkObjectUpdate) -> dict[str, object]:
@@ -192,18 +202,60 @@ def build_work_object_data(payload: WorkObjectCreate | WorkObjectUpdate) -> dict
     return data
 
 
-def notify_assignment(db: Session, work_object: WorkObject) -> None:
+def notify_assignment(db: Session, work_object: WorkObject, current_user: User | None, event: Event | None = None) -> None:
     if work_object.assignee_employee_id is None:
         return
+    actor_id = actor_employee_id(db, current_user, work_object.creator_employee_id)
     NotificationService.create_notification(
         db,
         company_id=work_object.company_id,
         recipient_employee_id=work_object.assignee_employee_id,
+        actor_user_id=current_user.id if current_user is not None else None,
+        actor_employee_id=actor_id,
+        event_id=event.id if event is not None else None,
         title="Work assigned",
         message=f"{work_object.title} was assigned to you.",
-        notification_type="work_assigned",
-        related_entity_type="work_object",
-        related_entity_id=work_object.id,
+        notification_type="work_object.assigned",
+        target_entity_type="work_object",
+        target_entity_id=work_object.id,
+        priority="normal",
+        action_url="#/work-objects",
+        metadata={"work_object_id": str(work_object.id)},
+    )
+
+
+def notify_work_change(
+    db: Session,
+    *,
+    work_object: WorkObject,
+    current_user: User | None,
+    event: Event | None,
+    notification_type: str,
+    title: str,
+    message: str,
+    priority: str = "normal",
+    fallback_actor_employee_id: UUID | None = None,
+    metadata: dict[str, object] | None = None,
+) -> None:
+    actor_id = actor_employee_id(db, current_user, fallback_actor_employee_id)
+    recipients = work_notification_recipients(work_object, actor_id)
+    if not recipients:
+        return
+    NotificationService.create_for_employees(
+        db,
+        company_id=work_object.company_id,
+        recipient_employee_ids=recipients,
+        actor_user_id=current_user.id if current_user is not None else None,
+        actor_employee_id=actor_id,
+        event_id=event.id if event is not None else None,
+        title=title,
+        message=message,
+        notification_type=notification_type,
+        target_entity_type="work_object",
+        target_entity_id=work_object.id,
+        priority=priority,
+        action_url="#/work-objects",
+        metadata={"work_object_id": str(work_object.id), **(metadata or {})},
     )
 
 
@@ -282,7 +334,7 @@ def create_work_object(
         fallback_actor_employee_id=work_object.creator_employee_id,
     )
     if work_object.assignee_employee_id:
-        record_work_event(
+        assignment_event = record_work_event(
             db,
             work_object=work_object,
             current_user=current_user,
@@ -292,7 +344,7 @@ def create_work_object(
             metadata={"assignee_employee_id": str(work_object.assignee_employee_id)},
             fallback_actor_employee_id=work_object.creator_employee_id,
         )
-        notify_assignment(db, work_object)
+        notify_assignment(db, work_object, current_user, assignment_event)
     db.commit()
     db.refresh(work_object)
     return work_object
@@ -443,7 +495,7 @@ def update_work_object(
             fallback_actor_employee_id=work_object.creator_employee_id,
         )
     if previous_assignee != work_object.assignee_employee_id:
-        record_work_event(
+        assignment_event = record_work_event(
             db,
             work_object=work_object,
             current_user=current_user,
@@ -456,9 +508,9 @@ def update_work_object(
             },
             fallback_actor_employee_id=work_object.creator_employee_id,
         )
-        notify_assignment(db, work_object)
+        notify_assignment(db, work_object, current_user, assignment_event)
     if previous_status != work_object.status:
-        record_work_event(
+        status_event = record_work_event(
             db,
             work_object=work_object,
             current_user=current_user,
@@ -468,8 +520,20 @@ def update_work_object(
             metadata={"from": previous_status, "to": work_object.status},
             fallback_actor_employee_id=work_object.creator_employee_id,
         )
+        if work_object.status != "completed":
+            notify_work_change(
+                db,
+                work_object=work_object,
+                current_user=current_user,
+                event=status_event,
+                notification_type="work_object.status_changed",
+                title=f"{work_object.title} status changed",
+                message=f"Status changed from {previous_status} to {work_object.status}.",
+                metadata={"from": previous_status, "to": work_object.status},
+                fallback_actor_employee_id=work_object.creator_employee_id,
+            )
     if previous_priority != work_object.priority:
-        record_work_event(
+        priority_event = record_work_event(
             db,
             work_object=work_object,
             current_user=current_user,
@@ -479,6 +543,19 @@ def update_work_object(
             metadata={"from": previous_priority, "to": work_object.priority},
             fallback_actor_employee_id=work_object.creator_employee_id,
         )
+        if work_object.priority in {"high", "critical"}:
+            notify_work_change(
+                db,
+                work_object=work_object,
+                current_user=current_user,
+                event=priority_event,
+                notification_type="work_object.priority_changed",
+                title=f"{work_object.title} priority changed",
+                message=f"Priority changed from {previous_priority} to {work_object.priority}.",
+                priority="high" if work_object.priority == "high" else "urgent",
+                metadata={"from": previous_priority, "to": work_object.priority},
+                fallback_actor_employee_id=work_object.creator_employee_id,
+            )
     if previous_project != work_object.project_id:
         record_work_event(
             db,
@@ -494,13 +571,25 @@ def update_work_object(
             fallback_actor_employee_id=work_object.creator_employee_id,
         )
     if previous_status != "completed" and work_object.status == "completed":
-        record_work_event(
+        completed_event = record_work_event(
             db,
             work_object=work_object,
             current_user=current_user,
             event_type="work_object.completed",
             title=f"{work_object.title} completed",
             description="Work object was completed.",
+            metadata={"completed_at": work_object.completed_at.isoformat() if work_object.completed_at else None},
+            fallback_actor_employee_id=work_object.creator_employee_id,
+        )
+        notify_work_change(
+            db,
+            work_object=work_object,
+            current_user=current_user,
+            event=completed_event,
+            notification_type="work_object.completed",
+            title=f"{work_object.title} completed",
+            message="Work object was completed.",
+            priority="normal",
             metadata={"completed_at": work_object.completed_at.isoformat() if work_object.completed_at else None},
             fallback_actor_employee_id=work_object.creator_employee_id,
         )
@@ -553,7 +642,7 @@ def assign_work_object(
     if work_object.status == "cancelled" and payload.assignee_employee_id is not None:
         work_object.status = "assigned"
     if previous_assignee != work_object.assignee_employee_id:
-        record_work_event(
+        assignment_event = record_work_event(
             db,
             work_object=work_object,
             current_user=current_user,
@@ -566,15 +655,26 @@ def assign_work_object(
             },
             fallback_actor_employee_id=work_object.creator_employee_id,
         )
-        notify_assignment(db, work_object)
+        notify_assignment(db, work_object, current_user, assignment_event)
     if previous_status != work_object.status:
-        record_work_event(
+        status_event = record_work_event(
             db,
             work_object=work_object,
             current_user=current_user,
             event_type="work_object.status_changed",
             title=f"{work_object.title} status changed",
             description="Work object status was changed.",
+            metadata={"from": previous_status, "to": work_object.status},
+            fallback_actor_employee_id=work_object.creator_employee_id,
+        )
+        notify_work_change(
+            db,
+            work_object=work_object,
+            current_user=current_user,
+            event=status_event,
+            notification_type="work_object.status_changed",
+            title=f"{work_object.title} status changed",
+            message=f"Status changed from {previous_status} to {work_object.status}.",
             metadata={"from": previous_status, "to": work_object.status},
             fallback_actor_employee_id=work_object.creator_employee_id,
         )
@@ -600,7 +700,7 @@ def update_work_object_status(
     if work_object.status == "completed" and work_object.completed_at is None:
         work_object.completed_at = datetime.now(timezone.utc)
     if previous_status != work_object.status:
-        record_work_event(
+        status_event = record_work_event(
             db,
             work_object=work_object,
             current_user=current_user,
@@ -610,14 +710,37 @@ def update_work_object_status(
             metadata={"from": previous_status, "to": work_object.status},
             fallback_actor_employee_id=payload.actor_employee_id or work_object.creator_employee_id,
         )
+        if work_object.status != "completed":
+            notify_work_change(
+                db,
+                work_object=work_object,
+                current_user=current_user,
+                event=status_event,
+                notification_type="work_object.status_changed",
+                title=f"{work_object.title} status changed",
+                message=f"Status changed from {previous_status} to {work_object.status}.",
+                metadata={"from": previous_status, "to": work_object.status},
+                fallback_actor_employee_id=payload.actor_employee_id or work_object.creator_employee_id,
+            )
     if previous_status != "completed" and work_object.status == "completed":
-        record_work_event(
+        completed_event = record_work_event(
             db,
             work_object=work_object,
             current_user=current_user,
             event_type="work_object.completed",
             title=f"{work_object.title} completed",
             description="Work object was completed.",
+            metadata={"completed_at": work_object.completed_at.isoformat() if work_object.completed_at else None},
+            fallback_actor_employee_id=payload.actor_employee_id or work_object.creator_employee_id,
+        )
+        notify_work_change(
+            db,
+            work_object=work_object,
+            current_user=current_user,
+            event=completed_event,
+            notification_type="work_object.completed",
+            title=f"{work_object.title} completed",
+            message="Work object was completed.",
             metadata={"completed_at": work_object.completed_at.isoformat() if work_object.completed_at else None},
             fallback_actor_employee_id=payload.actor_employee_id or work_object.creator_employee_id,
         )
@@ -640,7 +763,7 @@ def update_work_object_priority(
     previous_priority = work_object.priority
     work_object.priority = ensure_work_object_priority(payload.priority)
     if previous_priority != work_object.priority:
-        record_work_event(
+        priority_event = record_work_event(
             db,
             work_object=work_object,
             current_user=current_user,
@@ -650,6 +773,19 @@ def update_work_object_priority(
             metadata={"from": previous_priority, "to": work_object.priority},
             fallback_actor_employee_id=work_object.creator_employee_id,
         )
+        if work_object.priority in {"high", "critical"}:
+            notify_work_change(
+                db,
+                work_object=work_object,
+                current_user=current_user,
+                event=priority_event,
+                notification_type="work_object.priority_changed",
+                title=f"{work_object.title} priority changed",
+                message=f"Priority changed from {previous_priority} to {work_object.priority}.",
+                priority="high" if work_object.priority == "high" else "urgent",
+                metadata={"from": previous_priority, "to": work_object.priority},
+                fallback_actor_employee_id=work_object.creator_employee_id,
+            )
     db.commit()
     db.refresh(work_object)
     return work_object
@@ -741,7 +877,7 @@ def complete_work_object(
     if previous_status != "completed":
         work_object.status = "completed"
         work_object.completed_at = datetime.now(timezone.utc)
-        record_work_event(
+        status_event = record_work_event(
             db,
             work_object=work_object,
             current_user=current_user,
@@ -751,13 +887,35 @@ def complete_work_object(
             metadata={"from": previous_status, "to": work_object.status},
             fallback_actor_employee_id=work_object.creator_employee_id,
         )
-        record_work_event(
+        completed_event = record_work_event(
             db,
             work_object=work_object,
             current_user=current_user,
             event_type="work_object.completed",
             title=f"{work_object.title} completed",
             description="Work object was completed.",
+            metadata={"completed_at": work_object.completed_at.isoformat()},
+            fallback_actor_employee_id=work_object.creator_employee_id,
+        )
+        notify_work_change(
+            db,
+            work_object=work_object,
+            current_user=current_user,
+            event=status_event,
+            notification_type="work_object.status_changed",
+            title=f"{work_object.title} status changed",
+            message=f"Status changed from {previous_status} to {work_object.status}.",
+            metadata={"from": previous_status, "to": work_object.status},
+            fallback_actor_employee_id=work_object.creator_employee_id,
+        )
+        notify_work_change(
+            db,
+            work_object=work_object,
+            current_user=current_user,
+            event=completed_event,
+            notification_type="work_object.completed",
+            title=f"{work_object.title} completed",
+            message="Work object was completed.",
             metadata={"completed_at": work_object.completed_at.isoformat()},
             fallback_actor_employee_id=work_object.creator_employee_id,
         )
@@ -831,15 +989,19 @@ def add_work_object_attachment(
     attachment = FileService.build_attachment(attachment_payload)
     db.add(attachment)
     db.flush()
-    EventService.record_event(
+    actor_id = actor_employee_id(db, current_user, uploaded_by_employee_id)
+    file_event = EventService.record_event(
         db,
         company_id=company_id,
-        actor_employee_id=actor_employee_id(db, current_user, uploaded_by_employee_id),
+        actor_user_id=current_user.id if current_user is not None else None,
+        actor_employee_id=actor_id,
         event_type="file.uploaded",
         title=f"{attachment.original_file_name} uploaded",
         description="File was uploaded to a work object.",
         target_entity_type="attachment",
         target_entity_id=attachment.id,
+        related_entity_type="work_object",
+        related_entity_id=work_object_id,
         metadata={
             "actor_user_id": str(current_user.id) if current_user else None,
             "work_object_id": str(work_object_id),
@@ -848,6 +1010,29 @@ def add_work_object_attachment(
             "file_size": attachment.file_size,
         },
     )
+    recipients = work_notification_recipients(work_object, actor_id)
+    if recipients:
+        NotificationService.create_for_employees(
+            db,
+            company_id=company_id,
+            recipient_employee_ids=recipients,
+            actor_user_id=current_user.id if current_user is not None else None,
+            actor_employee_id=actor_id,
+            event_id=file_event.id,
+            title=f"{attachment.original_file_name} uploaded",
+            message=f"A file was uploaded to {work_object.title}.",
+            notification_type="file.uploaded",
+            target_entity_type="attachment",
+            target_entity_id=attachment.id,
+            priority="normal",
+            action_url="#/work-objects",
+            metadata={
+                "work_object_id": str(work_object_id),
+                "attachment_id": str(attachment.id),
+                "file_size": attachment.file_size,
+                "content_type": attachment.content_type,
+            },
+        )
     db.commit()
     db.refresh(attachment)
     return attachment

@@ -168,6 +168,7 @@ def record_leave_event(
     return EventService.record_event(
         db,
         company_id=leave.company_id,
+        actor_user_id=current_user.id if current_user is not None else None,
         actor_employee_id=actor_employee_id(db, current_user, fallback_actor_employee_id),
         event_type=event_type,
         title=title,
@@ -178,31 +179,59 @@ def record_leave_event(
     )
 
 
-def notify_leave_approval_needed(db: Session, leave: LeaveRequest) -> None:
+def notify_leave_approval_needed(db: Session, leave: LeaveRequest, current_user: User | None, event: Event | None = None) -> None:
     if leave.approver_employee_id is None:
+        NotificationService.create_notification(
+            db,
+            company_id=leave.company_id,
+            actor_user_id=current_user.id if current_user is not None else None,
+            actor_employee_id=actor_employee_id(db, current_user, leave.employee_id),
+            event_id=event.id if event is not None else None,
+            title="Leave approval needed",
+            message="A leave request is waiting for review.",
+            notification_type="leave.approval_needed",
+            target_entity_type="leave_request",
+            target_entity_id=leave.id,
+            priority="normal",
+            action_url="#/leaves",
+            metadata={"leave_request_id": str(leave.id), "employee_id": str(leave.employee_id)},
+            company_wide=True,
+        )
         return
     NotificationService.create_notification(
         db,
         company_id=leave.company_id,
         recipient_employee_id=leave.approver_employee_id,
+        actor_user_id=current_user.id if current_user is not None else None,
+        actor_employee_id=actor_employee_id(db, current_user, leave.employee_id),
+        event_id=event.id if event is not None else None,
         title="Leave approval needed",
         message="A leave request is waiting for your review.",
-        notification_type="leave_request_submitted",
-        related_entity_type="leave_request",
-        related_entity_id=leave.id,
+        notification_type="leave.approval_needed",
+        target_entity_type="leave_request",
+        target_entity_id=leave.id,
+        priority="normal",
+        action_url="#/leaves",
+        metadata={"leave_request_id": str(leave.id), "employee_id": str(leave.employee_id)},
     )
 
 
-def notify_leave_decision(db: Session, leave: LeaveRequest, *, approved: bool) -> None:
+def notify_leave_decision(db: Session, leave: LeaveRequest, current_user: User | None, event: Event | None = None, *, approved: bool) -> None:
     NotificationService.create_notification(
         db,
         company_id=leave.company_id,
         recipient_employee_id=leave.employee_id,
+        actor_user_id=current_user.id if current_user is not None else None,
+        actor_employee_id=actor_employee_id(db, current_user, leave.approver_employee_id),
+        event_id=event.id if event is not None else None,
         title="Leave approved" if approved else "Leave rejected",
         message="Your leave request was approved." if approved else "Your leave request was rejected.",
-        notification_type="leave_request_approved" if approved else "leave_request_rejected",
-        related_entity_type="leave_request",
-        related_entity_id=leave.id,
+        notification_type="leave.approved" if approved else "leave.rejected",
+        target_entity_type="leave_request",
+        target_entity_id=leave.id,
+        priority="normal" if approved else "high",
+        action_url="#/leaves",
+        metadata={"leave_request_id": str(leave.id), "status": leave.status},
     )
 
 
@@ -273,7 +302,7 @@ def create_leave_request(
     )
     db.add(leave)
     db.flush()
-    record_leave_event(
+    requested_event = record_leave_event(
         db,
         leave=leave,
         current_user=current_user,
@@ -290,7 +319,7 @@ def create_leave_request(
         },
         fallback_actor_employee_id=leave.employee_id,
     )
-    notify_leave_approval_needed(db, leave)
+    notify_leave_approval_needed(db, leave, current_user, requested_event)
     db.commit()
     db.refresh(leave)
     return leave
@@ -415,7 +444,7 @@ def update_leave_request(
     changed_fields = apply_leave_update(leave, data)
     leave.total_days = calculate_total_days(leave.start_date, leave.end_date, leave.leave_type)
     if changed_fields:
-        record_leave_event(
+        updated_event = record_leave_event(
             db,
             leave=leave,
             current_user=current_user,
@@ -426,7 +455,7 @@ def update_leave_request(
             fallback_actor_employee_id=leave.employee_id,
         )
         if "approver_employee_id" in changed_fields:
-            notify_leave_approval_needed(db, leave)
+            notify_leave_approval_needed(db, leave, current_user, updated_event)
     db.commit()
     db.refresh(leave)
     return leave
@@ -456,7 +485,7 @@ def approve_leave_request(
     leave.approved_at = datetime.now(timezone.utc)
     leave.rejected_at = None
     leave.cancelled_at = None
-    record_leave_event(
+    approved_event = record_leave_event(
         db,
         leave=leave,
         current_user=current_user,
@@ -470,7 +499,7 @@ def approve_leave_request(
         },
         fallback_actor_employee_id=leave.approver_employee_id,
     )
-    notify_leave_decision(db, leave, approved=True)
+    notify_leave_decision(db, leave, current_user, approved_event, approved=True)
     db.commit()
     db.refresh(leave)
     return leave
@@ -500,7 +529,7 @@ def reject_leave_request(
     leave.rejected_at = datetime.now(timezone.utc)
     leave.approved_at = None
     leave.cancelled_at = None
-    record_leave_event(
+    rejected_event = record_leave_event(
         db,
         leave=leave,
         current_user=current_user,
@@ -514,7 +543,7 @@ def reject_leave_request(
         },
         fallback_actor_employee_id=leave.approver_employee_id,
     )
-    notify_leave_decision(db, leave, approved=False)
+    notify_leave_decision(db, leave, current_user, rejected_event, approved=False)
     db.commit()
     db.refresh(leave)
     return leave

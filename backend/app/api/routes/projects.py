@@ -29,6 +29,7 @@ from app.schemas.project import (
 )
 from app.schemas.work_object import WorkObjectRead
 from app.services.event_service import EventService
+from app.services.notification_service import NotificationService
 
 router = APIRouter(prefix="/projects", tags=["projects"])
 
@@ -187,6 +188,7 @@ def record_project_event(
     return EventService.record_event(
         db,
         company_id=project.company_id,
+        actor_user_id=current_user.id,
         actor_employee_id=actor_employee_id(db, current_user),
         event_type=event_type,
         title=title,
@@ -194,6 +196,59 @@ def record_project_event(
         target_entity_type="project",
         target_entity_id=project.id,
         metadata=event_metadata,
+    )
+
+
+def project_notification_recipients(db: Session, project: Project, actor_employee_id_value: UUID | None = None) -> list[UUID]:
+    recipients: list[UUID] = []
+    for employee_id in [project.owner_employee_id]:
+        if employee_id is not None and employee_id != actor_employee_id_value:
+            recipients.append(employee_id)
+    members = db.scalars(
+        select(ProjectMember).where(
+            ProjectMember.company_id == project.company_id,
+            ProjectMember.project_id == project.id,
+            ProjectMember.is_active.is_(True),
+        )
+    ).all()
+    for member in members:
+        if member.employee_id == actor_employee_id_value or member.employee_id in recipients:
+            continue
+        recipients.append(member.employee_id)
+    return recipients
+
+
+def notify_project_change(
+    db: Session,
+    *,
+    project: Project,
+    current_user: User,
+    event: Event | None,
+    notification_type: str,
+    title: str,
+    message: str,
+    priority: str = "normal",
+    metadata: dict[str, object] | None = None,
+) -> None:
+    actor_id = actor_employee_id(db, current_user)
+    recipients = project_notification_recipients(db, project, actor_id)
+    if not recipients:
+        return
+    NotificationService.create_for_employees(
+        db,
+        company_id=project.company_id,
+        recipient_employee_ids=recipients,
+        actor_user_id=current_user.id,
+        actor_employee_id=actor_id,
+        event_id=event.id if event is not None else None,
+        title=title,
+        message=message,
+        notification_type=notification_type,
+        target_entity_type="project",
+        target_entity_id=project.id,
+        priority=priority,
+        action_url="#/projects",
+        metadata={"project_id": str(project.id), **(metadata or {})},
     )
 
 
@@ -348,7 +403,7 @@ def update_project(
             },
         )
     if "status" in changed and previous_status != project.status:
-        record_project_event(
+        status_event = record_project_event(
             db,
             project=project,
             current_user=current_user,
@@ -357,8 +412,18 @@ def update_project(
             description="Project status was changed.",
             metadata={"from": previous_status, "to": project.status},
         )
+        notify_project_change(
+            db,
+            project=project,
+            current_user=current_user,
+            event=status_event,
+            notification_type="project.status_changed",
+            title=f"{project.name} status changed",
+            message=f"Project status changed from {previous_status} to {project.status}.",
+            metadata={"from": previous_status, "to": project.status},
+        )
     if "priority" in changed and previous_priority != project.priority:
-        record_project_event(
+        priority_event = record_project_event(
             db,
             project=project,
             current_user=current_user,
@@ -367,6 +432,18 @@ def update_project(
             description="Project priority was changed.",
             metadata={"from": previous_priority, "to": project.priority},
         )
+        if project.priority in {"high", "critical"}:
+            notify_project_change(
+                db,
+                project=project,
+                current_user=current_user,
+                event=priority_event,
+                notification_type="project.priority_changed",
+                title=f"{project.name} priority changed",
+                message=f"Project priority changed from {previous_priority} to {project.priority}.",
+                priority="high" if project.priority == "high" else "urgent",
+                metadata={"from": previous_priority, "to": project.priority},
+            )
     db.commit()
     db.refresh(project)
     return project
@@ -384,7 +461,7 @@ def archive_project(
     project = get_or_404(db, Project, project_id, label="Project")
     ensure_company(project, company_id, label="Project")
     project.is_active = False
-    record_project_event(
+    status_event = record_project_event(
         db,
         project=project,
         current_user=current_user,
@@ -410,13 +487,23 @@ def change_project_status(
     ensure_company(project, payload.company_id, label="Project")
     previous_status = project.status
     project.status = ensure_project_status(payload.status)
-    record_project_event(
+    status_event = record_project_event(
         db,
         project=project,
         current_user=current_user,
         event_type="project.status_changed",
         title=f"{project.name} status changed",
         description="Project status was changed.",
+        metadata={"from": previous_status, "to": project.status},
+    )
+    notify_project_change(
+        db,
+        project=project,
+        current_user=current_user,
+        event=status_event,
+        notification_type="project.status_changed",
+        title=f"{project.name} status changed",
+        message=f"Project status changed from {previous_status} to {project.status}.",
         metadata={"from": previous_status, "to": project.status},
     )
     db.commit()
@@ -437,7 +524,7 @@ def change_project_priority(
     ensure_company(project, payload.company_id, label="Project")
     previous_priority = project.priority
     project.priority = ensure_project_priority(payload.priority)
-    record_project_event(
+    priority_event = record_project_event(
         db,
         project=project,
         current_user=current_user,
@@ -446,6 +533,18 @@ def change_project_priority(
         description="Project priority was changed.",
         metadata={"from": previous_priority, "to": project.priority},
     )
+    if project.priority in {"high", "critical"}:
+        notify_project_change(
+            db,
+            project=project,
+            current_user=current_user,
+            event=priority_event,
+            notification_type="project.priority_changed",
+            title=f"{project.name} priority changed",
+            message=f"Project priority changed from {previous_priority} to {project.priority}.",
+            priority="high" if project.priority == "high" else "urgent",
+            metadata={"from": previous_priority, "to": project.priority},
+        )
     db.commit()
     db.refresh(project)
     return project
@@ -473,7 +572,7 @@ def change_project_owner(
     project.owner_user_id = payload.owner_user_id
     if project.owner_employee_id:
         upsert_project_member(db, project=project, employee_id=project.owner_employee_id, role_on_project="Owner")
-    record_project_event(
+    member_event = record_project_event(
         db,
         project=project,
         current_user=current_user,
@@ -527,7 +626,7 @@ def add_project_member(
         employee_id=payload.employee_id,
         role_on_project=payload.role_on_project,
     )
-    record_project_event(
+    member_event = record_project_event(
         db,
         project=project,
         current_user=current_user,
@@ -535,6 +634,22 @@ def add_project_member(
         title=f"Member added to {project.name}",
         description="Project member was added.",
         metadata={"employee_id": str(payload.employee_id), "role_on_project": payload.role_on_project},
+    )
+    NotificationService.create_notification(
+        db,
+        company_id=project.company_id,
+        recipient_employee_id=payload.employee_id,
+        actor_user_id=current_user.id,
+        actor_employee_id=actor_employee_id(db, current_user),
+        event_id=member_event.id,
+        title=f"Added to {project.name}",
+        message="You were added as a project member.",
+        notification_type="project.member_added",
+        target_entity_type="project",
+        target_entity_id=project.id,
+        priority="normal",
+        action_url="#/projects",
+        metadata={"project_id": str(project.id), "role_on_project": payload.role_on_project},
     )
     db.commit()
     db.refresh(member)
@@ -565,7 +680,7 @@ def remove_project_member(
     if member is None:
         return Response(status_code=status.HTTP_204_NO_CONTENT)
     member.is_active = False
-    record_project_event(
+    remove_event = record_project_event(
         db,
         project=project,
         current_user=current_user,
@@ -573,6 +688,22 @@ def remove_project_member(
         title=f"Member removed from {project.name}",
         description="Project member was removed.",
         metadata={"employee_id": str(employee_id)},
+    )
+    NotificationService.create_notification(
+        db,
+        company_id=project.company_id,
+        recipient_employee_id=employee_id,
+        actor_user_id=current_user.id,
+        actor_employee_id=actor_employee_id(db, current_user),
+        event_id=remove_event.id,
+        title=f"Removed from {project.name}",
+        message="You were removed as a project member.",
+        notification_type="project.member_removed",
+        target_entity_type="project",
+        target_entity_id=project.id,
+        priority="normal",
+        action_url="#/projects",
+        metadata={"project_id": str(project.id)},
     )
     db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)

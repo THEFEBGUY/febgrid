@@ -415,9 +415,12 @@ export interface LeaveSummary {
 export interface Event {
   id: string;
   company_id: string;
+  actor_user_id: string | null;
   actor_employee_id: string | null;
   target_entity_type: string | null;
   target_entity_id: string | null;
+  related_entity_type: string | null;
+  related_entity_id: string | null;
   event_type: string;
   title: string;
   description: string | null;
@@ -428,15 +431,30 @@ export interface Event {
 export interface Notification {
   id: string;
   company_id: string;
-  recipient_employee_id: string;
+  recipient_user_id: string | null;
+  recipient_employee_id: string | null;
+  actor_user_id: string | null;
+  actor_employee_id: string | null;
+  event_id: string | null;
+  target_entity_type: string | null;
+  target_entity_id: string | null;
   title: string;
   message: string;
   notification_type: string;
-  related_entity_type: string | null;
-  related_entity_id: string | null;
+  priority: "low" | "normal" | "high" | "urgent";
+  action_url: string | null;
+  metadata: Record<string, unknown>;
   is_read: boolean;
   created_at: string;
+  updated_at: string;
   read_at: string | null;
+  is_dismissed: boolean;
+  dismissed_at: string | null;
+}
+
+export interface NotificationUnreadCount {
+  company_id: string;
+  unread_count: number;
 }
 
 export interface FebGridData {

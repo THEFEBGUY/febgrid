@@ -74,6 +74,10 @@ interface FebGridDataState {
   rejectLeave: (leaveId: string, payload: Omit<LeaveDecisionPayload, "company_id">) => Promise<void>;
   cancelLeave: (leaveId: string, payload: Omit<LeaveCancelPayload, "company_id">) => Promise<void>;
   deactivateLeave: (leaveId: string) => Promise<void>;
+  markNotificationRead: (notificationId: string) => Promise<void>;
+  markNotificationUnread: (notificationId: string) => Promise<void>;
+  markAllNotificationsRead: () => Promise<void>;
+  dismissNotification: (notificationId: string) => Promise<void>;
 }
 
 interface UseFebGridDataOptions {
@@ -493,6 +497,38 @@ export function useFebGridData({ enabled = true }: UseFebGridDataOptions = {}): 
     });
   }
 
+  async function markNotificationRead(notificationId: string): Promise<void> {
+    if (!selectedCompanyId) return;
+    await runMutation(async () => {
+      await api.markNotificationRead(notificationId, selectedCompanyId);
+      await refreshModules();
+    });
+  }
+
+  async function markNotificationUnread(notificationId: string): Promise<void> {
+    if (!selectedCompanyId) return;
+    await runMutation(async () => {
+      await api.markNotificationUnread(notificationId, selectedCompanyId);
+      await refreshModules();
+    });
+  }
+
+  async function markAllNotificationsRead(): Promise<void> {
+    if (!selectedCompanyId) return;
+    await runMutation(async () => {
+      await api.markAllNotificationsRead(selectedCompanyId);
+      await refreshModules();
+    });
+  }
+
+  async function dismissNotification(notificationId: string): Promise<void> {
+    if (!selectedCompanyId) return;
+    await runMutation(async () => {
+      await api.dismissNotification(notificationId, selectedCompanyId);
+      await refreshModules();
+    });
+  }
+
   return {
     data,
     selectedCompanyId,
@@ -532,5 +568,9 @@ export function useFebGridData({ enabled = true }: UseFebGridDataOptions = {}): 
     rejectLeave,
     cancelLeave,
     deactivateLeave,
+    markNotificationRead,
+    markNotificationUnread,
+    markAllNotificationsRead,
+    dismissNotification,
   };
 }
