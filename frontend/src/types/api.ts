@@ -321,24 +321,68 @@ export interface LeaveRequest extends Timestamped {
   company_id: string;
   employee_id: string;
   approver_employee_id: string | null;
+  requested_by_user_id: string | null;
   start_date: string;
   end_date: string;
+  total_days: number;
   leave_type: string;
   reason: string | null;
   status: string;
-  decision_note: string | null;
+  manager_note: string | null;
+  submitted_at: string;
+  approved_at: string | null;
+  rejected_at: string | null;
+  cancelled_at: string | null;
+  metadata: Record<string, unknown>;
+  is_active: boolean;
 }
 
 export interface LeaveCreatePayload {
   company_id: string;
   employee_id: string;
   approver_employee_id?: string | null;
+  requested_by_user_id?: string | null;
   start_date: string;
   end_date: string;
   leave_type: string;
   reason?: string | null;
-  status: string;
-  decision_note?: string | null;
+  status?: string;
+  manager_note?: string | null;
+  metadata?: Record<string, unknown>;
+}
+
+export interface LeaveUpdatePayload {
+  employee_id?: string | null;
+  approver_employee_id?: string | null;
+  start_date?: string;
+  end_date?: string;
+  leave_type?: string;
+  reason?: string | null;
+  manager_note?: string | null;
+  metadata?: Record<string, unknown>;
+}
+
+export interface LeaveDecisionPayload {
+  company_id: string;
+  approver_employee_id?: string | null;
+  manager_note?: string | null;
+}
+
+export interface LeaveCancelPayload {
+  company_id: string;
+  actor_employee_id?: string | null;
+  manager_note?: string | null;
+}
+
+export interface LeaveSummary {
+  company_id: string;
+  total: number;
+  pending: number;
+  approved: number;
+  rejected: number;
+  cancelled: number;
+  this_week: number;
+  this_month: number;
 }
 
 export interface Event {

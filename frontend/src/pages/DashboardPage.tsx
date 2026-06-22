@@ -11,7 +11,7 @@ import type { Metric } from "../types/domain";
 import type { ModulePageProps } from "../types/page";
 import { compactList, formatDate, formatLabel, formatTime } from "../utils/format";
 
-const metricIcons = [Users, FolderKanban, CheckCircle2, AlertTriangle, CheckCircle2, CalendarDays] as const;
+const metricIcons = [Users, FolderKanban, CheckCircle2, AlertTriangle, CheckCircle2, CalendarDays, CalendarDays, CheckCircle2, Clock3] as const;
 
 export function DashboardPage({ data, selectedCompany, isLoadingCompanies, isLoadingModules, moduleError, onRetry }: ModulePageProps): JSX.Element {
   const metrics = useMemo<Metric[]>(() => {
@@ -20,6 +20,8 @@ export function DashboardPage({ data, selectedCompany, isLoadingCompanies, isLoa
     const openWork = data.workObjects.filter((workObject) => workObject.is_active && !["completed", "cancelled"].includes(workObject.status)).length;
     const blockedWork = data.workObjects.filter((workObject) => workObject.is_active && workObject.status === "blocked").length;
     const completedWork = data.workObjects.filter((workObject) => workObject.is_active && workObject.status === "completed").length;
+    const pendingLeaves = data.leaves.filter((leave) => leave.is_active && leave.status === "pending").length;
+    const approvedLeaves = data.leaves.filter((leave) => leave.is_active && leave.status === "approved").length;
     const now = new Date();
     const soon = new Date(now);
     soon.setDate(soon.getDate() + 7);
@@ -28,6 +30,8 @@ export function DashboardPage({ data, selectedCompany, isLoadingCompanies, isLoa
       const dueDate = new Date(workObject.due_date);
       return dueDate >= now && dueDate <= soon;
     }).length;
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const leaveRequestsThisMonth = data.leaves.filter((leave) => leave.is_active && new Date(leave.submitted_at) >= monthStart).length;
 
     return [
       { label: "Active employees", value: activeEmployees.toString(), tone: "green", delta: `${data.employees.length} total employees` },
@@ -36,8 +40,11 @@ export function DashboardPage({ data, selectedCompany, isLoadingCompanies, isLoa
       { label: "Blocked work", value: blockedWork.toString(), tone: blockedWork > 0 ? "red" : "green", delta: blockedWork > 0 ? "Needs manager action" : "No blockers" },
       { label: "Completed work", value: completedWork.toString(), tone: "green", delta: "Finished objects" },
       { label: "Due soon", value: dueSoon.toString(), tone: dueSoon > 0 ? "amber" : "green", delta: "Next 7 days" },
+      { label: "Pending leaves", value: pendingLeaves.toString(), tone: pendingLeaves > 0 ? "amber" : "green", delta: "Awaiting review" },
+      { label: "Approved leaves", value: approvedLeaves.toString(), tone: "green", delta: "Active records" },
+      { label: "Leave requests", value: leaveRequestsThisMonth.toString(), tone: "blue", delta: "This month" },
     ];
-  }, [data.employees, data.projects, data.workObjects]);
+  }, [data.employees, data.leaves, data.projects, data.workObjects]);
 
   const employeeNames = useMemo(
     () => Object.fromEntries(data.employees.map((employee) => [employee.id, employee.full_name])),

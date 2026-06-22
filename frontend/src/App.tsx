@@ -114,7 +114,17 @@ export function App(): JSX.Element {
           />
         );
       case "leaves":
-        return <LeavesPage {...withModuleError(febGrid.moduleErrors.leaves ?? null)} onCreateLeave={febGrid.createLeave} />;
+        return (
+          <LeavesPage
+            {...withModuleError(febGrid.moduleErrors.leaves ?? null)}
+            onApproveLeave={febGrid.approveLeave}
+            onCancelLeave={febGrid.cancelLeave}
+            onCreateLeave={febGrid.createLeave}
+            onDeactivateLeave={febGrid.deactivateLeave}
+            onRejectLeave={febGrid.rejectLeave}
+            onUpdateLeave={febGrid.updateLeave}
+          />
+        );
       case "events":
         return <EventsPage {...withModuleError(febGrid.moduleErrors.events ?? null)} />;
       case "notifications":

@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from app.models.attachment import Attachment
 from app.models.employee import Employee
 from app.models.event import Event
+from app.models.leave_request import LeaveRequest
 from app.models.project import Project
 from app.models.work_object import WorkObject
 from app.schemas.search import SearchResponse, SearchResult
@@ -83,6 +84,35 @@ class SearchService:
                 },
             )
             for work_object in work_objects
+        )
+
+        leave_requests = db.scalars(
+            select(LeaveRequest)
+            .where(
+                LeaveRequest.company_id == company_id,
+                LeaveRequest.is_active.is_(True),
+                or_(
+                    LeaveRequest.leave_type.ilike(term),
+                    LeaveRequest.status.ilike(term),
+                    LeaveRequest.reason.ilike(term),
+                ),
+            )
+            .limit(limit)
+        ).all()
+        results.extend(
+            SearchResult(
+                type="leave_request",
+                id=str(leave.id),
+                title=f"{leave.leave_type.replace('_', ' ').title()} leave",
+                subtitle=leave.status,
+                metadata={
+                    "employee_id": str(leave.employee_id),
+                    "start_date": leave.start_date.isoformat(),
+                    "end_date": leave.end_date.isoformat(),
+                    "total_days": leave.total_days,
+                },
+            )
+            for leave in leave_requests
         )
 
         attachments = db.scalars(

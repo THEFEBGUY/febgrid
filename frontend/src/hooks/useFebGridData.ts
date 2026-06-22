@@ -8,7 +8,10 @@ import type {
   EmployeeCreatePayload,
   EmployeeUpdatePayload,
   FebGridData,
+  LeaveCancelPayload,
   LeaveCreatePayload,
+  LeaveDecisionPayload,
+  LeaveUpdatePayload,
   ProjectCreatePayload,
   ProjectMemberCreatePayload,
   ProjectUpdatePayload,
@@ -66,6 +69,11 @@ interface FebGridDataState {
   updateWorkObjectPriority: (workObjectId: string, priority: string) => Promise<void>;
   completeWorkObject: (workObjectId: string) => Promise<void>;
   createLeave: (payload: Omit<LeaveCreatePayload, "company_id">) => Promise<void>;
+  updateLeave: (leaveId: string, payload: LeaveUpdatePayload) => Promise<void>;
+  approveLeave: (leaveId: string, payload: Omit<LeaveDecisionPayload, "company_id">) => Promise<void>;
+  rejectLeave: (leaveId: string, payload: Omit<LeaveDecisionPayload, "company_id">) => Promise<void>;
+  cancelLeave: (leaveId: string, payload: Omit<LeaveCancelPayload, "company_id">) => Promise<void>;
+  deactivateLeave: (leaveId: string) => Promise<void>;
 }
 
 interface UseFebGridDataOptions {
@@ -445,6 +453,46 @@ export function useFebGridData({ enabled = true }: UseFebGridDataOptions = {}): 
     });
   }
 
+  async function updateLeave(leaveId: string, payload: LeaveUpdatePayload): Promise<void> {
+    if (!selectedCompanyId) return;
+    await runMutation(async () => {
+      await api.updateLeave(leaveId, selectedCompanyId, payload);
+      await refreshModules();
+    });
+  }
+
+  async function approveLeave(leaveId: string, payload: Omit<LeaveDecisionPayload, "company_id">): Promise<void> {
+    if (!selectedCompanyId) return;
+    await runMutation(async () => {
+      await api.approveLeave(leaveId, { ...payload, company_id: selectedCompanyId });
+      await refreshModules();
+    });
+  }
+
+  async function rejectLeave(leaveId: string, payload: Omit<LeaveDecisionPayload, "company_id">): Promise<void> {
+    if (!selectedCompanyId) return;
+    await runMutation(async () => {
+      await api.rejectLeave(leaveId, { ...payload, company_id: selectedCompanyId });
+      await refreshModules();
+    });
+  }
+
+  async function cancelLeave(leaveId: string, payload: Omit<LeaveCancelPayload, "company_id">): Promise<void> {
+    if (!selectedCompanyId) return;
+    await runMutation(async () => {
+      await api.cancelLeave(leaveId, { ...payload, company_id: selectedCompanyId });
+      await refreshModules();
+    });
+  }
+
+  async function deactivateLeave(leaveId: string): Promise<void> {
+    if (!selectedCompanyId) return;
+    await runMutation(async () => {
+      await api.deactivateLeave(leaveId, selectedCompanyId);
+      await refreshModules();
+    });
+  }
+
   return {
     data,
     selectedCompanyId,
@@ -479,5 +527,10 @@ export function useFebGridData({ enabled = true }: UseFebGridDataOptions = {}): 
     updateWorkObjectPriority,
     completeWorkObject,
     createLeave,
+    updateLeave,
+    approveLeave,
+    rejectLeave,
+    cancelLeave,
+    deactivateLeave,
   };
 }

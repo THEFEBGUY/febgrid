@@ -22,6 +22,7 @@ Phase 1 focuses on the backend foundation:
 - Sprint 3 employee management foundation for departments, teams, employee profiles, employee status, and tenant-aware people operations
 - Phase 1 project management foundation for project ownership, members, status, priority, progress, timeline, and linked work object lists
 - Sprint 4 Work Object Engine v1 for tenant-safe work creation, assignment, status/priority tracking, project linkage, detail timeline, and dashboard work counts
+- Sprint 5 Leave Management v1 for tenant-safe leave requests, pending review, approval/rejection/cancel flows, leave events, and dashboard leave counts
 - Health check, universal timeline, and basic operational search
 - Mock-only AI boundary in `backend/app/services/ai_service.py`
 
@@ -83,7 +84,7 @@ The frontend reads the backend URL from `VITE_API_BASE_URL`. The documented defa
 VITE_API_BASE_URL=http://localhost:8000
 ```
 
-The Phase 1 frontend includes the main dashboard shell, sidebar navigation, reusable table/card/badge UI, and pages for Dashboard, Companies, Employees, Teams, Projects, Work Objects, Leaves, Events, and Notifications. Sprint 3 adds authenticated employee directory management, employee profile modals, status controls, department creation, and team creation. The project foundation adds create/edit project workflows, status and priority controls, project members, detail view, timeline, and linked work object readiness. Sprint 4 adds real work object CRUD, assignment, status and priority controls, project linkage, detail timeline, and light dashboard work metrics.
+The Phase 1 frontend includes the main dashboard shell, sidebar navigation, reusable table/card/badge UI, and pages for Dashboard, Companies, Employees, Teams, Projects, Work Objects, Leaves, Events, and Notifications. Sprint 3 adds authenticated employee directory management, employee profile modals, status controls, department creation, and team creation. The project foundation adds create/edit project workflows, status and priority controls, project members, detail view, timeline, and linked work object readiness. Sprint 4 adds real work object CRUD, assignment, status and priority controls, project linkage, detail timeline, and light dashboard work metrics. Sprint 5 adds real leave submission, pending edits, approval/rejection/cancel decisions, leave detail timeline, and light dashboard leave metrics.
 
 ## Alembic
 
