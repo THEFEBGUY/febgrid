@@ -119,7 +119,13 @@ class SearchService:
             select(Attachment)
             .where(
                 Attachment.company_id == company_id,
-                or_(Attachment.file_name.ilike(term), Attachment.file_type.ilike(term)),
+                Attachment.is_active.is_(True),
+                or_(
+                    Attachment.file_name.ilike(term),
+                    Attachment.original_file_name.ilike(term),
+                    Attachment.content_type.ilike(term),
+                    Attachment.description.ilike(term),
+                ),
             )
             .limit(limit)
         ).all()
@@ -127,9 +133,13 @@ class SearchService:
             SearchResult(
                 type="attachment",
                 id=str(attachment.id),
-                title=attachment.file_name,
+                title=attachment.original_file_name,
                 subtitle=attachment.linked_entity_type,
-                metadata={"ai_processing_status": attachment.ai_processing_status},
+                metadata={
+                    "content_type": attachment.content_type,
+                    "file_size": attachment.file_size,
+                    "work_object_id": str(attachment.work_object_id) if attachment.work_object_id else None,
+                },
             )
             for attachment in attachments
         )

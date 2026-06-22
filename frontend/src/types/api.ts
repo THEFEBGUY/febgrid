@@ -316,6 +316,33 @@ export interface WorkObjectSummary {
   overdue: number;
 }
 
+export interface Attachment extends Timestamped {
+  id: string;
+  company_id: string;
+  work_object_id: string | null;
+  project_id: string | null;
+  uploaded_by_user_id: string | null;
+  uploaded_by_employee_id: string | null;
+  linked_entity_type: string;
+  linked_entity_id: string;
+  file_name: string;
+  original_file_name: string;
+  content_type: string | null;
+  file_size: number | null;
+  storage_provider: string;
+  storage_path: string;
+  public_url: string | null;
+  description: string | null;
+  ai_processing_status: string;
+  metadata: Record<string, unknown>;
+  is_active: boolean;
+}
+
+export interface AttachmentUpdatePayload {
+  description?: string | null;
+  metadata?: Record<string, unknown>;
+}
+
 export interface LeaveRequest extends Timestamped {
   id: string;
   company_id: string;

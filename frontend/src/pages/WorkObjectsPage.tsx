@@ -1,4 +1,4 @@
-import { Archive, CheckCircle2, Eye, Pencil, Plus } from "lucide-react";
+import { Archive, CheckCircle2, Download, Eye, FileText, Pencil, Plus, Trash2, Upload } from "lucide-react";
 import { type FormEvent, useCallback, useMemo, useState } from "react";
 
 import { Badge } from "../components/ui/Badge";
@@ -11,7 +11,7 @@ import { SectionPanel } from "../components/ui/SectionPanel";
 import { EmptyState, ErrorState, LoadingState } from "../components/ui/States";
 import { priorityTone, statusTone } from "../components/ui/tone";
 import { api } from "../services/api";
-import type { Event as FebGridEvent, WorkObject, WorkObjectCreatePayload, WorkObjectUpdatePayload } from "../types/api";
+import type { Attachment, Event as FebGridEvent, WorkObject, WorkObjectCreatePayload, WorkObjectUpdatePayload } from "../types/api";
 import type { ModulePageProps } from "../types/page";
 import { compactList, formatDate, formatLabel, formatTime } from "../utils/format";
 
@@ -28,6 +28,8 @@ interface WorkObjectsPageProps extends ModulePageProps {
 const objectTypeOptions = ["task", "approval_request", "issue", "site_visit", "invoice", "document_review", "general"];
 const statusOptions = ["assigned", "in_progress", "under_review", "blocked", "completed", "cancelled"];
 const priorityOptions = ["low", "medium", "high", "critical"];
+const maxUploadBytes = 10 * 1024 * 1024;
+const allowedAttachmentExtensions = [".png", ".jpg", ".jpeg", ".webp", ".pdf", ".csv", ".doc", ".docx", ".xls", ".xlsx"];
 
 const initialForm = {
   title: "",
@@ -73,6 +75,24 @@ function dateToIso(value: string, endOfDay = false): string | null {
   return `${value}T${endOfDay ? "23:59:00" : "00:00:00"}.000Z`;
 }
 
+function formatBytes(value: number | null): string {
+  if (value === null) return "Unknown size";
+  if (value < 1024) return `${value} B`;
+  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
+  return `${(value / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function validateAttachmentFile(file: File): string | null {
+  const lowerName = file.name.toLowerCase();
+  if (!allowedAttachmentExtensions.some((extension) => lowerName.endsWith(extension))) {
+    return "This file type is not allowed for File Upload v1.";
+  }
+  if (file.size > maxUploadBytes) {
+    return "File must be 10 MB or smaller.";
+  }
+  return null;
+}
+
 export function WorkObjectsPage({
   data,
   selectedCompany,
@@ -97,6 +117,14 @@ export function WorkObjectsPage({
   const [detailEvents, setDetailEvents] = useState<FebGridEvent[]>([]);
   const [isDetailLoading, setIsDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [isAttachmentLoading, setIsAttachmentLoading] = useState(false);
+  const [attachmentError, setAttachmentError] = useState<string | null>(null);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [uploadDescription, setUploadDescription] = useState("");
+  const [isUploading, setIsUploading] = useState(false);
+  const [editingAttachmentId, setEditingAttachmentId] = useState<string | null>(null);
+  const [editingAttachmentDescription, setEditingAttachmentDescription] = useState("");
 
   const employeeNames = useMemo(() => Object.fromEntries(data.employees.map((employee) => [employee.id, employee.full_name])), [data.employees]);
   const projectNames = useMemo(() => Object.fromEntries(data.projects.map((project) => [project.id, project.name])), [data.projects]);
@@ -110,14 +138,39 @@ export function WorkObjectsPage({
     async (workObjectId: string): Promise<void> => {
       if (!selectedCompanyId) return;
       setIsDetailLoading(true);
+      setIsAttachmentLoading(true);
       setDetailError(null);
+      setAttachmentError(null);
       try {
-        const events = await api.workObjectTimeline(workObjectId, selectedCompanyId);
+        const [events, nextAttachments] = await Promise.all([
+          api.workObjectTimeline(workObjectId, selectedCompanyId),
+          api.workObjectAttachments(workObjectId, selectedCompanyId),
+        ]);
         setDetailEvents(events);
+        setAttachments(nextAttachments);
       } catch {
-        setDetailError("Unable to load work object timeline.");
+        setDetailError("Unable to load work object detail.");
+        setAttachmentError("Unable to load attachments.");
       } finally {
         setIsDetailLoading(false);
+        setIsAttachmentLoading(false);
+      }
+    },
+    [selectedCompanyId],
+  );
+
+  const loadAttachments = useCallback(
+    async (workObjectId: string): Promise<void> => {
+      if (!selectedCompanyId) return;
+      setIsAttachmentLoading(true);
+      setAttachmentError(null);
+      try {
+        const nextAttachments = await api.workObjectAttachments(workObjectId, selectedCompanyId);
+        setAttachments(nextAttachments);
+      } catch {
+        setAttachmentError("Unable to load attachments.");
+      } finally {
+        setIsAttachmentLoading(false);
       }
     },
     [selectedCompanyId],
@@ -249,7 +302,13 @@ export function WorkObjectsPage({
   function openDetail(workObject: WorkObject): void {
     setDetailWorkObject(workObject);
     setDetailEvents([]);
+    setAttachments([]);
     setDetailError(null);
+    setAttachmentError(null);
+    setSelectedFile(null);
+    setUploadDescription("");
+    setEditingAttachmentId(null);
+    setEditingAttachmentDescription("");
     void loadWorkObjectDetail(workObject.id);
   }
 
@@ -289,6 +348,77 @@ export function WorkObjectsPage({
       setIsFormOpen(false);
     } catch {
       setFormError("Work object could not be saved. Check the details and try again.");
+    }
+  }
+
+  async function handleUploadAttachment(event: FormEvent<HTMLFormElement>): Promise<void> {
+    event.preventDefault();
+    setAttachmentError(null);
+    if (!detailWorkObject || !selectedCompanyId) return;
+    if (!selectedFile) {
+      setAttachmentError("Choose a file to upload.");
+      return;
+    }
+    const validationError = validateAttachmentFile(selectedFile);
+    if (validationError) {
+      setAttachmentError(validationError);
+      return;
+    }
+
+    setIsUploading(true);
+    try {
+      await api.uploadWorkObjectAttachment(detailWorkObject.id, selectedCompanyId, selectedFile, uploadDescription.trim() || null);
+      setSelectedFile(null);
+      setUploadDescription("");
+      await loadWorkObjectDetail(detailWorkObject.id);
+    } catch {
+      setAttachmentError("File could not be uploaded. Check type and size, then try again.");
+    } finally {
+      setIsUploading(false);
+    }
+  }
+
+  async function handleDownloadAttachment(attachment: Attachment): Promise<void> {
+    if (!selectedCompanyId) return;
+    setAttachmentError(null);
+    try {
+      const blob = await api.downloadAttachment(attachment.id, selectedCompanyId);
+      const objectUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = objectUrl;
+      link.download = attachment.original_file_name;
+      document.body.append(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(objectUrl);
+    } catch {
+      setAttachmentError("File could not be downloaded.");
+    }
+  }
+
+  async function handleUpdateAttachmentDescription(attachment: Attachment): Promise<void> {
+    if (!selectedCompanyId || !detailWorkObject) return;
+    setAttachmentError(null);
+    try {
+      await api.updateAttachment(attachment.id, selectedCompanyId, {
+        description: editingAttachmentDescription.trim() || null,
+      });
+      setEditingAttachmentId(null);
+      setEditingAttachmentDescription("");
+      await loadWorkObjectDetail(detailWorkObject.id);
+    } catch {
+      setAttachmentError("Attachment description could not be updated.");
+    }
+  }
+
+  async function handleDeleteAttachment(attachment: Attachment): Promise<void> {
+    if (!selectedCompanyId || !detailWorkObject) return;
+    setAttachmentError(null);
+    try {
+      await api.deleteAttachment(attachment.id, selectedCompanyId);
+      await loadWorkObjectDetail(detailWorkObject.id);
+    } catch {
+      setAttachmentError("Attachment could not be removed.");
     }
   }
 
@@ -445,6 +575,95 @@ export function WorkObjectsPage({
               <Button disabled={isMutating || detailWorkObject.status === "completed"} variant="primary" icon={<CheckCircle2 className="size-4" aria-hidden="true" />} onClick={() => void onCompleteWorkObject(detailWorkObject.id)}>Complete</Button>
               <Button disabled={isMutating || !detailWorkObject.is_active} icon={<Archive className="size-4" aria-hidden="true" />} onClick={() => void onDeactivateWorkObject(detailWorkObject.id)}>Archive</Button>
             </div>
+
+            <section className="rounded-lg border border-grid-200">
+              <div className="flex flex-col gap-3 border-b border-grid-200 px-4 py-3 md:flex-row md:items-center md:justify-between">
+                <h3 className="text-sm font-bold text-ink-950">Attachments</h3>
+                <Button icon={<Upload className="size-4" aria-hidden="true" />} onClick={() => {
+                  if (detailWorkObject) void loadAttachments(detailWorkObject.id);
+                }}>Retry</Button>
+              </div>
+              <form className="grid gap-3 border-b border-grid-100 p-4 lg:grid-cols-[1fr_1fr_auto]" onSubmit={handleUploadAttachment}>
+                <FieldShell label="File">
+                  <TextInput
+                    key={selectedFile?.name ?? "empty-file"}
+                    accept=".png,.jpg,.jpeg,.webp,.pdf,.csv,.doc,.docx,.xls,.xlsx"
+                    type="file"
+                    onChange={(event) => setSelectedFile(event.target.files?.[0] ?? null)}
+                  />
+                </FieldShell>
+                <FieldShell label="Description">
+                  <TextInput value={uploadDescription} onChange={(event) => setUploadDescription(event.target.value)} />
+                </FieldShell>
+                <div className="flex items-end">
+                  <Button disabled={isUploading || !selectedFile} type="submit" variant="primary" icon={<Upload className="size-4" aria-hidden="true" />}>
+                    {isUploading ? "Uploading..." : "Upload"}
+                  </Button>
+                </div>
+                {selectedFile ? (
+                  <p className="text-xs font-semibold text-ink-500 lg:col-span-3">
+                    {selectedFile.name} / {formatBytes(selectedFile.size)}
+                  </p>
+                ) : null}
+              </form>
+              {isAttachmentLoading ? <LoadingState label="Loading attachments" /> : null}
+              {attachmentError ? <ErrorState message={attachmentError} onRetry={() => {
+                if (detailWorkObject) void loadAttachments(detailWorkObject.id);
+              }} /> : null}
+              {!isAttachmentLoading && !attachmentError ? (
+                attachments.length === 0 ? (
+                  <EmptyState description="Uploaded work evidence and documents will appear here." title="No attachments yet" />
+                ) : (
+                  <div className="divide-y divide-grid-100">
+                    {attachments.map((attachment) => (
+                      <article key={attachment.id} className="grid gap-3 px-4 py-3 lg:grid-cols-[1fr_1fr_auto] lg:items-center">
+                        <div className="min-w-0">
+                          <p className="flex min-w-0 items-center gap-2 truncate text-sm font-bold text-ink-950">
+                            <FileText className="size-4 shrink-0 text-ink-500" aria-hidden="true" />
+                            <span className="truncate">{attachment.original_file_name}</span>
+                          </p>
+                          <p className="mt-1 truncate text-xs font-semibold text-ink-500">
+                            {compactList([attachment.content_type ?? "Unknown type", formatBytes(attachment.file_size), formatDate(attachment.created_at)])}
+                          </p>
+                          {attachment.uploaded_by_employee_id ? (
+                            <p className="mt-1 truncate text-xs font-semibold text-ink-500">
+                              Uploaded by {employeeNames[attachment.uploaded_by_employee_id] ?? "employee"}
+                            </p>
+                          ) : null}
+                        </div>
+                        {editingAttachmentId === attachment.id ? (
+                          <div className="flex gap-2">
+                            <TextInput value={editingAttachmentDescription} onChange={(event) => setEditingAttachmentDescription(event.target.value)} />
+                            <Button aria-label="Save description" className="shrink-0" onClick={() => void handleUpdateAttachmentDescription(attachment)}>
+                              Save
+                            </Button>
+                          </div>
+                        ) : (
+                          <button
+                            className="min-w-0 truncate rounded-md border border-grid-200 bg-grid-50 px-3 py-2 text-left text-sm font-medium text-ink-600"
+                            type="button"
+                            onClick={() => {
+                              setEditingAttachmentId(attachment.id);
+                              setEditingAttachmentDescription(attachment.description ?? "");
+                            }}
+                          >
+                            {attachment.description || "Add description"}
+                          </button>
+                        )}
+                        <div className="flex justify-end gap-2">
+                          <Button className="size-9 px-0" aria-label="Download attachment" icon={<Download className="size-4" aria-hidden="true" />} onClick={() => void handleDownloadAttachment(attachment)}>
+                            <span className="sr-only">Download</span>
+                          </Button>
+                          <Button className="size-9 px-0" aria-label="Delete attachment" icon={<Trash2 className="size-4" aria-hidden="true" />} onClick={() => void handleDeleteAttachment(attachment)}>
+                            <span className="sr-only">Delete</span>
+                          </Button>
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                )
+              ) : null}
+            </section>
 
             {isDetailLoading ? <LoadingState label="Loading work object timeline" /> : null}
             {detailError ? <ErrorState message={detailError} onRetry={() => loadWorkObjectDetail(detailWorkObject.id)} /> : null}

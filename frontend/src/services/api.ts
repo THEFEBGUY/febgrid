@@ -1,4 +1,6 @@
 import type {
+  Attachment,
+  AttachmentUpdatePayload,
   AuthMe,
   AuthSession,
   Company,
@@ -48,9 +50,10 @@ export class ApiError extends Error {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const isFormData = init?.body instanceof FormData;
   const response = await fetch(`${API_BASE_URL}/api/v1${path}`, {
     headers: {
-      "Content-Type": "application/json",
+      ...(isFormData ? {} : { "Content-Type": "application/json" }),
       ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
       ...init?.headers,
     },
@@ -77,6 +80,22 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return (await response.json()) as T;
 }
 
+async function requestBlob(path: string, init?: RequestInit): Promise<Blob> {
+  const response = await fetch(`${API_BASE_URL}/api/v1${path}`, {
+    headers: {
+      ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+      ...init?.headers,
+    },
+    ...init,
+  });
+
+  if (!response.ok) {
+    throw new ApiError(response.statusText || `Request failed for ${path}`, response.status);
+  }
+
+  return response.blob();
+}
+
 function jsonInit(method: "POST" | "PUT" | "PATCH", body: unknown): RequestInit {
   return {
     method,
@@ -87,6 +106,14 @@ function jsonInit(method: "POST" | "PUT" | "PATCH", body: unknown): RequestInit 
 function companyPath(path: string, companyId: string): string {
   const separator = path.includes("?") ? "&" : "?";
   return `${path}${separator}company_id=${encodeURIComponent(companyId)}`;
+}
+
+function attachmentFormData(file: File, companyId: string, description?: string | null): FormData {
+  const formData = new FormData();
+  formData.append("company_id", companyId);
+  formData.append("file", file);
+  if (description) formData.append("description", description);
+  return formData;
 }
 
 export const api = {
@@ -130,6 +157,13 @@ export const api = {
   updateWorkObjectPriority: (workObjectId: string, payload: { company_id: string; priority: string }) => request<WorkObject>(`/work-objects/${workObjectId}/priority`, jsonInit("PATCH", payload)),
   completeWorkObject: (workObjectId: string, payload: { company_id: string }) => request<WorkObject>(`/work-objects/${workObjectId}/complete`, jsonInit("POST", payload)),
   workObjectTimeline: (workObjectId: string, companyId: string) => request<Event[]>(companyPath(`/work-objects/${workObjectId}/timeline`, companyId)),
+  workObjectAttachments: (workObjectId: string, companyId: string) => request<Attachment[]>(companyPath(`/work-objects/${workObjectId}/attachments`, companyId)),
+  uploadWorkObjectAttachment: (workObjectId: string, companyId: string, file: File, description?: string | null) =>
+    request<Attachment>(`/work-objects/${workObjectId}/attachments`, { method: "POST", body: attachmentFormData(file, companyId, description) }),
+  attachment: (attachmentId: string, companyId: string) => request<Attachment>(companyPath(`/attachments/${attachmentId}`, companyId)),
+  updateAttachment: (attachmentId: string, companyId: string, payload: AttachmentUpdatePayload) => request<Attachment>(companyPath(`/attachments/${attachmentId}`, companyId), jsonInit("PATCH", payload)),
+  deleteAttachment: (attachmentId: string, companyId: string) => request<void>(companyPath(`/attachments/${attachmentId}`, companyId), { method: "DELETE" }),
+  downloadAttachment: (attachmentId: string, companyId: string) => requestBlob(companyPath(`/attachments/${attachmentId}/download`, companyId)),
   leaves: (companyId: string) => request<LeaveRequest[]>(companyPath("/leaves", companyId)),
   leave: (leaveId: string, companyId: string) => request<LeaveRequest>(companyPath(`/leaves/${leaveId}`, companyId)),
   leaveSummary: (companyId: string) => request<LeaveSummary>(companyPath("/leaves/summary", companyId)),

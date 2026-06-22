@@ -8,19 +8,36 @@ from app.schemas.common import FebGridModel, Timestamped
 
 class AttachmentBase(FebGridModel):
     company_id: UUID
+    work_object_id: UUID | None = None
+    project_id: UUID | None = None
+    uploaded_by_user_id: UUID | None = None
     uploaded_by_employee_id: UUID | None = None
-    linked_entity_type: str = Field(min_length=1, max_length=80)
+    linked_entity_type: str = Field(default="work_object", min_length=1, max_length=80)
     linked_entity_id: UUID
     file_name: str = Field(min_length=1, max_length=255)
-    file_type: str | None = Field(default=None, max_length=120)
+    original_file_name: str = Field(min_length=1, max_length=255)
+    content_type: str | None = Field(
+        default=None,
+        max_length=120,
+        validation_alias=AliasChoices("content_type", "file_type"),
+        serialization_alias="content_type",
+    )
     file_size: int | None = Field(default=None, ge=0)
-    storage_url: str = Field(min_length=1)
+    storage_provider: str = Field(default="local", max_length=40)
+    storage_path: str = Field(min_length=1)
+    public_url: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("public_url", "storage_url"),
+        serialization_alias="public_url",
+    )
+    description: str | None = None
     ai_processing_status: str = Field(default="pending", max_length=40)
     metadata: dict[str, Any] = Field(
         default_factory=dict,
         validation_alias=AliasChoices("metadata_json", "metadata"),
         serialization_alias="metadata",
     )
+    is_active: bool = True
 
     @field_validator("metadata", mode="before")
     @classmethod
@@ -38,9 +55,22 @@ class WorkObjectAttachmentCreate(FebGridModel):
     company_id: UUID
     uploaded_by_employee_id: UUID | None = None
     file_name: str = Field(min_length=1, max_length=255)
-    file_type: str | None = Field(default=None, max_length=120)
+    original_file_name: str | None = Field(default=None, min_length=1, max_length=255)
+    content_type: str | None = Field(
+        default=None,
+        max_length=120,
+        validation_alias=AliasChoices("content_type", "file_type"),
+        serialization_alias="content_type",
+    )
     file_size: int | None = Field(default=None, ge=0)
-    storage_url: str = Field(min_length=1)
+    storage_provider: str = Field(default="local", max_length=40)
+    storage_path: str = Field(min_length=1)
+    public_url: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("public_url", "storage_url"),
+        serialization_alias="public_url",
+    )
+    description: str | None = None
     ai_processing_status: str = Field(default="pending", max_length=40)
     metadata: dict[str, Any] = Field(
         default_factory=dict,
@@ -50,16 +80,21 @@ class WorkObjectAttachmentCreate(FebGridModel):
 
 
 class AttachmentUpdate(FebGridModel):
-    file_name: str | None = Field(default=None, min_length=1, max_length=255)
-    file_type: str | None = Field(default=None, max_length=120)
-    file_size: int | None = Field(default=None, ge=0)
-    storage_url: str | None = Field(default=None, min_length=1)
-    ai_processing_status: str | None = Field(default=None, max_length=40)
+    description: str | None = None
     metadata: dict[str, Any] | None = Field(
         default=None,
         validation_alias=AliasChoices("metadata", "metadata_json"),
         serialization_alias="metadata",
     )
+
+    @field_validator("metadata", mode="before")
+    @classmethod
+    def ensure_optional_metadata_dict(cls, value: Any) -> dict[str, Any] | None:
+        if value is None:
+            return None
+        if isinstance(value, dict):
+            return value
+        return {}
 
 
 class AttachmentRead(AttachmentBase, Timestamped):

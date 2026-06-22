@@ -1,7 +1,9 @@
+import json
 from datetime import datetime, timedelta, timezone
+from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Response, UploadFile, status
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
@@ -18,7 +20,7 @@ from app.models.project import Project
 from app.models.team import Team
 from app.models.user import User
 from app.models.work_object import WorkObject
-from app.schemas.attachment import AttachmentCreate, AttachmentRead, WorkObjectAttachmentCreate
+from app.schemas.attachment import AttachmentCreate, AttachmentRead
 from app.schemas.event import EventRead
 from app.schemas.work_object import (
     WorkObjectAssigneeUpdate,
@@ -203,6 +205,18 @@ def notify_assignment(db: Session, work_object: WorkObject) -> None:
         related_entity_type="work_object",
         related_entity_id=work_object.id,
     )
+
+
+def parse_metadata_form(metadata: str | None) -> dict[str, Any]:
+    if not metadata:
+        return {}
+    try:
+        parsed = json.loads(metadata)
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="metadata must be valid JSON") from None
+    if not isinstance(parsed, dict):
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="metadata must be a JSON object")
+    return parsed
 
 
 def get_work_object_for_user(
@@ -777,30 +791,62 @@ def get_work_object_timeline(
 @router.post("/{work_object_id}/attachments", response_model=AttachmentRead, status_code=status.HTTP_201_CREATED)
 def add_work_object_attachment(
     work_object_id: UUID,
-    payload: WorkObjectAttachmentCreate,
+    company_id: UUID = Form(...),
+    file: UploadFile = File(...),
+    uploaded_by_employee_id: UUID | None = Form(default=None),
+    description: str | None = Form(default=None),
+    metadata: str | None = Form(default=None),
     db: Session = Depends(db_session),
     current_user: User | None = Depends(get_optional_current_user),
 ) -> Attachment:
-    ensure_company_access(current_user, payload.company_id)
-    work_object = get_or_404(db, WorkObject, work_object_id, label="Work object")
-    ensure_company(work_object, payload.company_id, label="Work object")
+    ensure_company_access(current_user, company_id)
+    work_object = get_work_object_for_user(db, current_user, work_object_id=work_object_id, company_id=company_id)
+    if uploaded_by_employee_id is None:
+        linked_employee = get_linked_employee(db, current_user)
+        uploaded_by_employee_id = linked_employee.id if linked_employee is not None else None
+    if uploaded_by_employee_id is not None:
+        uploader = get_or_404(db, Employee, uploaded_by_employee_id, label="Uploader")
+        ensure_company(uploader, company_id, label="Uploader")
+    stored_file = FileService.save_upload(file=file, company_id=company_id, work_object_id=work_object_id)
     attachment_payload = AttachmentCreate(
-        **payload.model_dump(),
+        company_id=company_id,
+        work_object_id=work_object_id,
+        project_id=work_object.project_id,
+        uploaded_by_user_id=current_user.id if current_user is not None else None,
+        uploaded_by_employee_id=uploaded_by_employee_id,
         linked_entity_type="work_object",
         linked_entity_id=work_object_id,
+        file_name=stored_file.file_name,
+        original_file_name=stored_file.original_file_name,
+        content_type=stored_file.content_type,
+        file_size=stored_file.file_size,
+        storage_provider=stored_file.storage_provider,
+        storage_path=stored_file.storage_path,
+        public_url=None,
+        description=description.strip() if description else None,
+        metadata=parse_metadata_form(metadata),
+        ai_processing_status="pending",
+        is_active=True,
     )
     attachment = FileService.build_attachment(attachment_payload)
     db.add(attachment)
     db.flush()
     EventService.record_event(
         db,
-        company_id=payload.company_id,
-        actor_employee_id=payload.uploaded_by_employee_id,
-        event_type="attachment.created",
-        title=f"{payload.file_name} attached",
-        target_entity_type="work_object",
-        target_entity_id=work_object_id,
-        metadata={"attachment_id": str(attachment.id), "file_type": payload.file_type},
+        company_id=company_id,
+        actor_employee_id=actor_employee_id(db, current_user, uploaded_by_employee_id),
+        event_type="file.uploaded",
+        title=f"{attachment.original_file_name} uploaded",
+        description="File was uploaded to a work object.",
+        target_entity_type="attachment",
+        target_entity_id=attachment.id,
+        metadata={
+            "actor_user_id": str(current_user.id) if current_user else None,
+            "work_object_id": str(work_object_id),
+            "project_id": str(work_object.project_id) if work_object.project_id else None,
+            "content_type": attachment.content_type,
+            "file_size": attachment.file_size,
+        },
     )
     db.commit()
     db.refresh(attachment)
@@ -818,12 +864,14 @@ def list_work_object_attachments(
     ensure_company_access(current_user, company_id)
     work_object = get_or_404(db, WorkObject, work_object_id, label="Work object")
     ensure_company(work_object, company_id, label="Work object")
+    ensure_work_object_visible(db, current_user, work_object)
     statement = (
         select(Attachment)
         .where(
             Attachment.company_id == company_id,
             Attachment.linked_entity_type == "work_object",
             Attachment.linked_entity_id == work_object_id,
+            Attachment.is_active.is_(True),
         )
         .order_by(Attachment.created_at.desc())
         .limit(limit)

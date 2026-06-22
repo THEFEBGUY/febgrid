@@ -1,20 +1,18 @@
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.api.deps import db_session
-from app.api.utils import ensure_company, get_or_404, update_model
-from app.models.ai_job import AIJob
+from app.api.deps import db_session, get_optional_current_user
+from app.api.utils import ensure_company, get_or_404
+from app.core.permissions import MANAGER_ROLES, ensure_company_access, ensure_role
 from app.models.attachment import Attachment
 from app.models.company import Company
 from app.models.employee import Employee
-from app.models.event import Event
-from app.models.leave_request import LeaveRequest
-from app.models.notification import Notification
 from app.models.project import Project
-from app.models.team import Team
+from app.models.user import User
 from app.models.work_object import WorkObject
 from app.schemas.attachment import AttachmentCreate, AttachmentRead, AttachmentUpdate
 from app.services.event_service import EventService
@@ -24,51 +22,147 @@ router = APIRouter(prefix="/attachments", tags=["attachments"])
 uploads_router = APIRouter(prefix="/uploads", tags=["attachments"])
 files_router = APIRouter(prefix="/files", tags=["attachments"])
 
-LINKED_MODELS = {
-    "employee": Employee,
-    "team": Team,
-    "project": Project,
-    "work_object": WorkObject,
-    "leave_request": LeaveRequest,
-    "event": Event,
-    "notification": Notification,
-    "ai_job": AIJob,
-}
+
+def get_linked_employee(db: Session, current_user: User | None) -> Employee | None:
+    if current_user is None:
+        return None
+    return db.scalar(
+        select(Employee).where(
+            Employee.company_id == current_user.company_id,
+            Employee.user_id == current_user.id,
+            Employee.is_active.is_(True),
+        )
+    )
 
 
-def validate_linked_entity(db: Session, payload: AttachmentCreate) -> None:
-    if payload.linked_entity_type == "company":
-        get_or_404(db, Company, payload.linked_entity_id, label="Company")
-        if payload.linked_entity_id != payload.company_id:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Company not found")
-        return
+def actor_employee_id(db: Session, current_user: User | None, fallback_employee_id: UUID | None = None) -> UUID | None:
+    linked_employee = get_linked_employee(db, current_user)
+    return linked_employee.id if linked_employee else fallback_employee_id
 
-    model = LINKED_MODELS.get(payload.linked_entity_type)
-    if model is None:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unsupported linked_entity_type")
-    entity = get_or_404(db, model, payload.linked_entity_id, label="Linked entity")
-    ensure_company(entity, payload.company_id, label="Linked entity")
+
+def can_view_work_object(db: Session, current_user: User | None, work_object: WorkObject) -> bool:
+    if current_user is None or current_user.role in MANAGER_ROLES:
+        return True
+    if work_object.creator_user_id == current_user.id:
+        return True
+    linked_employee = get_linked_employee(db, current_user)
+    if linked_employee is None:
+        return False
+    return work_object.assignee_employee_id == linked_employee.id or work_object.creator_employee_id == linked_employee.id
+
+
+def ensure_work_object_visible(db: Session, current_user: User | None, work_object: WorkObject) -> None:
+    if not can_view_work_object(db, current_user, work_object):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Work object not found")
+
+
+def validate_attachment_refs(
+    db: Session,
+    *,
+    company_id: UUID,
+    work_object_id: UUID | None = None,
+    project_id: UUID | None = None,
+    uploaded_by_employee_id: UUID | None = None,
+    uploaded_by_user_id: UUID | None = None,
+) -> None:
+    if work_object_id is not None:
+        work_object = get_or_404(db, WorkObject, work_object_id, label="Work object")
+        ensure_company(work_object, company_id, label="Work object")
+    if project_id is not None:
+        project = get_or_404(db, Project, project_id, label="Project")
+        ensure_company(project, company_id, label="Project")
+    if uploaded_by_employee_id is not None:
+        employee = get_or_404(db, Employee, uploaded_by_employee_id, label="Uploader")
+        ensure_company(employee, company_id, label="Uploader")
+    if uploaded_by_user_id is not None:
+        user = get_or_404(db, User, uploaded_by_user_id, label="Uploader")
+        ensure_company_access(user, company_id)
+
+
+def record_file_event(
+    db: Session,
+    *,
+    attachment: Attachment,
+    current_user: User | None,
+    event_type: str,
+    title: str,
+    description: str,
+    metadata: dict[str, object] | None = None,
+) -> None:
+    event_metadata: dict[str, object] = {
+        "attachment_id": str(attachment.id),
+        "work_object_id": str(attachment.work_object_id) if attachment.work_object_id else None,
+        "project_id": str(attachment.project_id) if attachment.project_id else None,
+        "content_type": attachment.content_type,
+        "file_size": attachment.file_size,
+    }
+    if current_user is not None:
+        event_metadata["actor_user_id"] = str(current_user.id)
+    if metadata:
+        event_metadata.update(metadata)
+    EventService.record_event(
+        db,
+        company_id=attachment.company_id,
+        actor_employee_id=actor_employee_id(db, current_user, attachment.uploaded_by_employee_id),
+        event_type=event_type,
+        title=title,
+        description=description,
+        target_entity_type="attachment",
+        target_entity_id=attachment.id,
+        metadata=event_metadata,
+    )
+
+
+def get_attachment_for_user(
+    db: Session,
+    current_user: User | None,
+    *,
+    attachment_id: UUID,
+    company_id: UUID,
+    include_inactive: bool = False,
+) -> Attachment:
+    ensure_company_access(current_user, company_id)
+    attachment = get_or_404(db, Attachment, attachment_id, label="Attachment")
+    ensure_company(attachment, company_id, label="Attachment")
+    if not include_inactive and not attachment.is_active:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Attachment not found")
+    if attachment.work_object_id is not None:
+        work_object = get_or_404(db, WorkObject, attachment.work_object_id, label="Work object")
+        ensure_company(work_object, company_id, label="Work object")
+        ensure_work_object_visible(db, current_user, work_object)
+    return attachment
+
+
+def build_attachment_from_payload(payload: AttachmentCreate) -> Attachment:
+    return FileService.build_attachment(payload)
 
 
 @router.post("", response_model=AttachmentRead, status_code=status.HTTP_201_CREATED)
-def create_attachment(payload: AttachmentCreate, db: Session = Depends(db_session)) -> Attachment:
+def create_attachment_metadata(
+    payload: AttachmentCreate,
+    db: Session = Depends(db_session),
+    current_user: User | None = Depends(get_optional_current_user),
+) -> Attachment:
+    ensure_company_access(current_user, payload.company_id)
     get_or_404(db, Company, payload.company_id, label="Company")
-    if payload.uploaded_by_employee_id:
-        uploader = get_or_404(db, Employee, payload.uploaded_by_employee_id, label="Uploader")
-        ensure_company(uploader, payload.company_id, label="Uploader")
-    validate_linked_entity(db, payload)
-    attachment = FileService.build_attachment(payload)
-    db.add(attachment)
-    db.flush()
-    EventService.record_event(
+    validate_attachment_refs(
         db,
         company_id=payload.company_id,
-        actor_employee_id=payload.uploaded_by_employee_id,
-        event_type="attachment.created",
-        title=f"{payload.file_name} uploaded",
-        target_entity_type=payload.linked_entity_type,
-        target_entity_id=payload.linked_entity_id,
-        metadata={"attachment_id": str(attachment.id), "file_type": payload.file_type},
+        work_object_id=payload.work_object_id,
+        project_id=payload.project_id,
+        uploaded_by_employee_id=payload.uploaded_by_employee_id,
+        uploaded_by_user_id=payload.uploaded_by_user_id,
+    )
+    attachment = build_attachment_from_payload(payload)
+    db.add(attachment)
+    db.flush()
+    record_file_event(
+        db,
+        attachment=attachment,
+        current_user=current_user,
+        event_type="file.uploaded",
+        title=f"{attachment.original_file_name} uploaded",
+        description="File metadata was created.",
     )
     db.commit()
     db.refresh(attachment)
@@ -79,12 +173,26 @@ def create_attachment(payload: AttachmentCreate, db: Session = Depends(db_sessio
 def list_attachments(
     company_id: UUID,
     db: Session = Depends(db_session),
+    current_user: User | None = Depends(get_optional_current_user),
+    work_object_id: UUID | None = None,
+    project_id: UUID | None = None,
     linked_entity_type: str | None = None,
     linked_entity_id: UUID | None = None,
+    include_inactive: bool = False,
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
 ) -> list[Attachment]:
+    ensure_company_access(current_user, company_id)
     statement = select(Attachment).where(Attachment.company_id == company_id)
+    if not include_inactive:
+        statement = statement.where(Attachment.is_active.is_(True))
+    if work_object_id:
+        work_object = get_or_404(db, WorkObject, work_object_id, label="Work object")
+        ensure_company(work_object, company_id, label="Work object")
+        ensure_work_object_visible(db, current_user, work_object)
+        statement = statement.where(Attachment.work_object_id == work_object_id)
+    if project_id:
+        statement = statement.where(Attachment.project_id == project_id)
     if linked_entity_type:
         statement = statement.where(Attachment.linked_entity_type == linked_entity_type)
     if linked_entity_id:
@@ -94,79 +202,130 @@ def list_attachments(
 
 
 @router.get("/{attachment_id}", response_model=AttachmentRead)
-def get_attachment(attachment_id: UUID, company_id: UUID, db: Session = Depends(db_session)) -> Attachment:
-    attachment = get_or_404(db, Attachment, attachment_id, label="Attachment")
-    ensure_company(attachment, company_id, label="Attachment")
-    return attachment
+def get_attachment(
+    attachment_id: UUID,
+    company_id: UUID,
+    db: Session = Depends(db_session),
+    current_user: User | None = Depends(get_optional_current_user),
+) -> Attachment:
+    return get_attachment_for_user(db, current_user, attachment_id=attachment_id, company_id=company_id)
 
 
-@router.put("/{attachment_id}", response_model=AttachmentRead)
+@router.get("/{attachment_id}/download")
+def download_attachment(
+    attachment_id: UUID,
+    company_id: UUID,
+    db: Session = Depends(db_session),
+    current_user: User | None = Depends(get_optional_current_user),
+) -> FileResponse:
+    attachment = get_attachment_for_user(db, current_user, attachment_id=attachment_id, company_id=company_id)
+    if attachment.storage_provider != FileService.STORAGE_PROVIDER:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File is not available from local storage")
+    path = FileService.resolve_storage_path(attachment.storage_path)
+    if not path.exists() or not path.is_file():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found")
+    return FileResponse(
+        path,
+        media_type=attachment.content_type or "application/octet-stream",
+        filename=attachment.original_file_name,
+    )
+
+
+@router.patch("/{attachment_id}", response_model=AttachmentRead)
 def update_attachment(
     attachment_id: UUID,
     company_id: UUID,
     payload: AttachmentUpdate,
     db: Session = Depends(db_session),
+    current_user: User | None = Depends(get_optional_current_user),
 ) -> Attachment:
-    attachment = get_or_404(db, Attachment, attachment_id, label="Attachment")
-    ensure_company(attachment, company_id, label="Attachment")
-    changed = update_model(attachment, payload, alias_fields={"metadata": "metadata_json"})
+    attachment = get_attachment_for_user(db, current_user, attachment_id=attachment_id, company_id=company_id)
+    data = payload.model_dump(exclude_unset=True)
+    changed: list[str] = []
+    if "description" in data:
+        attachment.description = data["description"]
+        changed.append("description")
+    if "metadata" in data:
+        attachment.metadata_json = data["metadata"] or {}
+        changed.append("metadata")
     if changed:
-        EventService.record_event(
+        record_file_event(
             db,
-            company_id=company_id,
-            actor_employee_id=attachment.uploaded_by_employee_id,
-            event_type="attachment.updated",
-            title=f"{attachment.file_name} updated",
-            target_entity_type=attachment.linked_entity_type,
-            target_entity_id=attachment.linked_entity_id,
-            metadata={"attachment_id": str(attachment.id), "changed_fields": sorted(changed.keys())},
+            attachment=attachment,
+            current_user=current_user,
+            event_type="file.updated",
+            title=f"{attachment.original_file_name} updated",
+            description="File metadata was updated.",
+            metadata={"changed_fields": sorted(changed)},
         )
     db.commit()
     db.refresh(attachment)
     return attachment
 
 
+@router.put("/{attachment_id}", response_model=AttachmentRead)
+def replace_attachment_metadata(
+    attachment_id: UUID,
+    company_id: UUID,
+    payload: AttachmentUpdate,
+    db: Session = Depends(db_session),
+    current_user: User | None = Depends(get_optional_current_user),
+) -> Attachment:
+    return update_attachment(attachment_id, company_id, payload, db, current_user)
+
+
 @router.delete("/{attachment_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_attachment(
     attachment_id: UUID,
     company_id: UUID,
-    actor_employee_id: UUID | None = None,
+    remove_file: bool = True,
     db: Session = Depends(db_session),
+    current_user: User | None = Depends(get_optional_current_user),
 ) -> Response:
-    attachment = get_or_404(db, Attachment, attachment_id, label="Attachment")
-    ensure_company(attachment, company_id, label="Attachment")
-    EventService.record_event(
+    attachment = get_attachment_for_user(db, current_user, attachment_id=attachment_id, company_id=company_id)
+    ensure_role(current_user, MANAGER_ROLES)
+    attachment.is_active = False
+    record_file_event(
         db,
-        company_id=company_id,
-        actor_employee_id=actor_employee_id,
-        event_type="attachment.deleted",
-        title=f"{attachment.file_name} deleted",
-        target_entity_type=attachment.linked_entity_type,
-        target_entity_id=attachment.linked_entity_id,
-        metadata={"attachment_id": str(attachment.id)},
+        attachment=attachment,
+        current_user=current_user,
+        event_type="file.deleted",
+        title=f"{attachment.original_file_name} deleted",
+        description="File attachment was removed.",
     )
-    db.delete(attachment)
+    if remove_file:
+        FileService.delete_local_file(attachment)
     db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @uploads_router.post("", response_model=AttachmentRead, status_code=status.HTTP_201_CREATED)
-def upload_file_metadata(payload: AttachmentCreate, db: Session = Depends(db_session)) -> Attachment:
-    return create_attachment(payload, db)
+def upload_file_metadata(
+    payload: AttachmentCreate,
+    db: Session = Depends(db_session),
+    current_user: User | None = Depends(get_optional_current_user),
+) -> Attachment:
+    return create_attachment_metadata(payload, db, current_user)
 
 
 @files_router.get("", response_model=list[AttachmentRead])
 def list_files(
     company_id: UUID,
     db: Session = Depends(db_session),
+    current_user: User | None = Depends(get_optional_current_user),
     linked_entity_type: str | None = None,
     linked_entity_id: UUID | None = None,
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
 ) -> list[Attachment]:
-    return list_attachments(company_id, db, linked_entity_type, linked_entity_id, limit, offset)
+    return list_attachments(company_id, db, current_user, None, None, linked_entity_type, linked_entity_id, False, limit, offset)
 
 
 @files_router.get("/{attachment_id}", response_model=AttachmentRead)
-def get_file(attachment_id: UUID, company_id: UUID, db: Session = Depends(db_session)) -> Attachment:
-    return get_attachment(attachment_id, company_id, db)
+def get_file(
+    attachment_id: UUID,
+    company_id: UUID,
+    db: Session = Depends(db_session),
+    current_user: User | None = Depends(get_optional_current_user),
+) -> Attachment:
+    return get_attachment(attachment_id, company_id, db, current_user)
