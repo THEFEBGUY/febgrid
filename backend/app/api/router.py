@@ -6,6 +6,7 @@ from app.api.routes import (
     ai_jobs,
     companies,
     communication,
+    dashboard,
     departments,
     employees,
     events,
@@ -22,6 +23,7 @@ api_router = APIRouter()
 api_router.include_router(health.router)
 api_router.include_router(auth.router)
 api_router.include_router(companies.router)
+api_router.include_router(dashboard.router)
 api_router.include_router(departments.router)
 api_router.include_router(employees.router)
 api_router.include_router(teams.router)

@@ -24,6 +24,7 @@ import type {
 
 const emptyData: FebGridData = {
   companies: [],
+  dashboardSummary: null,
   departments: [],
   employees: [],
   teams: [],
@@ -212,7 +213,8 @@ export function useFebGridData({ enabled = true }: UseFebGridDataOptions = {}): 
     setModuleErrors({});
     setData((current) => ({ ...current, ...emptyData, companies: current.companies }));
 
-    const [departments, employees, teams, projects, workObjects, leaves, events, notifications, announcements] = await Promise.allSettled([
+    const [dashboardSummary, departments, employees, teams, projects, workObjects, leaves, events, notifications, announcements] = await Promise.allSettled([
+      api.dashboardSummary(selectedCompanyId),
       api.departments(selectedCompanyId),
       api.employees(selectedCompanyId),
       api.teams(selectedCompanyId),
@@ -226,6 +228,9 @@ export function useFebGridData({ enabled = true }: UseFebGridDataOptions = {}): 
 
     const nextData: Partial<FebGridData> = {};
     const nextErrors: ModuleErrors = {};
+
+    if (dashboardSummary.status === "fulfilled") nextData.dashboardSummary = dashboardSummary.value;
+    else nextErrors.dashboardSummary = getErrorMessage(dashboardSummary.reason);
 
     if (departments.status === "fulfilled") nextData.departments = departments.value;
     else nextErrors.departments = getErrorMessage(departments.reason);

@@ -47,7 +47,7 @@ export function AppLayout({
 
       {isSidebarOpen ? (
         <div className="fixed inset-0 z-40 lg:hidden" role="dialog" aria-modal="true">
-          <button className="absolute inset-0 bg-ink-950/40" type="button" aria-label="Close navigation" onClick={onCloseSidebar} />
+          <button className="absolute inset-0 bg-ink-950/40" type="button" title="Close navigation" aria-label="Close navigation" onClick={onCloseSidebar} />
           <div className="relative h-full w-80 max-w-[86vw] bg-white shadow-soft">
             <div className="absolute right-3 top-3 z-10">
               <Button

@@ -30,6 +30,28 @@ select {
   font: inherit;
 }
 
+.febgrid-button-icon {
+  width: 1.125rem;
+  height: 1.125rem;
+  min-width: 1.125rem;
+  min-height: 1.125rem;
+}
+
+.febgrid-button-icon > svg {
+  display: block;
+  width: 1.125rem !important;
+  height: 1.125rem !important;
+  min-width: 1.125rem;
+  min-height: 1.125rem;
+  flex-shrink: 0;
+  color: currentColor;
+  stroke: currentColor;
+}
+
+button:disabled .febgrid-button-icon {
+  opacity: 0.72;
+}
+
 button:focus-visible,
 a:focus-visible,
 input:focus-visible,

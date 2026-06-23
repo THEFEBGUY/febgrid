@@ -530,8 +530,71 @@ export interface NotificationUnreadCount {
   unread_count: number;
 }
 
+export interface DashboardSummary {
+  company_overview: {
+    company_id: string;
+    company_name: string;
+    generated_at: string;
+  };
+  employee_summary: {
+    total_employees: number;
+    active_employees: number;
+    available_employees: number;
+    on_leave_employees: number;
+    busy_employees: number;
+    inactive_employees: number;
+  };
+  work_summary: {
+    total_work_objects: number;
+    pending_or_assigned: number;
+    in_progress: number;
+    blocked: number;
+    under_review: number;
+    completed: number;
+    overdue: number;
+    due_today: number;
+    high_or_critical_priority: number;
+  };
+  project_summary: {
+    total_projects: number;
+    active_projects: number;
+    on_hold_projects: number;
+    delayed_projects: number;
+    completed_projects: number;
+    high_priority_projects: number;
+    average_progress: number;
+  };
+  leave_summary: {
+    total_leave_requests: number;
+    pending_leave_requests: number;
+    approved_leave_requests: number;
+    rejected_leave_requests: number;
+    cancelled_leave_requests: number;
+    upcoming_approved_leaves: number;
+  };
+  file_summary: {
+    total_attachments: number;
+    recent_uploads_count: number;
+  };
+  notification_summary: {
+    unread_notifications: number;
+    important_notifications: number;
+  };
+  announcement_summary: {
+    active_announcements: number;
+    urgent_announcements: number;
+  };
+  recent_events: Event[];
+  recent_notifications: Notification[];
+  recent_announcements: Announcement[];
+  priority_work: WorkObject[];
+  project_health_list: Project[];
+  leave_attention_list: LeaveRequest[];
+}
+
 export interface FebGridData {
   companies: Company[];
+  dashboardSummary: DashboardSummary | null;
   departments: Department[];
   employees: Employee[];
   teams: Team[];

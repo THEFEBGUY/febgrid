@@ -150,7 +150,7 @@ export function App(): JSX.Element {
         );
       case "dashboard":
       default:
-        return <DashboardPage {...withModuleError(null)} />;
+        return <DashboardPage {...withModuleError(febGrid.moduleErrors.dashboardSummary ?? null)} />;
     }
   }
 

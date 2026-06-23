@@ -26,6 +26,7 @@ Phase 1 focuses on the backend foundation:
 - Sprint 6 File Upload v1 for tenant-safe work-object attachments, local development storage, download/delete flow, file events, and attachment search metadata
 - Notification v1 and Event Stream Polish for tenant-safe in-app notifications, unread/read/dismiss actions, unread counts, and a reliable universal timeline
 - Phase 1 Communication Layer foundation for tenant-safe work-object/project comments, simple employee mentions, internal announcements, communication events, and in-app notifications
+- Sprint 9 Basic Dashboard polish with a tenant-safe live operational summary for employees, work, projects, leave, files, notifications, announcements, and recent events
 - Health check, universal timeline, and basic operational search
 - Mock-only AI boundary in `backend/app/services/ai_service.py`
 
@@ -87,7 +88,7 @@ The frontend reads the backend URL from `VITE_API_BASE_URL`. The documented defa
 VITE_API_BASE_URL=http://localhost:8000
 ```
 
-The Phase 1 frontend includes the main dashboard shell, sidebar navigation, reusable table/card/badge UI, and pages for Dashboard, Companies, Employees, Teams, Projects, Work Objects, Leaves, Events, Announcements, and Notifications. Sprint 3 adds authenticated employee directory management, employee profile modals, status controls, department creation, and team creation. The project foundation adds create/edit project workflows, status and priority controls, project members, detail view, timeline, and linked work object readiness. Sprint 4 adds real work object CRUD, assignment, status and priority controls, project linkage, detail timeline, and light dashboard work metrics. Sprint 5 adds real leave submission, pending edits, approval/rejection/cancel decisions, leave detail timeline, and light dashboard leave metrics. Sprint 6 adds work-object attachment upload, attachment list/download/delete actions, description edits, and file activity events. Notification v1 adds unread counts, mark read/unread, mark all read, dismiss, action links, and event timeline filtering. The Phase 1 communication layer adds comments to work-object/project detail views, simple employee mentions, internal announcements, communication events, and communication notifications.
+The Phase 1 frontend includes the main dashboard shell, sidebar navigation, reusable table/card/badge UI, and pages for Dashboard, Companies, Employees, Teams, Projects, Work Objects, Leaves, Events, Announcements, and Notifications. Sprint 3 adds authenticated employee directory management, employee profile modals, status controls, department creation, and team creation. The project foundation adds create/edit project workflows, status and priority controls, project members, detail view, timeline, and linked work object readiness. Sprint 4 adds real work object CRUD, assignment, status and priority controls, project linkage, and detail timeline. Sprint 5 adds real leave submission, pending edits, approval/rejection/cancel decisions, and leave detail timeline. Sprint 6 adds work-object attachment upload, attachment list/download/delete actions, description edits, and file activity events. Notification v1 adds unread counts, mark read/unread, mark all read, dismiss, action links, and event timeline filtering. The Phase 1 communication layer adds comments to work-object/project detail views, simple employee mentions, internal announcements, communication events, and communication notifications. Sprint 9 turns the Dashboard into a real operational overview backed by `/api/v1/dashboard/summary`, with live cards, priority work, project health, leave attention, recent events, unread notifications, announcements, and quick actions.
 
 Local uploaded files are stored under `backend/storage/uploads/` for development. That folder is ignored by Git and should not be committed.
 
@@ -114,6 +115,7 @@ All Phase 1 endpoints are mounted under `/api/v1`.
 - `/auth/logout`
 - `/auth/me`
 - `/companies`
+- `/dashboard/summary`
 - `/departments`
 - `/employees`
 - `/teams`
