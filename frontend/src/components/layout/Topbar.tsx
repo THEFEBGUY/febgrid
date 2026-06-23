@@ -1,8 +1,10 @@
 import { Bell, LogOut, Menu, Search, ShieldCheck } from "lucide-react";
 
 import type { AuthUser, Company } from "../../types/api";
+import type { ThemeMode } from "../../hooks/useTheme";
 import { formatLabel } from "../../utils/format";
 import { Button } from "../ui/Button";
+import { ThemeToggle } from "./ThemeToggle";
 
 interface TopbarProps {
   title: string;
@@ -11,9 +13,11 @@ interface TopbarProps {
   companies: Company[];
   selectedCompanyId: string | null;
   currentUser: AuthUser | null;
+  theme: ThemeMode;
   unreadNotificationCount: number;
   onSelectCompany: (companyId: string) => void;
   onOpenNotifications: () => void;
+  onToggleTheme: () => void;
   onLogout: () => void;
 }
 
@@ -24,9 +28,11 @@ export function Topbar({
   companies,
   selectedCompanyId,
   currentUser,
+  theme,
   unreadNotificationCount,
   onSelectCompany,
   onOpenNotifications,
+  onToggleTheme,
   onLogout,
 }: TopbarProps): JSX.Element {
   return (
@@ -75,6 +81,7 @@ export function Topbar({
           </label>
           <div className="flex gap-2">
             <Button icon={<ShieldCheck className="size-4" aria-hidden="true" />}>Tenant safe</Button>
+            <ThemeToggle theme={theme} onToggle={onToggleTheme} />
             <Button
               aria-label="Notifications"
               className="relative size-10 px-0"

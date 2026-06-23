@@ -11,6 +11,12 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
+html.dark {
+  color: #e5edf7;
+  background: #0b1120;
+  color-scheme: dark;
+}
+
 * {
   box-sizing: border-box;
 }
@@ -24,9 +30,17 @@ body {
     #f6f7f9;
 }
 
+html.dark body {
+  background:
+    radial-gradient(circle at top right, rgba(37, 99, 235, 0.14), transparent 34rem),
+    linear-gradient(180deg, rgba(15, 23, 42, 0.98), rgba(2, 6, 23, 0.96)),
+    #0b1120;
+}
+
 button,
 input,
-select {
+select,
+textarea {
   font: inherit;
 }
 
@@ -52,12 +66,216 @@ button:disabled .febgrid-button-icon {
   opacity: 0.72;
 }
 
+html.dark .bg-white {
+  background-color: #111827;
+}
+
+html.dark .bg-white\/95 {
+  background-color: rgba(17, 24, 39, 0.95);
+}
+
+html.dark .bg-grid-50 {
+  background-color: #0b1120;
+}
+
+html.dark .bg-grid-50\/90 {
+  background-color: rgba(15, 23, 42, 0.9);
+}
+
+html.dark .bg-grid-100 {
+  background-color: #1e293b;
+}
+
+html.dark .bg-ink-950 {
+  background-color: #2563eb;
+}
+
+html.dark .hover\:bg-ink-900:hover {
+  background-color: #1d4ed8;
+}
+
+html.dark .hover\:bg-grid-50:hover,
+html.dark .hover\:bg-grid-100:hover {
+  background-color: #1e293b;
+}
+
+html.dark .bg-ink-950\/40 {
+  background-color: rgba(2, 6, 23, 0.68);
+}
+
+html.dark .bg-ink-950\/45 {
+  background-color: rgba(2, 6, 23, 0.74);
+}
+
+html.dark .border-grid-100 {
+  border-color: #1f2a3a;
+}
+
+html.dark .border-grid-200 {
+  border-color: #334155;
+}
+
+html.dark .divide-grid-100 > :not([hidden]) ~ :not([hidden]),
+html.dark .divide-grid-200 > :not([hidden]) ~ :not([hidden]) {
+  border-color: #263244;
+}
+
+html.dark .text-ink-950 {
+  color: #f8fafc;
+}
+
+html.dark .text-ink-900 {
+  color: #e5edf7;
+}
+
+html.dark .text-ink-700 {
+  color: #cbd5e1;
+}
+
+html.dark .text-ink-500,
+html.dark .placeholder\:text-ink-500::placeholder {
+  color: #94a3b8;
+}
+
+html.dark .text-grid-200 {
+  color: #cbd5e1;
+}
+
+html.dark .bg-blue-50,
+html.dark .bg-blue-50\/50 {
+  background-color: rgba(37, 99, 235, 0.14);
+}
+
+html.dark .bg-green-50 {
+  background-color: rgba(21, 128, 61, 0.16);
+}
+
+html.dark .bg-amber-50 {
+  background-color: rgba(180, 83, 9, 0.16);
+}
+
+html.dark .bg-rose-50 {
+  background-color: rgba(190, 18, 60, 0.16);
+}
+
+html.dark .bg-teal-50 {
+  background-color: rgba(15, 118, 110, 0.18);
+}
+
+html.dark .bg-slate-50 {
+  background-color: rgba(71, 85, 105, 0.2);
+}
+
+html.dark .text-blue-700 {
+  color: #93c5fd;
+}
+
+html.dark .text-green-700 {
+  color: #86efac;
+}
+
+html.dark .text-amber-700 {
+  color: #fbbf24;
+}
+
+html.dark .text-rose-700 {
+  color: #fda4af;
+}
+
+html.dark .text-teal-700 {
+  color: #5eead4;
+}
+
+html.dark .text-slate-700 {
+  color: #cbd5e1;
+}
+
+html.dark .border-blue-200 {
+  border-color: rgba(96, 165, 250, 0.32);
+}
+
+html.dark .border-green-200 {
+  border-color: rgba(74, 222, 128, 0.32);
+}
+
+html.dark .border-amber-200 {
+  border-color: rgba(251, 191, 36, 0.36);
+}
+
+html.dark .border-rose-200 {
+  border-color: rgba(251, 113, 133, 0.34);
+}
+
+html.dark .border-teal-200 {
+  border-color: rgba(45, 212, 191, 0.32);
+}
+
+html.dark .border-slate-200 {
+  border-color: rgba(148, 163, 184, 0.26);
+}
+
+html.dark .ring-blue-100 {
+  --tw-ring-color: rgba(96, 165, 250, 0.24);
+}
+
+html.dark .ring-green-100 {
+  --tw-ring-color: rgba(74, 222, 128, 0.24);
+}
+
+html.dark .ring-amber-100 {
+  --tw-ring-color: rgba(251, 191, 36, 0.24);
+}
+
+html.dark .ring-rose-100 {
+  --tw-ring-color: rgba(251, 113, 133, 0.24);
+}
+
+html.dark .ring-teal-100 {
+  --tw-ring-color: rgba(45, 212, 191, 0.24);
+}
+
+html.dark .ring-slate-100 {
+  --tw-ring-color: rgba(148, 163, 184, 0.22);
+}
+
+html.dark .shadow-sm,
+html.dark .shadow-soft {
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.26);
+}
+
+html.dark input,
+html.dark select,
+html.dark textarea {
+  color-scheme: dark;
+}
+
+html.dark option {
+  background-color: #111827;
+  color: #e5edf7;
+}
+
+html.dark .disabled\:bg-grid-100:disabled {
+  background-color: #1e293b;
+}
+
+html.dark .disabled\:text-ink-500:disabled {
+  color: #64748b;
+}
+
 button:focus-visible,
 a:focus-visible,
 input:focus-visible,
 select:focus-visible {
   outline: 2px solid #2563eb;
   outline-offset: 2px;
+}
+
+html.dark button:focus-visible,
+html.dark a:focus-visible,
+html.dark input:focus-visible,
+html.dark select:focus-visible,
+html.dark textarea:focus-visible {
+  outline-color: #60a5fa;
 }
 
 ::selection {

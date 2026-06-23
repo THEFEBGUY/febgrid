@@ -5,6 +5,7 @@ import { ErrorState, LoadingState } from "./components/ui/States";
 import { navigationItems } from "./data/navigation";
 import { useAuth } from "./hooks/useAuth";
 import { useFebGridData } from "./hooks/useFebGridData";
+import { useTheme } from "./hooks/useTheme";
 import { AnnouncementsPage } from "./pages/AnnouncementsPage";
 import { AuthPage } from "./pages/AuthPage";
 import { CompaniesPage } from "./pages/CompaniesPage";
@@ -28,6 +29,7 @@ export function App(): JSX.Element {
   const [activePage, setActivePage] = useState<PageKey>(() => getPageFromHash());
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const auth = useAuth();
+  const { theme, toggleTheme } = useTheme();
   const febGrid = useFebGridData({ enabled: auth.isAuthenticated });
   const unreadNotificationCount = febGrid.data.notifications.filter((notification) => !notification.is_read && !notification.is_dismissed).length;
 
@@ -176,12 +178,14 @@ export function App(): JSX.Element {
       isSidebarOpen={isSidebarOpen}
       companies={febGrid.data.companies}
       currentUser={auth.user}
+      theme={theme}
       unreadNotificationCount={unreadNotificationCount}
       onCloseSidebar={() => setIsSidebarOpen(false)}
       onLogout={auth.logout}
       onNavigate={handleNavigate}
       onOpenSidebar={() => setIsSidebarOpen(true)}
       onSelectCompany={febGrid.selectCompany}
+      onToggleTheme={toggleTheme}
       selectedCompanyId={febGrid.selectedCompanyId}
     >
       {renderPage()}

@@ -4,6 +4,7 @@ import { X } from "lucide-react";
 import type { AuthUser, Company } from "../../types/api";
 import type { PageKey } from "../../types/domain";
 import { navigationItems } from "../../data/navigation";
+import type { ThemeMode } from "../../hooks/useTheme";
 import { Button } from "../ui/Button";
 import { Sidebar } from "./Sidebar";
 import { Topbar } from "./Topbar";
@@ -17,8 +18,10 @@ interface AppLayoutProps {
   companies: Company[];
   selectedCompanyId: string | null;
   currentUser: AuthUser | null;
+  theme: ThemeMode;
   unreadNotificationCount: number;
   onSelectCompany: (companyId: string) => void;
+  onToggleTheme: () => void;
   onLogout: () => void;
   children: ReactNode;
 }
@@ -32,8 +35,10 @@ export function AppLayout({
   companies,
   selectedCompanyId,
   currentUser,
+  theme,
   unreadNotificationCount,
   onSelectCompany,
+  onToggleTheme,
   onLogout,
   children,
 }: AppLayoutProps): JSX.Element {
@@ -71,10 +76,12 @@ export function AppLayout({
           companies={companies}
           selectedCompanyId={selectedCompanyId}
           currentUser={currentUser}
+          theme={theme}
           unreadNotificationCount={unreadNotificationCount}
           onOpenSidebar={onOpenSidebar}
           onSelectCompany={onSelectCompany}
           onOpenNotifications={() => onNavigate("notifications")}
+          onToggleTheme={onToggleTheme}
           onLogout={onLogout}
         />
         <main className="mx-auto w-full max-w-7xl px-4 py-6 lg:px-8">{children}</main>
