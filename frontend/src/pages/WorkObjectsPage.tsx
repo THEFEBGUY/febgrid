@@ -1,6 +1,7 @@
 import { Archive, CheckCircle2, Download, Eye, FileText, Pencil, Plus, Trash2, Upload } from "lucide-react";
 import { type FormEvent, useCallback, useMemo, useState } from "react";
 
+import { CommentsSection } from "../components/communication/CommentsSection";
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
 import { DataTable, type DataTableColumn } from "../components/ui/DataTable";
@@ -664,6 +665,15 @@ export function WorkObjectsPage({
                 )
               ) : null}
             </section>
+
+            <CommentsSection
+              companyId={selectedCompanyId}
+              employees={data.employees}
+              employeeNames={employeeNames}
+              targetEntityId={detailWorkObject.id}
+              targetEntityType="work_object"
+              onChanged={() => void loadWorkObjectDetail(detailWorkObject.id)}
+            />
 
             {isDetailLoading ? <LoadingState label="Loading work object timeline" /> : null}
             {detailError ? <ErrorState message={detailError} onRetry={() => loadWorkObjectDetail(detailWorkObject.id)} /> : null}

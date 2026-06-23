@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { api, ApiError } from "../services/api";
 import type {
+  AnnouncementCreatePayload,
+  AnnouncementUpdatePayload,
   Company,
   CompanyCreatePayload,
   DepartmentCreatePayload,
@@ -30,6 +32,7 @@ const emptyData: FebGridData = {
   leaves: [],
   events: [],
   notifications: [],
+  announcements: [],
 };
 
 type ModuleDataKey = Exclude<keyof FebGridData, "companies">;
@@ -78,6 +81,9 @@ interface FebGridDataState {
   markNotificationUnread: (notificationId: string) => Promise<void>;
   markAllNotificationsRead: () => Promise<void>;
   dismissNotification: (notificationId: string) => Promise<void>;
+  createAnnouncement: (payload: Omit<AnnouncementCreatePayload, "company_id">) => Promise<void>;
+  updateAnnouncement: (announcementId: string, payload: AnnouncementUpdatePayload) => Promise<void>;
+  archiveAnnouncement: (announcementId: string) => Promise<void>;
 }
 
 interface UseFebGridDataOptions {
@@ -206,7 +212,7 @@ export function useFebGridData({ enabled = true }: UseFebGridDataOptions = {}): 
     setModuleErrors({});
     setData((current) => ({ ...current, ...emptyData, companies: current.companies }));
 
-    const [departments, employees, teams, projects, workObjects, leaves, events, notifications] = await Promise.allSettled([
+    const [departments, employees, teams, projects, workObjects, leaves, events, notifications, announcements] = await Promise.allSettled([
       api.departments(selectedCompanyId),
       api.employees(selectedCompanyId),
       api.teams(selectedCompanyId),
@@ -215,6 +221,7 @@ export function useFebGridData({ enabled = true }: UseFebGridDataOptions = {}): 
       api.leaves(selectedCompanyId),
       api.events(selectedCompanyId),
       api.notifications(selectedCompanyId),
+      api.announcements(selectedCompanyId),
     ]);
 
     const nextData: Partial<FebGridData> = {};
@@ -243,6 +250,9 @@ export function useFebGridData({ enabled = true }: UseFebGridDataOptions = {}): 
 
     if (notifications.status === "fulfilled") nextData.notifications = notifications.value;
     else nextErrors.notifications = getErrorMessage(notifications.reason);
+
+    if (announcements.status === "fulfilled") nextData.announcements = announcements.value;
+    else nextErrors.announcements = getErrorMessage(announcements.reason);
 
     if (moduleRequestIdRef.current !== requestId) return;
 
@@ -529,6 +539,30 @@ export function useFebGridData({ enabled = true }: UseFebGridDataOptions = {}): 
     });
   }
 
+  async function createAnnouncement(payload: Omit<AnnouncementCreatePayload, "company_id">): Promise<void> {
+    if (!selectedCompanyId) return;
+    await runMutation(async () => {
+      await api.createAnnouncement({ ...payload, company_id: selectedCompanyId });
+      await refreshModules();
+    });
+  }
+
+  async function updateAnnouncement(announcementId: string, payload: AnnouncementUpdatePayload): Promise<void> {
+    if (!selectedCompanyId) return;
+    await runMutation(async () => {
+      await api.updateAnnouncement(announcementId, selectedCompanyId, payload);
+      await refreshModules();
+    });
+  }
+
+  async function archiveAnnouncement(announcementId: string): Promise<void> {
+    if (!selectedCompanyId) return;
+    await runMutation(async () => {
+      await api.archiveAnnouncement(announcementId, selectedCompanyId);
+      await refreshModules();
+    });
+  }
+
   return {
     data,
     selectedCompanyId,
@@ -572,5 +606,8 @@ export function useFebGridData({ enabled = true }: UseFebGridDataOptions = {}): 
     markNotificationUnread,
     markAllNotificationsRead,
     dismissNotification,
+    createAnnouncement,
+    updateAnnouncement,
+    archiveAnnouncement,
   };
 }

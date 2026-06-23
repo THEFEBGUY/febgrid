@@ -9,6 +9,7 @@ export type PageKey =
   | "work-objects"
   | "leaves"
   | "events"
+  | "announcements"
   | "notifications";
 
 export interface NavigationItem {

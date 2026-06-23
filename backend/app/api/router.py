@@ -5,6 +5,7 @@ from app.api.routes import (
     auth,
     ai_jobs,
     companies,
+    communication,
     departments,
     employees,
     events,
@@ -26,6 +27,8 @@ api_router.include_router(employees.router)
 api_router.include_router(teams.router)
 api_router.include_router(projects.router)
 api_router.include_router(work_objects.router)
+api_router.include_router(communication.comments_router)
+api_router.include_router(communication.announcements_router)
 api_router.include_router(leaves.router)
 api_router.include_router(leaves.employee_router)
 api_router.include_router(attachments.router)

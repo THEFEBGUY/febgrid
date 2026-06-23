@@ -343,6 +343,79 @@ export interface AttachmentUpdatePayload {
   metadata?: Record<string, unknown>;
 }
 
+export interface CommentMention {
+  id: string;
+  company_id: string;
+  comment_id: string;
+  mentioned_user_id: string | null;
+  mentioned_employee_id: string | null;
+  created_at: string;
+}
+
+export interface Comment extends Timestamped {
+  id: string;
+  company_id: string;
+  author_user_id: string | null;
+  author_employee_id: string | null;
+  target_entity_type: "work_object" | "project";
+  target_entity_id: string;
+  parent_comment_id: string | null;
+  body: string;
+  metadata: Record<string, unknown>;
+  is_edited: boolean;
+  edited_at: string | null;
+  is_archived: boolean;
+  mentions: CommentMention[];
+}
+
+export interface CommentCreatePayload {
+  company_id: string;
+  target_entity_type: "work_object" | "project";
+  target_entity_id: string;
+  parent_comment_id?: string | null;
+  body: string;
+  metadata?: Record<string, unknown>;
+  mentioned_user_ids?: string[];
+  mentioned_employee_ids?: string[];
+}
+
+export interface CommentUpdatePayload {
+  body?: string;
+  metadata?: Record<string, unknown>;
+  mentioned_user_ids?: string[];
+  mentioned_employee_ids?: string[];
+}
+
+export interface Announcement extends Timestamped {
+  id: string;
+  company_id: string;
+  author_user_id: string | null;
+  title: string;
+  body: string;
+  priority: "low" | "normal" | "high" | "urgent";
+  metadata: Record<string, unknown>;
+  is_published: boolean;
+  published_at: string | null;
+  is_archived: boolean;
+}
+
+export interface AnnouncementCreatePayload {
+  company_id: string;
+  title: string;
+  body: string;
+  priority: "low" | "normal" | "high" | "urgent";
+  metadata?: Record<string, unknown>;
+  is_published?: boolean;
+}
+
+export interface AnnouncementUpdatePayload {
+  title?: string;
+  body?: string;
+  priority?: "low" | "normal" | "high" | "urgent";
+  metadata?: Record<string, unknown>;
+  is_published?: boolean;
+}
+
 export interface LeaveRequest extends Timestamped {
   id: string;
   company_id: string;
@@ -467,4 +540,5 @@ export interface FebGridData {
   leaves: LeaveRequest[];
   events: Event[];
   notifications: Notification[];
+  announcements: Announcement[];
 }

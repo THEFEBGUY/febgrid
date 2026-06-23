@@ -1,4 +1,4 @@
-import { AlertTriangle, Bell, CalendarDays, CheckCircle2, Clock3, FolderKanban, Users } from "lucide-react";
+import { AlertTriangle, Bell, CalendarDays, CheckCircle2, Clock3, FolderKanban, Megaphone, Users } from "lucide-react";
 import { useMemo } from "react";
 
 import { Badge } from "../components/ui/Badge";
@@ -57,6 +57,7 @@ export function DashboardPage({ data, selectedCompany, isLoadingCompanies, isLoa
     .filter((workObject) => workObject.is_active && !["completed", "cancelled"].includes(workObject.status))
     .slice(0, 5);
   const recentNotifications = data.notifications.filter((notification) => !notification.is_dismissed).slice(0, 3);
+  const recentAnnouncements = data.announcements.filter((announcement) => !announcement.is_archived).slice(0, 3);
 
   if (!selectedCompany && !isLoadingCompanies && !isLoadingModules) {
     return (
@@ -153,6 +154,32 @@ export function DashboardPage({ data, selectedCompany, isLoadingCompanies, isLoa
                 <div className="mt-3 flex flex-wrap gap-2">
                   <Badge label={formatLabel(notification.notification_type)} tone="teal" />
                   <Badge label={formatLabel(notification.priority)} tone={notification.priority === "urgent" ? "red" : notification.priority === "high" ? "amber" : "slate"} />
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
+      </SectionPanel>
+
+      <SectionPanel eyebrow="Broadcast" title="Announcements">
+        {recentAnnouncements.length === 0 ? (
+          <EmptyState description="Published internal announcements will appear here." title="No announcements yet" />
+        ) : (
+          <div className="grid gap-3 p-5 md:grid-cols-3">
+            {recentAnnouncements.map((announcement) => (
+              <article key={announcement.id} className="rounded-lg border border-grid-200 bg-grid-50 p-4">
+                <div className="flex items-start gap-3">
+                  <span className="flex size-9 shrink-0 items-center justify-center rounded-md bg-white text-ink-700">
+                    <Megaphone className="size-4" aria-hidden="true" />
+                  </span>
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-bold text-ink-950">{announcement.title}</p>
+                    <p className="mt-1 line-clamp-2 text-sm text-ink-500">{announcement.body}</p>
+                  </div>
+                </div>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <Badge label={announcement.priority} tone={priorityTone(announcement.priority)} />
+                  <Badge label={announcement.is_published ? "Published" : "Draft"} tone={announcement.is_published ? "green" : "slate"} />
                 </div>
               </article>
             ))}

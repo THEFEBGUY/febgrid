@@ -1,6 +1,7 @@
 import { Archive, Eye, Pencil, Plus, UserPlus } from "lucide-react";
 import { type FormEvent, useCallback, useMemo, useState } from "react";
 
+import { CommentsSection } from "../components/communication/CommentsSection";
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
 import { DataTable, type DataTableColumn } from "../components/ui/DataTable";
@@ -493,6 +494,15 @@ export function ProjectsPage({
                 {memberError ? <p className="text-sm font-semibold text-rose-700">{memberError}</p> : null}
               </div>
             </section>
+
+            <CommentsSection
+              companyId={selectedCompanyId}
+              employees={data.employees}
+              employeeNames={employeeNames}
+              targetEntityId={detailProject.id}
+              targetEntityType="project"
+              onChanged={() => void loadProjectDetail(detailProject.id)}
+            />
 
             <section className="grid gap-4 lg:grid-cols-2">
               <div className="rounded-lg border border-grid-200">

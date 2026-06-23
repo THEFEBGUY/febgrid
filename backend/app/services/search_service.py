@@ -4,6 +4,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.models.attachment import Attachment
+from app.models.communication import Announcement, Comment
 from app.models.employee import Employee
 from app.models.event import Event
 from app.models.leave_request import LeaveRequest
@@ -142,6 +143,51 @@ class SearchService:
                 },
             )
             for attachment in attachments
+        )
+
+        comments = db.scalars(
+            select(Comment)
+            .where(
+                Comment.company_id == company_id,
+                Comment.is_archived.is_(False),
+                Comment.body.ilike(term),
+            )
+            .order_by(Comment.created_at.desc())
+            .limit(limit)
+        ).all()
+        results.extend(
+            SearchResult(
+                type="comment",
+                id=str(comment.id),
+                title=comment.body[:120],
+                subtitle=comment.target_entity_type,
+                metadata={
+                    "target_entity_type": comment.target_entity_type,
+                    "target_entity_id": str(comment.target_entity_id),
+                },
+            )
+            for comment in comments
+        )
+
+        announcements = db.scalars(
+            select(Announcement)
+            .where(
+                Announcement.company_id == company_id,
+                Announcement.is_archived.is_(False),
+                or_(Announcement.title.ilike(term), Announcement.body.ilike(term)),
+            )
+            .order_by(Announcement.created_at.desc())
+            .limit(limit)
+        ).all()
+        results.extend(
+            SearchResult(
+                type="announcement",
+                id=str(announcement.id),
+                title=announcement.title,
+                subtitle=announcement.priority,
+                metadata={"published_at": announcement.published_at.isoformat() if announcement.published_at else None},
+            )
+            for announcement in announcements
         )
 
         events = db.scalars(

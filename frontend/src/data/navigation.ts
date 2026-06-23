@@ -1,4 +1,4 @@
-import { Bell, BriefcaseBusiness, Building2, CalendarDays, FolderKanban, LayoutDashboard, Network, Users, Zap } from "lucide-react";
+import { Bell, BriefcaseBusiness, Building2, CalendarDays, FolderKanban, LayoutDashboard, Megaphone, Network, Users, Zap } from "lucide-react";
 
 import type { NavigationItem } from "../types/domain";
 
@@ -11,5 +11,6 @@ export const navigationItems: NavigationItem[] = [
   { key: "work-objects", label: "Work Objects", description: "Core work engine", icon: BriefcaseBusiness },
   { key: "leaves", label: "Leaves", description: "Availability", icon: CalendarDays },
   { key: "events", label: "Events", description: "Universal timeline", icon: Zap },
+  { key: "announcements", label: "Announcements", description: "Company broadcast", icon: Megaphone },
   { key: "notifications", label: "Notifications", description: "Action stream", icon: Bell },
 ];

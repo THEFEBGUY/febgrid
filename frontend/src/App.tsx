@@ -5,6 +5,7 @@ import { ErrorState, LoadingState } from "./components/ui/States";
 import { navigationItems } from "./data/navigation";
 import { useAuth } from "./hooks/useAuth";
 import { useFebGridData } from "./hooks/useFebGridData";
+import { AnnouncementsPage } from "./pages/AnnouncementsPage";
 import { AuthPage } from "./pages/AuthPage";
 import { CompaniesPage } from "./pages/CompaniesPage";
 import { DashboardPage } from "./pages/DashboardPage";
@@ -128,6 +129,15 @@ export function App(): JSX.Element {
         );
       case "events":
         return <EventsPage {...withModuleError(febGrid.moduleErrors.events ?? null)} />;
+      case "announcements":
+        return (
+          <AnnouncementsPage
+            {...withModuleError(febGrid.moduleErrors.announcements ?? null)}
+            onArchiveAnnouncement={febGrid.archiveAnnouncement}
+            onCreateAnnouncement={febGrid.createAnnouncement}
+            onUpdateAnnouncement={febGrid.updateAnnouncement}
+          />
+        );
       case "notifications":
         return (
           <NotificationsPage
