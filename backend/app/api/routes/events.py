@@ -1,7 +1,8 @@
+from datetime import datetime
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import db_session, get_optional_current_user
@@ -16,6 +17,75 @@ from app.services.event_service import EventService
 
 router = APIRouter(prefix="/events", tags=["events"])
 timeline_router = APIRouter(tags=["timeline"])
+audit_router = APIRouter(prefix="/audit-log", tags=["audit-log"])
+
+AUDIT_EVENT_PREFIXES = (
+    "auth.",
+    "company.",
+    "user.",
+    "employee.",
+    "department.",
+    "team.",
+    "project.",
+    "work_object.",
+    "leave.",
+    "file.",
+    "comment.",
+    "announcement.",
+)
+
+
+def audit_event_filter():
+    return or_(*(Event.event_type.ilike(f"{prefix}%") for prefix in AUDIT_EVENT_PREFIXES))
+
+
+def apply_event_filters(
+    statement,
+    *,
+    event_type: str | None = None,
+    actor_user_id: UUID | None = None,
+    actor_employee_id: UUID | None = None,
+    target_entity_type: str | None = None,
+    target_entity_id: UUID | None = None,
+    related_entity_type: str | None = None,
+    related_entity_id: UUID | None = None,
+    project_id: UUID | None = None,
+    q: str | None = None,
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
+    audit_only: bool = False,
+):
+    if event_type:
+        statement = statement.where(Event.event_type == event_type)
+    if actor_user_id:
+        statement = statement.where(Event.actor_user_id == actor_user_id)
+    if actor_employee_id:
+        statement = statement.where(Event.actor_employee_id == actor_employee_id)
+    if target_entity_type:
+        statement = statement.where(Event.target_entity_type == target_entity_type)
+    if target_entity_id:
+        statement = statement.where(Event.target_entity_id == target_entity_id)
+    if related_entity_type:
+        statement = statement.where(Event.related_entity_type == related_entity_type)
+    if related_entity_id:
+        statement = statement.where(Event.related_entity_id == related_entity_id)
+    if project_id:
+        statement = statement.where(
+            or_(
+                (Event.target_entity_type == "project") & (Event.target_entity_id == project_id),
+                (Event.related_entity_type == "project") & (Event.related_entity_id == project_id),
+            )
+        )
+    if q:
+        term = f"%{q.strip()}%"
+        statement = statement.where(or_(Event.title.ilike(term), Event.description.ilike(term), Event.event_type.ilike(term)))
+    if date_from:
+        statement = statement.where(Event.created_at >= date_from)
+    if date_to:
+        statement = statement.where(Event.created_at <= date_to)
+    if audit_only:
+        statement = statement.where(audit_event_filter())
+    return statement
 
 
 @router.post("", response_model=EventRead)
@@ -57,25 +127,31 @@ def list_events(
     target_entity_id: UUID | None = None,
     related_entity_type: str | None = None,
     related_entity_id: UUID | None = None,
+    project_id: UUID | None = None,
+    q: str | None = Query(default=None, max_length=200),
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
+    audit_only: bool = False,
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
 ) -> list[EventRead]:
     ensure_company_access(current_user, company_id)
     statement = select(Event).where(Event.company_id == company_id)
-    if event_type:
-        statement = statement.where(Event.event_type == event_type)
-    if actor_user_id:
-        statement = statement.where(Event.actor_user_id == actor_user_id)
-    if actor_employee_id:
-        statement = statement.where(Event.actor_employee_id == actor_employee_id)
-    if target_entity_type:
-        statement = statement.where(Event.target_entity_type == target_entity_type)
-    if target_entity_id:
-        statement = statement.where(Event.target_entity_id == target_entity_id)
-    if related_entity_type:
-        statement = statement.where(Event.related_entity_type == related_entity_type)
-    if related_entity_id:
-        statement = statement.where(Event.related_entity_id == related_entity_id)
+    statement = apply_event_filters(
+        statement,
+        event_type=event_type,
+        actor_user_id=actor_user_id,
+        actor_employee_id=actor_employee_id,
+        target_entity_type=target_entity_type,
+        target_entity_id=target_entity_id,
+        related_entity_type=related_entity_type,
+        related_entity_id=related_entity_id,
+        project_id=project_id,
+        q=q,
+        date_from=date_from,
+        date_to=date_to,
+        audit_only=audit_only,
+    )
     statement = statement.order_by(Event.created_at.desc()).limit(limit).offset(offset)
     return serialize_events(db.scalars(statement).all())
 
@@ -111,24 +187,74 @@ def universal_timeline(
     db: Session = Depends(db_session),
     current_user: User | None = Depends(get_optional_current_user),
     event_type: str | None = None,
+    actor_user_id: UUID | None = None,
+    actor_employee_id: UUID | None = None,
     target_entity_type: str | None = None,
     target_entity_id: UUID | None = None,
     related_entity_type: str | None = None,
     related_entity_id: UUID | None = None,
+    project_id: UUID | None = None,
+    q: str | None = Query(default=None, max_length=200),
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
+    audit_only: bool = False,
     limit: int = Query(default=100, ge=1, le=300),
     offset: int = Query(default=0, ge=0),
 ) -> list[EventRead]:
     ensure_company_access(current_user, company_id)
     statement = select(Event).where(Event.company_id == company_id)
-    if event_type:
-        statement = statement.where(Event.event_type == event_type)
-    if target_entity_type:
-        statement = statement.where(Event.target_entity_type == target_entity_type)
-    if target_entity_id:
-        statement = statement.where(Event.target_entity_id == target_entity_id)
-    if related_entity_type:
-        statement = statement.where(Event.related_entity_type == related_entity_type)
-    if related_entity_id:
-        statement = statement.where(Event.related_entity_id == related_entity_id)
+    statement = apply_event_filters(
+        statement,
+        event_type=event_type,
+        actor_user_id=actor_user_id,
+        actor_employee_id=actor_employee_id,
+        target_entity_type=target_entity_type,
+        target_entity_id=target_entity_id,
+        related_entity_type=related_entity_type,
+        related_entity_id=related_entity_id,
+        project_id=project_id,
+        q=q,
+        date_from=date_from,
+        date_to=date_to,
+        audit_only=audit_only,
+    )
+    statement = statement.order_by(Event.created_at.desc()).limit(limit).offset(offset)
+    return serialize_events(db.scalars(statement).all())
+
+
+@audit_router.get("", response_model=list[EventRead])
+def audit_log(
+    company_id: UUID,
+    db: Session = Depends(db_session),
+    current_user: User | None = Depends(get_optional_current_user),
+    event_type: str | None = None,
+    actor_user_id: UUID | None = None,
+    actor_employee_id: UUID | None = None,
+    target_entity_type: str | None = None,
+    target_entity_id: UUID | None = None,
+    related_entity_type: str | None = None,
+    related_entity_id: UUID | None = None,
+    q: str | None = Query(default=None, max_length=200),
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
+    limit: int = Query(default=100, ge=1, le=300),
+    offset: int = Query(default=0, ge=0),
+) -> list[EventRead]:
+    ensure_company_access(current_user, company_id)
+    statement = select(Event).where(Event.company_id == company_id)
+    statement = apply_event_filters(
+        statement,
+        event_type=event_type,
+        actor_user_id=actor_user_id,
+        actor_employee_id=actor_employee_id,
+        target_entity_type=target_entity_type,
+        target_entity_id=target_entity_id,
+        related_entity_type=related_entity_type,
+        related_entity_id=related_entity_id,
+        q=q,
+        date_from=date_from,
+        date_to=date_to,
+        audit_only=True,
+    )
     statement = statement.order_by(Event.created_at.desc()).limit(limit).offset(offset)
     return serialize_events(db.scalars(statement).all())

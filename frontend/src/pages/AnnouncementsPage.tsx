@@ -1,8 +1,9 @@
 import { Archive, Megaphone, Pencil, Plus } from "lucide-react";
-import { type FormEvent, useState } from "react";
+import { type FormEvent, useMemo, useState } from "react";
 
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
+import { FilterBar, FilterField } from "../components/ui/FilterBar";
 import { FieldShell, SelectInput, TextArea, TextInput } from "../components/ui/FormControls";
 import { Modal } from "../components/ui/Modal";
 import { ModuleBoundary } from "../components/ui/ModuleBoundary";
@@ -42,6 +43,24 @@ export function AnnouncementsPage({
   const [editingAnnouncement, setEditingAnnouncement] = useState<Announcement | null>(null);
   const [form, setForm] = useState(initialForm);
   const [formError, setFormError] = useState<string | null>(null);
+  const [searchFilter, setSearchFilter] = useState("");
+  const [priorityFilter, setPriorityFilter] = useState("");
+  const [publishedFilter, setPublishedFilter] = useState("");
+
+  const filteredAnnouncements = useMemo(() => {
+    const query = searchFilter.trim().toLowerCase();
+    return data.announcements.filter((announcement) => {
+      const searchable = [announcement.title, announcement.body, announcement.priority, announcement.is_published ? "published" : "draft"]
+        .join(" ")
+        .toLowerCase();
+      if (query && !searchable.includes(query)) return false;
+      if (priorityFilter && announcement.priority !== priorityFilter) return false;
+      if (publishedFilter === "published" && !announcement.is_published) return false;
+      if (publishedFilter === "draft" && announcement.is_published) return false;
+      return true;
+    });
+  }, [data.announcements, priorityFilter, publishedFilter, searchFilter]);
+  const hasActiveFilters = Boolean(searchFilter || priorityFilter || publishedFilter);
 
   function openCreate(): void {
     setEditingAnnouncement(null);
@@ -108,8 +127,43 @@ export function AnnouncementsPage({
           isLoading={isLoadingModules}
           onRetry={onRetry}
         >
+          <FilterBar
+            isResetDisabled={!hasActiveFilters}
+            onReset={() => {
+              setSearchFilter("");
+              setPriorityFilter("");
+              setPublishedFilter("");
+            }}
+          >
+            <FilterField label="Search">
+              <TextInput placeholder="Title or body" value={searchFilter} onChange={(event) => setSearchFilter(event.target.value)} />
+            </FilterField>
+            <FilterField label="Priority">
+              <SelectInput value={priorityFilter} onChange={(event) => setPriorityFilter(event.target.value)}>
+                <option value="">All priorities</option>
+                {priorities.map((priority) => (
+                  <option key={priority} value={priority}>
+                    {priority}
+                  </option>
+                ))}
+              </SelectInput>
+            </FilterField>
+            <FilterField label="State">
+              <SelectInput value={publishedFilter} onChange={(event) => setPublishedFilter(event.target.value)}>
+                <option value="">All states</option>
+                <option value="published">Published</option>
+                <option value="draft">Draft</option>
+              </SelectInput>
+            </FilterField>
+          </FilterBar>
+          {filteredAnnouncements.length === 0 ? (
+            <div className="px-5 py-10 text-center">
+              <p className="text-sm font-bold text-ink-950">No announcements match these filters</p>
+              <p className="mt-1 text-sm font-medium text-ink-500">Reset filters to return to company broadcasts.</p>
+            </div>
+          ) : (
           <div className="divide-y divide-grid-100">
-            {data.announcements.map((announcement) => (
+            {filteredAnnouncements.map((announcement) => (
               <article key={announcement.id} className="flex flex-col gap-4 px-5 py-4 lg:flex-row lg:items-start lg:justify-between">
                 <div className="flex min-w-0 gap-3">
                   <span className="flex size-10 shrink-0 items-center justify-center rounded-md bg-grid-100 text-ink-700">
@@ -139,6 +193,7 @@ export function AnnouncementsPage({
               </article>
             ))}
           </div>
+          )}
         </ModuleBoundary>
       </SectionPanel>
 
@@ -165,10 +220,10 @@ export function AnnouncementsPage({
                 ))}
               </SelectInput>
             </FieldShell>
-            <label className="flex items-end gap-3 rounded-md border border-grid-200 bg-grid-50 px-3 py-2 text-sm font-bold text-ink-700">
+            <label className="self-end inline-flex h-10 items-center gap-2 rounded-md px-1 text-sm font-bold text-ink-700">
               <input
                 checked={form.is_published}
-                className="size-4 rounded border-grid-300"
+                className="size-4 rounded border-grid-300 accent-blue-600"
                 type="checkbox"
                 onChange={(event) => setForm((current) => ({ ...current, is_published: event.target.checked }))}
               />

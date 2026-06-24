@@ -4,6 +4,7 @@ import { type FormEvent, useCallback, useMemo, useState } from "react";
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
 import { DataTable, type DataTableColumn } from "../components/ui/DataTable";
+import { FilterBar, FilterField } from "../components/ui/FilterBar";
 import { FieldShell, SelectInput, TextArea, TextInput } from "../components/ui/FormControls";
 import { Modal } from "../components/ui/Modal";
 import { ModuleBoundary } from "../components/ui/ModuleBoundary";
@@ -32,6 +33,7 @@ interface LeavesPageProps extends ModulePageProps {
 }
 
 const leaveTypeOptions = ["paid_leave", "sick_leave", "casual_leave", "half_day", "unpaid_leave", "work_from_home", "other"];
+const leaveStatusOptions = ["pending", "approved", "rejected", "cancelled"];
 
 const initialForm = {
   employee_id: "",
@@ -98,6 +100,11 @@ export function LeavesPage({
   const [detailEvents, setDetailEvents] = useState<FebGridEvent[]>([]);
   const [isDetailLoading, setIsDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
+  const [searchFilter, setSearchFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
+  const [employeeFilter, setEmployeeFilter] = useState("");
+  const [dateFromFilter, setDateFromFilter] = useState("");
+  const [dateToFilter, setDateToFilter] = useState("");
 
   const employeeNames = useMemo(
     () => Object.fromEntries(data.employees.map((employee) => [employee.id, employee.full_name])),
@@ -105,6 +112,29 @@ export function LeavesPage({
   );
 
   const visibleLeaves = useMemo(() => data.leaves.filter((leave) => leave.is_active), [data.leaves]);
+  const filteredLeaves = useMemo(() => {
+    const query = searchFilter.trim().toLowerCase();
+    return visibleLeaves.filter((leave) => {
+      const searchable = [
+        employeeNames[leave.employee_id],
+        employeeNames[leave.approver_employee_id ?? ""],
+        leave.leave_type,
+        leave.status,
+        leave.reason,
+        leave.manager_note,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      if (query && !searchable.includes(query)) return false;
+      if (statusFilter && leave.status !== statusFilter) return false;
+      if (employeeFilter && leave.employee_id !== employeeFilter && leave.approver_employee_id !== employeeFilter) return false;
+      if (dateFromFilter && leave.end_date < dateFromFilter) return false;
+      if (dateToFilter && leave.start_date > dateToFilter) return false;
+      return true;
+    });
+  }, [dateFromFilter, dateToFilter, employeeFilter, employeeNames, searchFilter, statusFilter, visibleLeaves]);
+  const hasActiveFilters = Boolean(searchFilter || statusFilter || employeeFilter || dateFromFilter || dateToFilter);
   const calculatedDays = calculateTotalDays(form.start_date, form.end_date, form.leave_type);
 
   const loadLeaveDetail = useCallback(
@@ -317,7 +347,54 @@ export function LeavesPage({
           onRetry={onRetry}
           emptyAction={selectedCompany && data.employees.length > 0 ? <Button variant="primary" icon={<Plus className="size-4" aria-hidden="true" />} onClick={openCreate}>Submit leave</Button> : undefined}
         >
-          <DataTable columns={columns} rows={visibleLeaves} getRowKey={(leave) => leave.id} />
+          <FilterBar
+            isResetDisabled={!hasActiveFilters}
+            onReset={() => {
+              setSearchFilter("");
+              setStatusFilter("");
+              setEmployeeFilter("");
+              setDateFromFilter("");
+              setDateToFilter("");
+            }}
+          >
+            <FilterField label="Search">
+              <TextInput placeholder="Person, reason, type" value={searchFilter} onChange={(event) => setSearchFilter(event.target.value)} />
+            </FilterField>
+            <FilterField label="Status">
+              <SelectInput value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
+                <option value="">All statuses</option>
+                {leaveStatusOptions.map((status) => (
+                  <option key={status} value={status}>
+                    {formatLabel(status)}
+                  </option>
+                ))}
+              </SelectInput>
+            </FilterField>
+            <FilterField label="Employee">
+              <SelectInput value={employeeFilter} onChange={(event) => setEmployeeFilter(event.target.value)}>
+                <option value="">All employees</option>
+                {data.employees.map((employee) => (
+                  <option key={employee.id} value={employee.id}>
+                    {employee.full_name}
+                  </option>
+                ))}
+              </SelectInput>
+            </FilterField>
+            <FilterField label="From">
+              <TextInput type="date" value={dateFromFilter} onChange={(event) => setDateFromFilter(event.target.value)} />
+            </FilterField>
+            <FilterField label="To">
+              <TextInput type="date" value={dateToFilter} onChange={(event) => setDateToFilter(event.target.value)} />
+            </FilterField>
+          </FilterBar>
+          {filteredLeaves.length === 0 ? (
+            <div className="px-5 py-10 text-center">
+              <p className="text-sm font-bold text-ink-950">No leave requests match these filters</p>
+              <p className="mt-1 text-sm font-medium text-ink-500">Reset filters to see all active leave requests.</p>
+            </div>
+          ) : (
+            <DataTable columns={columns} rows={filteredLeaves} getRowKey={(leave) => leave.id} />
+          )}
         </ModuleBoundary>
       </SectionPanel>
 

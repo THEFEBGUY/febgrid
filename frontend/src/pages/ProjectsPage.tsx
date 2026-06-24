@@ -5,6 +5,7 @@ import { CommentsSection } from "../components/communication/CommentsSection";
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
 import { DataTable, type DataTableColumn } from "../components/ui/DataTable";
+import { FilterBar, FilterField } from "../components/ui/FilterBar";
 import { FieldShell, SelectInput, TextArea, TextInput } from "../components/ui/FormControls";
 import { Modal } from "../components/ui/Modal";
 import { ModuleBoundary } from "../components/ui/ModuleBoundary";
@@ -119,6 +120,10 @@ export function ProjectsPage({
   const [detailError, setDetailError] = useState<string | null>(null);
   const [memberForm, setMemberForm] = useState(initialMemberForm);
   const [memberError, setMemberError] = useState<string | null>(null);
+  const [searchFilter, setSearchFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
+  const [priorityFilter, setPriorityFilter] = useState("");
+  const [ownerFilter, setOwnerFilter] = useState("");
 
   const employeeNames = useMemo(() => Object.fromEntries(data.employees.map((employee) => [employee.id, employee.full_name])), [data.employees]);
   const departmentNames = useMemo(
@@ -127,6 +132,30 @@ export function ProjectsPage({
   );
   const teamNames = useMemo(() => Object.fromEntries(data.teams.map((team) => [team.id, team.name])), [data.teams]);
   const activeMemberEmployeeIds = useMemo(() => new Set(detailMembers.filter((member) => member.is_active).map((member) => member.employee_id)), [detailMembers]);
+  const filteredProjects = useMemo(() => {
+    const query = searchFilter.trim().toLowerCase();
+    return data.projects.filter((project) => {
+      const searchable = [
+        project.name,
+        project.code,
+        project.description,
+        project.risk_level,
+        project.tags.join(" "),
+        project.owner_employee_id ? employeeNames[project.owner_employee_id] : null,
+        project.department_id ? departmentNames[project.department_id] : null,
+        project.team_id ? teamNames[project.team_id] : null,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      if (query && !searchable.includes(query)) return false;
+      if (statusFilter && project.status !== statusFilter) return false;
+      if (priorityFilter && project.priority !== priorityFilter) return false;
+      if (ownerFilter && project.owner_employee_id !== ownerFilter) return false;
+      return true;
+    });
+  }, [data.projects, departmentNames, employeeNames, ownerFilter, priorityFilter, searchFilter, statusFilter, teamNames]);
+  const hasActiveFilters = Boolean(searchFilter || statusFilter || priorityFilter || ownerFilter);
 
   const loadProjectDetail = useCallback(
     async (projectId: string): Promise<void> => {
@@ -344,7 +373,57 @@ export function ProjectsPage({
           onRetry={onRetry}
           emptyAction={selectedCompany ? <Button variant="primary" icon={<Plus className="size-4" aria-hidden="true" />} onClick={openCreate}>New project</Button> : undefined}
         >
-          <DataTable columns={columns} rows={data.projects} getRowKey={(project) => project.id} />
+          <FilterBar
+            isResetDisabled={!hasActiveFilters}
+            onReset={() => {
+              setSearchFilter("");
+              setStatusFilter("");
+              setPriorityFilter("");
+              setOwnerFilter("");
+            }}
+          >
+            <FilterField label="Search">
+              <TextInput placeholder="Name, code, risk" value={searchFilter} onChange={(event) => setSearchFilter(event.target.value)} />
+            </FilterField>
+            <FilterField label="Status">
+              <SelectInput value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
+                <option value="">All statuses</option>
+                {statusOptions.map((status) => (
+                  <option key={status} value={status}>
+                    {formatLabel(status)}
+                  </option>
+                ))}
+              </SelectInput>
+            </FilterField>
+            <FilterField label="Priority">
+              <SelectInput value={priorityFilter} onChange={(event) => setPriorityFilter(event.target.value)}>
+                <option value="">All priorities</option>
+                {priorityOptions.map((priority) => (
+                  <option key={priority} value={priority}>
+                    {formatLabel(priority)}
+                  </option>
+                ))}
+              </SelectInput>
+            </FilterField>
+            <FilterField label="Owner">
+              <SelectInput value={ownerFilter} onChange={(event) => setOwnerFilter(event.target.value)}>
+                <option value="">All owners</option>
+                {data.employees.map((employee) => (
+                  <option key={employee.id} value={employee.id}>
+                    {employee.full_name}
+                  </option>
+                ))}
+              </SelectInput>
+            </FilterField>
+          </FilterBar>
+          {filteredProjects.length === 0 ? (
+            <div className="px-5 py-10 text-center">
+              <p className="text-sm font-bold text-ink-950">No projects match these filters</p>
+              <p className="mt-1 text-sm font-medium text-ink-500">Reset filters to return to all projects.</p>
+            </div>
+          ) : (
+            <DataTable columns={columns} rows={filteredProjects} getRowKey={(project) => project.id} />
+          )}
         </ModuleBoundary>
       </SectionPanel>
 

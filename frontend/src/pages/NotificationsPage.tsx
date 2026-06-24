@@ -1,8 +1,10 @@
 import { Bell, Check, CheckCheck, ExternalLink, EyeOff, RotateCcw } from "lucide-react";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
+import { FilterBar, FilterField } from "../components/ui/FilterBar";
+import { SelectInput, TextInput } from "../components/ui/FormControls";
 import { ModuleBoundary } from "../components/ui/ModuleBoundary";
 import { SectionPanel } from "../components/ui/SectionPanel";
 import { priorityTone } from "../components/ui/tone";
@@ -40,11 +42,35 @@ export function NotificationsPage({
   onMarkAllRead,
   onDismissNotification,
 }: NotificationsPageProps): JSX.Element {
+  const [searchFilter, setSearchFilter] = useState("");
+  const [readFilter, setReadFilter] = useState("");
+  const [typeFilter, setTypeFilter] = useState("");
+  const [priorityFilter, setPriorityFilter] = useState("");
   const visibleNotifications = useMemo(
     () => data.notifications.filter((notification) => !notification.is_dismissed),
     [data.notifications],
   );
+  const notificationTypes = useMemo(
+    () => Array.from(new Set(visibleNotifications.map((notification) => notification.notification_type))).sort(),
+    [visibleNotifications],
+  );
+  const filteredNotifications = useMemo(() => {
+    const query = searchFilter.trim().toLowerCase();
+    return visibleNotifications.filter((notification) => {
+      const searchable = [notification.title, notification.message, notification.notification_type, notification.priority, notificationTarget(notification)]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      if (query && !searchable.includes(query)) return false;
+      if (readFilter === "read" && !notification.is_read) return false;
+      if (readFilter === "unread" && notification.is_read) return false;
+      if (typeFilter && notification.notification_type !== typeFilter) return false;
+      if (priorityFilter && notification.priority !== priorityFilter) return false;
+      return true;
+    });
+  }, [priorityFilter, readFilter, searchFilter, typeFilter, visibleNotifications]);
   const unreadCount = visibleNotifications.filter((notification) => !notification.is_read).length;
+  const hasActiveFilters = Boolean(searchFilter || readFilter || typeFilter || priorityFilter);
 
   return (
     <SectionPanel
@@ -70,8 +96,54 @@ export function NotificationsPage({
         isLoading={isLoadingModules}
         onRetry={onRetry}
       >
+        <FilterBar
+          isResetDisabled={!hasActiveFilters}
+          onReset={() => {
+            setSearchFilter("");
+            setReadFilter("");
+            setTypeFilter("");
+            setPriorityFilter("");
+          }}
+        >
+          <FilterField label="Search">
+            <TextInput placeholder="Title, message, type" value={searchFilter} onChange={(event) => setSearchFilter(event.target.value)} />
+          </FilterField>
+          <FilterField label="State">
+            <SelectInput value={readFilter} onChange={(event) => setReadFilter(event.target.value)}>
+              <option value="">All states</option>
+              <option value="unread">Unread</option>
+              <option value="read">Read</option>
+            </SelectInput>
+          </FilterField>
+          <FilterField label="Type">
+            <SelectInput value={typeFilter} onChange={(event) => setTypeFilter(event.target.value)}>
+              <option value="">All types</option>
+              {notificationTypes.map((notificationType) => (
+                <option key={notificationType} value={notificationType}>
+                  {formatLabel(notificationType)}
+                </option>
+              ))}
+            </SelectInput>
+          </FilterField>
+          <FilterField label="Priority">
+            <SelectInput value={priorityFilter} onChange={(event) => setPriorityFilter(event.target.value)}>
+              <option value="">All priorities</option>
+              {["low", "normal", "high", "urgent"].map((priority) => (
+                <option key={priority} value={priority}>
+                  {formatLabel(priority)}
+                </option>
+              ))}
+            </SelectInput>
+          </FilterField>
+        </FilterBar>
+        {filteredNotifications.length === 0 ? (
+          <div className="px-5 py-10 text-center">
+            <p className="text-sm font-bold text-ink-950">No notifications match these filters</p>
+            <p className="mt-1 text-sm font-medium text-ink-500">Reset filters to return to the action stream.</p>
+          </div>
+        ) : (
         <div className="divide-y divide-grid-100">
-          {visibleNotifications.map((notification) => (
+          {filteredNotifications.map((notification) => (
             <article
               key={notification.id}
               className={`flex flex-col gap-4 px-5 py-4 lg:flex-row lg:items-center lg:justify-between ${
@@ -135,6 +207,7 @@ export function NotificationsPage({
             </article>
           ))}
         </div>
+        )}
       </ModuleBoundary>
     </SectionPanel>
   );

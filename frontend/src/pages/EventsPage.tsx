@@ -1,13 +1,30 @@
-import { Clock3, Filter, RotateCcw } from "lucide-react";
+import { Clock3, ExternalLink } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
+import { FilterBar, FilterField } from "../components/ui/FilterBar";
+import { SelectInput, TextInput } from "../components/ui/FormControls";
 import { ModuleBoundary } from "../components/ui/ModuleBoundary";
 import { SectionPanel } from "../components/ui/SectionPanel";
 import type { Event } from "../types/api";
 import type { ModulePageProps } from "../types/page";
-import { compactList, formatLabel, formatTime } from "../utils/format";
+import { compactList, formatDate, formatLabel, formatTime } from "../utils/format";
+
+const auditPrefixes = [
+  "auth.",
+  "company.",
+  "user.",
+  "employee.",
+  "department.",
+  "team.",
+  "project.",
+  "work_object.",
+  "leave.",
+  "file.",
+  "comment.",
+  "announcement.",
+];
 
 function eventActor(event: Event, employeeNames: Record<string, string>): string {
   if (event.actor_employee_id) return employeeNames[event.actor_employee_id] ?? "Employee";
@@ -22,9 +39,56 @@ function eventTarget(event: Event): string {
   ]);
 }
 
+function isAuditRelevant(event: Event): boolean {
+  return auditPrefixes.some((prefix) => event.event_type.startsWith(prefix));
+}
+
+function eventRoute(event: Event): string | null {
+  const entityType = event.target_entity_type ?? event.related_entity_type;
+  switch (entityType) {
+    case "employee":
+      return "/employees";
+    case "department":
+    case "team":
+      return "/teams";
+    case "project":
+      return "/projects";
+    case "work_object":
+      return "/work-objects";
+    case "leave_request":
+      return "/leaves";
+    case "attachment":
+      return "/work-objects";
+    case "notification":
+      return "/notifications";
+    case "announcement":
+      return "/announcements";
+    default:
+      return null;
+  }
+}
+
+function timelineBucket(event: Event): string {
+  const createdAt = new Date(event.created_at);
+  if (Number.isNaN(createdAt.getTime())) return "Older";
+  const today = new Date();
+  const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const startOfYesterday = new Date(startOfToday);
+  startOfYesterday.setDate(startOfToday.getDate() - 1);
+  if (createdAt >= startOfToday) return "Today";
+  if (createdAt >= startOfYesterday) return "Yesterday";
+  return "Older";
+}
+
 export function EventsPage({ data, selectedCompany, isLoadingModules, moduleError, onRetry }: ModulePageProps): JSX.Element {
+  const [searchFilter, setSearchFilter] = useState("");
   const [eventTypeFilter, setEventTypeFilter] = useState("");
   const [targetFilter, setTargetFilter] = useState("");
+  const [actorFilter, setActorFilter] = useState("");
+  const [projectFilter, setProjectFilter] = useState("");
+  const [dateFromFilter, setDateFromFilter] = useState("");
+  const [dateToFilter, setDateToFilter] = useState("");
+  const [auditOnly, setAuditOnly] = useState(false);
 
   const employeeNames = useMemo(
     () => Object.fromEntries(data.employees.map((employee) => [employee.id, employee.full_name])),
@@ -37,32 +101,56 @@ export function EventsPage({ data, selectedCompany, isLoadingModules, moduleErro
     [data.events],
   );
 
-  const filteredEvents = useMemo(
-    () =>
-      data.events.filter((event) => {
-        if (eventTypeFilter && event.event_type !== eventTypeFilter) return false;
-        if (targetFilter && event.target_entity_type !== targetFilter) return false;
-        return true;
-      }),
-    [data.events, eventTypeFilter, targetFilter],
-  );
+  const filteredEvents = useMemo(() => {
+    const query = searchFilter.trim().toLowerCase();
+    return data.events.filter((event) => {
+      const searchable = [
+        event.title,
+        event.description,
+        event.event_type,
+        event.target_entity_type,
+        event.related_entity_type,
+        eventActor(event, employeeNames),
+        eventTarget(event),
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      const eventDate = event.created_at.slice(0, 10);
+      if (query && !searchable.includes(query)) return false;
+      if (eventTypeFilter && event.event_type !== eventTypeFilter) return false;
+      if (targetFilter && event.target_entity_type !== targetFilter) return false;
+      if (actorFilter && event.actor_employee_id !== actorFilter) return false;
+      if (
+        projectFilter &&
+        !(
+          (event.target_entity_type === "project" && event.target_entity_id === projectFilter) ||
+          (event.related_entity_type === "project" && event.related_entity_id === projectFilter)
+        )
+      ) {
+        return false;
+      }
+      if (dateFromFilter && eventDate < dateFromFilter) return false;
+      if (dateToFilter && eventDate > dateToFilter) return false;
+      if (auditOnly && !isAuditRelevant(event)) return false;
+      return true;
+    });
+  }, [actorFilter, auditOnly, data.events, dateFromFilter, dateToFilter, employeeNames, eventTypeFilter, projectFilter, searchFilter, targetFilter]);
+
+  const groupedEvents = useMemo(() => {
+    const groups: Record<string, Event[]> = { Today: [], Yesterday: [], Older: [] };
+    filteredEvents.forEach((event) => {
+      groups[timelineBucket(event)].push(event);
+    });
+    return Object.entries(groups).filter(([, events]) => events.length > 0);
+  }, [filteredEvents]);
+
+  const hasActiveFilters = Boolean(searchFilter || eventTypeFilter || targetFilter || actorFilter || projectFilter || dateFromFilter || dateToFilter || auditOnly);
 
   return (
     <SectionPanel
       eyebrow={selectedCompany?.name ?? "Universal timeline"}
       title="Events"
-      action={
-        <Button
-          disabled={!eventTypeFilter && !targetFilter}
-          icon={<RotateCcw className="size-4" aria-hidden="true" />}
-          onClick={() => {
-            setEventTypeFilter("");
-            setTargetFilter("");
-          }}
-        >
-          Reset
-        </Button>
-      }
     >
       <ModuleBoundary
         emptyDescription="Important backend actions will appear here as company memory events."
@@ -72,69 +160,136 @@ export function EventsPage({ data, selectedCompany, isLoadingModules, moduleErro
         isLoading={isLoadingModules}
         onRetry={onRetry}
       >
-        <div className="flex flex-col gap-3 border-b border-grid-100 px-5 py-4 lg:flex-row lg:items-center">
-          <div className="flex items-center gap-2 text-sm font-bold text-ink-700">
-            <Filter className="size-4" aria-hidden="true" />
-            Filters
-          </div>
-          <label className="block min-w-0 lg:w-72">
-            <span className="sr-only">Filter by event type</span>
-            <select
-              className="h-10 w-full rounded-md border border-grid-200 bg-white px-3 text-sm font-semibold text-ink-900"
-              value={eventTypeFilter}
-              onChange={(event) => setEventTypeFilter(event.target.value)}
-            >
+        <FilterBar
+          isResetDisabled={!hasActiveFilters}
+          onReset={() => {
+            setSearchFilter("");
+            setEventTypeFilter("");
+            setTargetFilter("");
+            setActorFilter("");
+            setProjectFilter("");
+            setDateFromFilter("");
+            setDateToFilter("");
+            setAuditOnly(false);
+          }}
+        >
+          <FilterField label="Search">
+            <TextInput placeholder="Title, actor, target" value={searchFilter} onChange={(event) => setSearchFilter(event.target.value)} />
+          </FilterField>
+          <FilterField label="Event type">
+            <SelectInput value={eventTypeFilter} onChange={(event) => setEventTypeFilter(event.target.value)}>
               <option value="">All event types</option>
               {eventTypes.map((eventType) => (
                 <option key={eventType} value={eventType}>
                   {formatLabel(eventType)}
                 </option>
               ))}
-            </select>
-          </label>
-          <label className="block min-w-0 lg:w-60">
-            <span className="sr-only">Filter by target type</span>
-            <select
-              className="h-10 w-full rounded-md border border-grid-200 bg-white px-3 text-sm font-semibold text-ink-900"
-              value={targetFilter}
-              onChange={(event) => setTargetFilter(event.target.value)}
-            >
+            </SelectInput>
+          </FilterField>
+          <FilterField label="Actor">
+            <SelectInput value={actorFilter} onChange={(event) => setActorFilter(event.target.value)}>
+              <option value="">All actors</option>
+              {data.employees.map((employee) => (
+                <option key={employee.id} value={employee.id}>
+                  {employee.full_name}
+                </option>
+              ))}
+            </SelectInput>
+          </FilterField>
+          <FilterField label="Project">
+            <SelectInput value={projectFilter} onChange={(event) => setProjectFilter(event.target.value)}>
+              <option value="">All projects</option>
+              {data.projects.map((project) => (
+                <option key={project.id} value={project.id}>
+                  {project.name}
+                </option>
+              ))}
+            </SelectInput>
+          </FilterField>
+          <FilterField label="Target">
+            <SelectInput value={targetFilter} onChange={(event) => setTargetFilter(event.target.value)}>
               <option value="">All targets</option>
               {targetTypes.map((targetType) => (
                 <option key={targetType} value={targetType}>
                   {formatLabel(targetType)}
                 </option>
               ))}
-            </select>
+            </SelectInput>
+          </FilterField>
+          <FilterField label="From">
+            <TextInput type="date" value={dateFromFilter} onChange={(event) => setDateFromFilter(event.target.value)} />
+          </FilterField>
+          <FilterField label="To">
+            <TextInput type="date" value={dateToFilter} onChange={(event) => setDateToFilter(event.target.value)} />
+          </FilterField>
+          <label className="flex min-h-10 items-center gap-3 rounded-md border border-grid-200 bg-white px-3 text-sm font-bold text-ink-700 xl:col-span-2">
+            <input
+              checked={auditOnly}
+              className="size-4 rounded border-grid-300"
+              type="checkbox"
+              onChange={(event) => setAuditOnly(event.target.checked)}
+            />
+            Audit relevant only
           </label>
-        </div>
+        </FilterBar>
 
-        {filteredEvents.length === 0 ? (
+        {groupedEvents.length === 0 ? (
           <div className="px-5 py-10 text-center">
             <p className="text-sm font-bold text-ink-950">No events match these filters</p>
             <p className="mt-1 text-sm font-medium text-ink-500">Reset filters to return to the full company timeline.</p>
           </div>
         ) : (
           <div className="divide-y divide-grid-100">
-            {filteredEvents.map((event) => (
-              <article key={event.id} className="flex flex-col gap-3 px-5 py-4 lg:flex-row lg:items-center lg:justify-between">
-                <div className="flex min-w-0 items-start gap-3">
-                  <span className="flex size-10 shrink-0 items-center justify-center rounded-md bg-grid-100 text-ink-700">
-                    <Clock3 className="size-4" aria-hidden="true" />
-                  </span>
-                  <div className="min-w-0">
-                    <p className="text-sm font-bold text-ink-950">{event.title}</p>
-                    {event.description ? <p className="mt-1 line-clamp-2 text-sm text-ink-500">{event.description}</p> : null}
-                    <p className="mt-2 text-xs font-semibold text-ink-500">
-                      {formatTime(event.created_at)} / {eventActor(event, employeeNames)} / {eventTarget(event)}
-                    </p>
-                  </div>
+            {groupedEvents.map(([bucket, events]) => (
+              <section key={bucket}>
+                <div className="bg-grid-50 px-5 py-2">
+                  <p className="text-xs font-bold uppercase tracking-normal text-ink-500">{bucket}</p>
                 </div>
-                <div className="flex shrink-0 flex-wrap gap-2">
-                  <Badge label={formatLabel(event.event_type)} tone="teal" />
-                  <Badge label={event.target_entity_type ? formatLabel(event.target_entity_type) : "Company"} tone="slate" />
+                <div className="divide-y divide-grid-100">
+                  {events.map((event) => {
+                    const route = eventRoute(event);
+                    return (
+                      <article key={event.id} className="flex flex-col gap-3 px-5 py-4 lg:flex-row lg:items-center lg:justify-between">
+                        <div className="flex min-w-0 items-start gap-3">
+                          <span className="flex size-10 shrink-0 items-center justify-center rounded-md bg-grid-100 text-ink-700">
+                            <Clock3 className="size-4" aria-hidden="true" />
+                          </span>
+                          <div className="min-w-0">
+                            <p className="text-sm font-bold text-ink-950">{event.title}</p>
+                            {event.description ? <p className="mt-1 line-clamp-2 text-sm text-ink-500">{event.description}</p> : null}
+                            <p className="mt-2 text-xs font-semibold text-ink-500">
+                              {formatTime(event.created_at)} / {formatDate(event.created_at)} / {eventActor(event, employeeNames)} / {eventTarget(event)}
+                            </p>
+                            {event.related_entity_type ? (
+                              <p className="mt-1 text-xs font-semibold text-ink-500">
+                                Related: {formatLabel(event.related_entity_type)}
+                                {event.related_entity_id ? ` ${event.related_entity_id.slice(0, 8)}` : ""}
+                              </p>
+                            ) : null}
+                          </div>
+                        </div>
+                        <div className="flex shrink-0 flex-wrap items-center gap-2">
+                          <Badge label={formatLabel(event.event_type)} tone="teal" />
+                          <Badge label={event.target_entity_type ? formatLabel(event.target_entity_type) : "Company"} tone="slate" />
+                          {isAuditRelevant(event) ? <Badge label="Audit" tone="amber" /> : null}
+                          {route ? (
+                            <Button
+                              className="size-9 px-0"
+                              aria-label="Open related page"
+                              icon={<ExternalLink className="size-4" aria-hidden="true" />}
+                              onClick={() => {
+                                window.location.hash = route;
+                              }}
+                            >
+                              <span className="sr-only">Open related page</span>
+                            </Button>
+                          ) : null}
+                        </div>
+                      </article>
+                    );
+                  })}
                 </div>
-              </article>
+              </section>
             ))}
           </div>
         )}

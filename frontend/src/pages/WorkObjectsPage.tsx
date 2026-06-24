@@ -5,6 +5,7 @@ import { CommentsSection } from "../components/communication/CommentsSection";
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
 import { DataTable, type DataTableColumn } from "../components/ui/DataTable";
+import { FilterBar, FilterField } from "../components/ui/FilterBar";
 import { FieldShell, SelectInput, TextArea, TextInput } from "../components/ui/FormControls";
 import { Modal } from "../components/ui/Modal";
 import { ModuleBoundary } from "../components/ui/ModuleBoundary";
@@ -126,6 +127,11 @@ export function WorkObjectsPage({
   const [isUploading, setIsUploading] = useState(false);
   const [editingAttachmentId, setEditingAttachmentId] = useState<string | null>(null);
   const [editingAttachmentDescription, setEditingAttachmentDescription] = useState("");
+  const [searchFilter, setSearchFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
+  const [priorityFilter, setPriorityFilter] = useState("");
+  const [assigneeFilter, setAssigneeFilter] = useState("");
+  const [projectFilter, setProjectFilter] = useState("");
 
   const employeeNames = useMemo(() => Object.fromEntries(data.employees.map((employee) => [employee.id, employee.full_name])), [data.employees]);
   const projectNames = useMemo(() => Object.fromEntries(data.projects.map((project) => [project.id, project.name])), [data.projects]);
@@ -134,6 +140,31 @@ export function WorkObjectsPage({
     [data.departments],
   );
   const teamNames = useMemo(() => Object.fromEntries(data.teams.map((team) => [team.id, team.name])), [data.teams]);
+  const filteredWorkObjects = useMemo(() => {
+    const query = searchFilter.trim().toLowerCase();
+    return data.workObjects.filter((workObject) => {
+      const searchable = [
+        workObject.title,
+        workObject.description,
+        workObject.object_type,
+        workObject.tags.join(" "),
+        workObject.project_id ? projectNames[workObject.project_id] : null,
+        workObject.assignee_employee_id ? employeeNames[workObject.assignee_employee_id] : null,
+        workObject.department_id ? departmentNames[workObject.department_id] : null,
+        workObject.team_id ? teamNames[workObject.team_id] : null,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      if (query && !searchable.includes(query)) return false;
+      if (statusFilter && workObject.status !== statusFilter) return false;
+      if (priorityFilter && workObject.priority !== priorityFilter) return false;
+      if (assigneeFilter && workObject.assignee_employee_id !== assigneeFilter) return false;
+      if (projectFilter && workObject.project_id !== projectFilter) return false;
+      return true;
+    });
+  }, [assigneeFilter, data.workObjects, departmentNames, employeeNames, priorityFilter, projectFilter, projectNames, searchFilter, statusFilter, teamNames]);
+  const hasActiveFilters = Boolean(searchFilter || statusFilter || priorityFilter || assigneeFilter || projectFilter);
 
   const loadWorkObjectDetail = useCallback(
     async (workObjectId: string): Promise<void> => {
@@ -439,7 +470,68 @@ export function WorkObjectsPage({
           onRetry={onRetry}
           emptyAction={selectedCompany ? <Button variant="primary" icon={<Plus className="size-4" aria-hidden="true" />} onClick={openCreate}>New object</Button> : undefined}
         >
-          <DataTable columns={columns} rows={data.workObjects} getRowKey={(workObject) => workObject.id} />
+          <FilterBar
+            isResetDisabled={!hasActiveFilters}
+            onReset={() => {
+              setSearchFilter("");
+              setStatusFilter("");
+              setPriorityFilter("");
+              setAssigneeFilter("");
+              setProjectFilter("");
+            }}
+          >
+            <FilterField label="Search">
+              <TextInput placeholder="Title, type, tag" value={searchFilter} onChange={(event) => setSearchFilter(event.target.value)} />
+            </FilterField>
+            <FilterField label="Status">
+              <SelectInput value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
+                <option value="">All statuses</option>
+                {statusOptions.map((status) => (
+                  <option key={status} value={status}>
+                    {formatLabel(status)}
+                  </option>
+                ))}
+              </SelectInput>
+            </FilterField>
+            <FilterField label="Priority">
+              <SelectInput value={priorityFilter} onChange={(event) => setPriorityFilter(event.target.value)}>
+                <option value="">All priorities</option>
+                {priorityOptions.map((priority) => (
+                  <option key={priority} value={priority}>
+                    {formatLabel(priority)}
+                  </option>
+                ))}
+              </SelectInput>
+            </FilterField>
+            <FilterField label="Assignee">
+              <SelectInput value={assigneeFilter} onChange={(event) => setAssigneeFilter(event.target.value)}>
+                <option value="">All assignees</option>
+                {data.employees.map((employee) => (
+                  <option key={employee.id} value={employee.id}>
+                    {employee.full_name}
+                  </option>
+                ))}
+              </SelectInput>
+            </FilterField>
+            <FilterField label="Project">
+              <SelectInput value={projectFilter} onChange={(event) => setProjectFilter(event.target.value)}>
+                <option value="">All projects</option>
+                {data.projects.map((project) => (
+                  <option key={project.id} value={project.id}>
+                    {project.name}
+                  </option>
+                ))}
+              </SelectInput>
+            </FilterField>
+          </FilterBar>
+          {filteredWorkObjects.length === 0 ? (
+            <div className="px-5 py-10 text-center">
+              <p className="text-sm font-bold text-ink-950">No work objects match these filters</p>
+              <p className="mt-1 text-sm font-medium text-ink-500">Reset filters to see the full work grid.</p>
+            </div>
+          ) : (
+            <DataTable columns={columns} rows={filteredWorkObjects} getRowKey={(workObject) => workObject.id} />
+          )}
         </ModuleBoundary>
       </SectionPanel>
 

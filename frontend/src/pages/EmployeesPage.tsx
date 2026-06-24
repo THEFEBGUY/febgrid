@@ -4,6 +4,7 @@ import { type FormEvent, useMemo, useState } from "react";
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
 import { DataTable, type DataTableColumn } from "../components/ui/DataTable";
+import { FilterBar, FilterField } from "../components/ui/FilterBar";
 import { FieldShell, SelectInput, TextInput } from "../components/ui/FormControls";
 import { Modal } from "../components/ui/Modal";
 import { ModuleBoundary } from "../components/ui/ModuleBoundary";
@@ -88,6 +89,10 @@ export function EmployeesPage({
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
   const [profileEmployee, setProfileEmployee] = useState<Employee | null>(null);
   const [isFormOpen, setIsFormOpen] = useState(false);
+  const [searchFilter, setSearchFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
+  const [departmentFilter, setDepartmentFilter] = useState("");
+  const [teamFilter, setTeamFilter] = useState("");
 
   const departmentNames = useMemo(
     () => Object.fromEntries(data.departments.map((department) => [department.id, department.name])),
@@ -95,6 +100,31 @@ export function EmployeesPage({
   );
   const teamNames = useMemo(() => Object.fromEntries(data.teams.map((team) => [team.id, team.name])), [data.teams]);
   const employeeNames = useMemo(() => Object.fromEntries(data.employees.map((employee) => [employee.id, employee.full_name])), [data.employees]);
+  const filteredEmployees = useMemo(() => {
+    const query = searchFilter.trim().toLowerCase();
+    return data.employees.filter((employee) => {
+      const searchable = [
+        employee.full_name,
+        employee.email,
+        employee.phone,
+        employee.role_title,
+        employee.department,
+        employee.location,
+        employee.skills.join(" "),
+        employee.department_id ? departmentNames[employee.department_id] : null,
+        employee.team_id ? teamNames[employee.team_id] : null,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      if (query && !searchable.includes(query)) return false;
+      if (statusFilter && employee.current_status !== statusFilter) return false;
+      if (departmentFilter && employee.department_id !== departmentFilter) return false;
+      if (teamFilter && employee.team_id !== teamFilter) return false;
+      return true;
+    });
+  }, [data.employees, departmentFilter, departmentNames, searchFilter, statusFilter, teamFilter, teamNames]);
+  const hasActiveFilters = Boolean(searchFilter || statusFilter || departmentFilter || teamFilter);
 
   const columns: DataTableColumn<Employee>[] = [
     {
@@ -231,7 +261,57 @@ export function EmployeesPage({
           onRetry={onRetry}
           emptyAction={selectedCompany ? <Button variant="primary" icon={<Plus className="size-4" aria-hidden="true" />} onClick={openCreate}>Add employee</Button> : undefined}
         >
-          <DataTable columns={columns} rows={data.employees} getRowKey={(employee) => employee.id} />
+          <FilterBar
+            isResetDisabled={!hasActiveFilters}
+            onReset={() => {
+              setSearchFilter("");
+              setStatusFilter("");
+              setDepartmentFilter("");
+              setTeamFilter("");
+            }}
+          >
+            <FilterField label="Search">
+              <TextInput placeholder="Name, email, role" value={searchFilter} onChange={(event) => setSearchFilter(event.target.value)} />
+            </FilterField>
+            <FilterField label="Status">
+              <SelectInput value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
+                <option value="">All statuses</option>
+                {statusOptions.map((status) => (
+                  <option key={status} value={status}>
+                    {formatLabel(status)}
+                  </option>
+                ))}
+              </SelectInput>
+            </FilterField>
+            <FilterField label="Department">
+              <SelectInput value={departmentFilter} onChange={(event) => setDepartmentFilter(event.target.value)}>
+                <option value="">All departments</option>
+                {data.departments.map((department) => (
+                  <option key={department.id} value={department.id}>
+                    {department.name}
+                  </option>
+                ))}
+              </SelectInput>
+            </FilterField>
+            <FilterField label="Team">
+              <SelectInput value={teamFilter} onChange={(event) => setTeamFilter(event.target.value)}>
+                <option value="">All teams</option>
+                {data.teams.map((team) => (
+                  <option key={team.id} value={team.id}>
+                    {team.name}
+                  </option>
+                ))}
+              </SelectInput>
+            </FilterField>
+          </FilterBar>
+          {filteredEmployees.length === 0 ? (
+            <div className="px-5 py-10 text-center">
+              <p className="text-sm font-bold text-ink-950">No employees match these filters</p>
+              <p className="mt-1 text-sm font-medium text-ink-500">Reset filters to return to the full directory.</p>
+            </div>
+          ) : (
+            <DataTable columns={columns} rows={filteredEmployees} getRowKey={(employee) => employee.id} />
+          )}
         </ModuleBoundary>
       </SectionPanel>
 

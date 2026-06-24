@@ -78,6 +78,10 @@ html.dark .bg-grid-50 {
   background-color: #0b1120;
 }
 
+html.dark .bg-grid-50\/60 {
+  background-color: rgba(15, 23, 42, 0.58);
+}
+
 html.dark .bg-grid-50\/90 {
   background-color: rgba(15, 23, 42, 0.9);
 }

@@ -530,6 +530,30 @@ export interface NotificationUnreadCount {
   unread_count: number;
 }
 
+export interface SearchResultItem {
+  id: string;
+  type: string;
+  title: string;
+  subtitle: string | null;
+  description: string | null;
+  status: string | null;
+  priority: string | null;
+  related_entity_type: string | null;
+  related_entity_id: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+  href: string | null;
+  metadata: Record<string, unknown>;
+}
+
+export interface SearchResponse {
+  query: string;
+  company_id: string;
+  total: number;
+  groups: Record<string, SearchResultItem[]>;
+  results: SearchResultItem[];
+}
+
 export interface DashboardSummary {
   company_overview: {
     company_id: string;

@@ -1,210 +1,530 @@
+from collections.abc import Iterable
+from datetime import date, datetime
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
+from app.core.permissions import OWNER_ADMIN_ROLES
 from app.models.attachment import Attachment
 from app.models.communication import Announcement, Comment
+from app.models.department import Department
 from app.models.employee import Employee
 from app.models.event import Event
 from app.models.leave_request import LeaveRequest
+from app.models.notification import Notification
 from app.models.project import Project
+from app.models.team import Team
+from app.models.user import User
 from app.models.work_object import WorkObject
 from app.schemas.search import SearchResponse, SearchResult
+
+SEARCH_GROUPS = {
+    "employees",
+    "departments",
+    "teams",
+    "projects",
+    "work_objects",
+    "leaves",
+    "events",
+    "notifications",
+    "announcements",
+    "comments",
+    "files",
+}
+
+TYPE_ALIASES = {
+    "employee": "employees",
+    "department": "departments",
+    "team": "teams",
+    "project": "projects",
+    "work_object": "work_objects",
+    "work-object": "work_objects",
+    "work": "work_objects",
+    "task": "work_objects",
+    "leave": "leaves",
+    "leave_request": "leaves",
+    "leave-request": "leaves",
+    "event": "events",
+    "notification": "notifications",
+    "announcement": "announcements",
+    "comment": "comments",
+    "attachment": "files",
+    "attachments": "files",
+    "file": "files",
+}
+
+
+def _as_iso(value: datetime | date | None) -> str | None:
+    return value.isoformat() if value is not None else None
+
+
+def _snippet(value: str | None, length: int = 180) -> str | None:
+    if not value:
+        return None
+    compact = " ".join(value.split())
+    if len(compact) <= length:
+        return compact
+    return f"{compact[: length - 1].rstrip()}..."
+
+
+def _text_match(*columns: Any, term: str):
+    return or_(*(column.ilike(term) for column in columns))
+
+
+def _normalize_types(types: Iterable[str] | None) -> set[str]:
+    if not types:
+        return set(SEARCH_GROUPS)
+    normalized: set[str] = set()
+    for raw_type in types:
+        value = raw_type.strip().lower()
+        if not value:
+            continue
+        normalized.add(TYPE_ALIASES.get(value, value))
+    return normalized & SEARCH_GROUPS
+
+
+def _linked_employee(db: Session, current_user: User | None) -> Employee | None:
+    if current_user is None:
+        return None
+    return db.scalar(
+        select(Employee).where(
+            Employee.company_id == current_user.company_id,
+            Employee.user_id == current_user.id,
+            Employee.is_active.is_(True),
+        )
+    )
+
+
+def _notification_visibility(db: Session, current_user: User | None) -> list[Any]:
+    if current_user is None:
+        return []
+    conditions: list[Any] = [Notification.recipient_user_id == current_user.id]
+    employee = _linked_employee(db, current_user)
+    if employee is not None:
+        conditions.append(Notification.recipient_employee_id == employee.id)
+    if current_user.role in OWNER_ADMIN_ROLES:
+        conditions.append(Notification.recipient_user_id.is_(None))
+    return conditions
+
+
+def _result(
+    *,
+    item_type: str,
+    item_id: UUID,
+    title: str,
+    subtitle: str | None = None,
+    description: str | None = None,
+    status: str | None = None,
+    priority: str | None = None,
+    related_entity_type: str | None = None,
+    related_entity_id: UUID | None = None,
+    created_at: datetime | date | None = None,
+    updated_at: datetime | date | None = None,
+    href: str | None = None,
+    metadata: dict[str, Any] | None = None,
+) -> SearchResult:
+    return SearchResult(
+        type=item_type,
+        id=str(item_id),
+        title=title,
+        subtitle=subtitle,
+        description=_snippet(description),
+        status=status,
+        priority=priority,
+        related_entity_type=related_entity_type,
+        related_entity_id=str(related_entity_id) if related_entity_id else None,
+        created_at=_as_iso(created_at),
+        updated_at=_as_iso(updated_at),
+        href=href,
+        metadata=metadata or {},
+    )
 
 
 class SearchService:
     @staticmethod
-    def search(db: Session, *, company_id: UUID, query: str, limit: int = 25) -> SearchResponse:
-        term = f"%{query.strip()}%"
-        results: list[SearchResult] = []
+    def search(
+        db: Session,
+        *,
+        company_id: UUID,
+        query: str | None,
+        types: Iterable[str] | None = None,
+        limit: int = 25,
+        current_user: User | None = None,
+    ) -> SearchResponse:
+        trimmed_query = (query or "").strip()
+        term = f"%{trimmed_query}%" if trimmed_query else None
+        group_limit = min(max(limit, 1), 25)
+        selected_types = _normalize_types(types)
 
-        employees = db.scalars(
-            select(Employee)
-            .where(
-                Employee.company_id == company_id,
-                or_(Employee.full_name.ilike(term), Employee.email.ilike(term), Employee.role.ilike(term)),
+        groups: dict[str, list[SearchResult]] = {group: [] for group in SEARCH_GROUPS}
+
+        if "employees" in selected_types:
+            groups["employees"] = SearchService._employees(db, company_id, term, group_limit)
+        if "departments" in selected_types:
+            groups["departments"] = SearchService._departments(db, company_id, term, group_limit)
+        if "teams" in selected_types:
+            groups["teams"] = SearchService._teams(db, company_id, term, group_limit)
+        if "projects" in selected_types:
+            groups["projects"] = SearchService._projects(db, company_id, term, group_limit)
+        if "work_objects" in selected_types:
+            groups["work_objects"] = SearchService._work_objects(db, company_id, term, group_limit)
+        if "leaves" in selected_types:
+            groups["leaves"] = SearchService._leaves(db, company_id, term, group_limit)
+        if "files" in selected_types:
+            groups["files"] = SearchService._files(db, company_id, term, group_limit)
+        if "comments" in selected_types:
+            groups["comments"] = SearchService._comments(db, company_id, term, group_limit)
+        if "announcements" in selected_types:
+            groups["announcements"] = SearchService._announcements(db, company_id, term, group_limit)
+        if "events" in selected_types:
+            groups["events"] = SearchService._events(db, company_id, term, group_limit)
+        if "notifications" in selected_types:
+            groups["notifications"] = SearchService._notifications(db, company_id, term, group_limit, current_user)
+
+        filtered_groups = {name: results for name, results in groups.items() if results}
+        flat_results = [result for results in filtered_groups.values() for result in results]
+        return SearchResponse(
+            query=trimmed_query,
+            company_id=str(company_id),
+            total=len(flat_results),
+            groups=filtered_groups,
+            results=flat_results,
+        )
+
+    @staticmethod
+    def _employees(db: Session, company_id: UUID, term: str | None, limit: int) -> list[SearchResult]:
+        statement = select(Employee).where(Employee.company_id == company_id)
+        if term:
+            statement = statement.where(
+                _text_match(Employee.full_name, Employee.email, Employee.phone, Employee.role, Employee.department, Employee.status, term=term)
             )
-            .limit(limit)
-        ).all()
-        results.extend(
-            SearchResult(
-                type="employee",
-                id=str(employee.id),
+        statement = statement.order_by(Employee.updated_at.desc()).limit(limit)
+        return [
+            _result(
+                item_type="employee",
+                item_id=employee.id,
                 title=employee.full_name,
-                subtitle=employee.role,
-                metadata={"status": employee.status, "department": employee.department},
-            )
-            for employee in employees
-        )
-
-        projects = db.scalars(
-            select(Project)
-            .where(
-                Project.company_id == company_id,
-                Project.is_active.is_(True),
-                or_(Project.name.ilike(term), Project.code.ilike(term), Project.description.ilike(term)),
-            )
-            .limit(limit)
-        ).all()
-        results.extend(
-            SearchResult(
-                type="project",
-                id=str(project.id),
-                title=project.name,
-                subtitle=project.status,
-                metadata={"priority": project.priority, "code": project.code, "risk_level": project.risk_level},
-            )
-            for project in projects
-        )
-
-        work_objects = db.scalars(
-            select(WorkObject)
-            .where(
-                WorkObject.company_id == company_id,
-                WorkObject.is_active.is_(True),
-                or_(
-                    WorkObject.title.ilike(term),
-                    WorkObject.description.ilike(term),
-                    WorkObject.object_type.ilike(term),
-                ),
-            )
-            .limit(limit)
-        ).all()
-        results.extend(
-            SearchResult(
-                type="work_object",
-                id=str(work_object.id),
-                title=work_object.title,
-                subtitle=work_object.status,
+                subtitle=employee.email or employee.role,
+                description=employee.department,
+                status=employee.status,
+                created_at=employee.created_at,
+                updated_at=employee.updated_at,
+                href="#/employees",
                 metadata={
-                    "priority": work_object.priority,
-                    "object_type": work_object.object_type,
-                    "project_id": str(work_object.project_id) if work_object.project_id else None,
-                    "assignee_employee_id": str(work_object.assignee_employee_id) if work_object.assignee_employee_id else None,
+                    "role_title": employee.role,
+                    "department_id": str(employee.department_id) if employee.department_id else None,
+                    "team_id": str(employee.team_id) if employee.team_id else None,
+                    "is_active": employee.is_active,
                 },
             )
-            for work_object in work_objects
-        )
+            for employee in db.scalars(statement).all()
+        ]
 
-        leave_requests = db.scalars(
-            select(LeaveRequest)
-            .where(
-                LeaveRequest.company_id == company_id,
-                LeaveRequest.is_active.is_(True),
-                or_(
-                    LeaveRequest.leave_type.ilike(term),
-                    LeaveRequest.status.ilike(term),
-                    LeaveRequest.reason.ilike(term),
-                ),
+    @staticmethod
+    def _departments(db: Session, company_id: UUID, term: str | None, limit: int) -> list[SearchResult]:
+        statement = select(Department).where(Department.company_id == company_id)
+        if term:
+            statement = statement.where(_text_match(Department.name, Department.description, term=term))
+        statement = statement.order_by(Department.updated_at.desc()).limit(limit)
+        return [
+            _result(
+                item_type="department",
+                item_id=department.id,
+                title=department.name,
+                subtitle="Department",
+                description=department.description,
+                status="active" if department.is_active else "inactive",
+                created_at=department.created_at,
+                updated_at=department.updated_at,
+                href="#/teams",
             )
-            .limit(limit)
-        ).all()
-        results.extend(
-            SearchResult(
-                type="leave_request",
-                id=str(leave.id),
+            for department in db.scalars(statement).all()
+        ]
+
+    @staticmethod
+    def _teams(db: Session, company_id: UUID, term: str | None, limit: int) -> list[SearchResult]:
+        statement = select(Team).where(Team.company_id == company_id)
+        if term:
+            statement = statement.where(_text_match(Team.name, Team.department, Team.description, term=term))
+        statement = statement.order_by(Team.updated_at.desc()).limit(limit)
+        return [
+            _result(
+                item_type="team",
+                item_id=team.id,
+                title=team.name,
+                subtitle=team.department or "Team",
+                description=team.description,
+                status="active" if team.is_active else "inactive",
+                related_entity_type="department",
+                related_entity_id=team.department_id,
+                created_at=team.created_at,
+                updated_at=team.updated_at,
+                href="#/teams",
+                metadata={"lead_employee_id": str(team.lead_employee_id) if team.lead_employee_id else None},
+            )
+            for team in db.scalars(statement).all()
+        ]
+
+    @staticmethod
+    def _projects(db: Session, company_id: UUID, term: str | None, limit: int) -> list[SearchResult]:
+        statement = select(Project).where(Project.company_id == company_id, Project.is_active.is_(True))
+        if term:
+            statement = statement.where(_text_match(Project.name, Project.code, Project.description, Project.status, Project.priority, term=term))
+        statement = statement.order_by(Project.updated_at.desc()).limit(limit)
+        return [
+            _result(
+                item_type="project",
+                item_id=project.id,
+                title=project.name,
+                subtitle=project.code or project.status,
+                description=project.description,
+                status=project.status,
+                priority=project.priority,
+                related_entity_type="team" if project.team_id else "department" if project.department_id else None,
+                related_entity_id=project.team_id or project.department_id,
+                created_at=project.created_at,
+                updated_at=project.updated_at,
+                href="#/projects",
+                metadata={
+                    "owner_employee_id": str(project.owner_employee_id) if project.owner_employee_id else None,
+                    "progress_percent": project.progress_percent,
+                    "risk_level": project.risk_level,
+                },
+            )
+            for project in db.scalars(statement).all()
+        ]
+
+    @staticmethod
+    def _work_objects(db: Session, company_id: UUID, term: str | None, limit: int) -> list[SearchResult]:
+        statement = select(WorkObject).where(WorkObject.company_id == company_id, WorkObject.is_active.is_(True))
+        if term:
+            statement = statement.where(
+                _text_match(WorkObject.title, WorkObject.description, WorkObject.object_type, WorkObject.status, WorkObject.priority, term=term)
+            )
+        statement = statement.order_by(WorkObject.updated_at.desc()).limit(limit)
+        return [
+            _result(
+                item_type="work_object",
+                item_id=work_object.id,
+                title=work_object.title,
+                subtitle=work_object.object_type,
+                description=work_object.description,
+                status=work_object.status,
+                priority=work_object.priority,
+                related_entity_type="project" if work_object.project_id else None,
+                related_entity_id=work_object.project_id,
+                created_at=work_object.created_at,
+                updated_at=work_object.updated_at,
+                href="#/work-objects",
+                metadata={
+                    "assignee_employee_id": str(work_object.assignee_employee_id) if work_object.assignee_employee_id else None,
+                    "department_id": str(work_object.department_id) if work_object.department_id else None,
+                    "team_id": str(work_object.team_id) if work_object.team_id else None,
+                    "tags": work_object.tags,
+                },
+            )
+            for work_object in db.scalars(statement).all()
+        ]
+
+    @staticmethod
+    def _leaves(db: Session, company_id: UUID, term: str | None, limit: int) -> list[SearchResult]:
+        matching_employee_ids = []
+        if term:
+            matching_employee_ids = list(
+                db.scalars(
+                    select(Employee.id).where(
+                        Employee.company_id == company_id,
+                        _text_match(Employee.full_name, Employee.email, Employee.role, term=term),
+                    )
+                ).all()
+            )
+        statement = select(LeaveRequest).where(LeaveRequest.company_id == company_id, LeaveRequest.is_active.is_(True))
+        if term:
+            conditions = [
+                LeaveRequest.leave_type.ilike(term),
+                LeaveRequest.status.ilike(term),
+                LeaveRequest.reason.ilike(term),
+                LeaveRequest.manager_note.ilike(term),
+            ]
+            if matching_employee_ids:
+                conditions.append(LeaveRequest.employee_id.in_(matching_employee_ids))
+                conditions.append(LeaveRequest.approver_employee_id.in_(matching_employee_ids))
+            statement = statement.where(or_(*conditions))
+        statement = statement.order_by(LeaveRequest.updated_at.desc()).limit(limit)
+        return [
+            _result(
+                item_type="leave_request",
+                item_id=leave.id,
                 title=f"{leave.leave_type.replace('_', ' ').title()} leave",
-                subtitle=leave.status,
+                subtitle=f"{leave.start_date.isoformat()} to {leave.end_date.isoformat()}",
+                description=leave.reason,
+                status=leave.status,
+                related_entity_type="employee",
+                related_entity_id=leave.employee_id,
+                created_at=leave.created_at,
+                updated_at=leave.updated_at,
+                href="#/leaves",
                 metadata={
                     "employee_id": str(leave.employee_id),
-                    "start_date": leave.start_date.isoformat(),
-                    "end_date": leave.end_date.isoformat(),
+                    "approver_employee_id": str(leave.approver_employee_id) if leave.approver_employee_id else None,
                     "total_days": leave.total_days,
                 },
             )
-            for leave in leave_requests
-        )
+            for leave in db.scalars(statement).all()
+        ]
 
-        attachments = db.scalars(
-            select(Attachment)
-            .where(
-                Attachment.company_id == company_id,
-                Attachment.is_active.is_(True),
-                or_(
-                    Attachment.file_name.ilike(term),
-                    Attachment.original_file_name.ilike(term),
-                    Attachment.content_type.ilike(term),
-                    Attachment.description.ilike(term),
-                ),
+    @staticmethod
+    def _files(db: Session, company_id: UUID, term: str | None, limit: int) -> list[SearchResult]:
+        statement = select(Attachment).where(Attachment.company_id == company_id, Attachment.is_active.is_(True))
+        if term:
+            statement = statement.where(
+                _text_match(
+                    Attachment.file_name,
+                    Attachment.original_file_name,
+                    Attachment.content_type,
+                    Attachment.description,
+                    Attachment.linked_entity_type,
+                    term=term,
+                )
             )
-            .limit(limit)
-        ).all()
-        results.extend(
-            SearchResult(
-                type="attachment",
-                id=str(attachment.id),
+        statement = statement.order_by(Attachment.updated_at.desc()).limit(limit)
+        return [
+            _result(
+                item_type="file",
+                item_id=attachment.id,
                 title=attachment.original_file_name,
-                subtitle=attachment.linked_entity_type,
+                subtitle=attachment.content_type or "File",
+                description=attachment.description,
+                related_entity_type=attachment.linked_entity_type,
+                related_entity_id=attachment.linked_entity_id,
+                created_at=attachment.created_at,
+                updated_at=attachment.updated_at,
+                href="#/work-objects" if attachment.work_object_id else "#/projects",
                 metadata={
-                    "content_type": attachment.content_type,
                     "file_size": attachment.file_size,
                     "work_object_id": str(attachment.work_object_id) if attachment.work_object_id else None,
+                    "project_id": str(attachment.project_id) if attachment.project_id else None,
+                    "uploaded_by_employee_id": str(attachment.uploaded_by_employee_id) if attachment.uploaded_by_employee_id else None,
                 },
             )
-            for attachment in attachments
-        )
+            for attachment in db.scalars(statement).all()
+        ]
 
-        comments = db.scalars(
-            select(Comment)
-            .where(
-                Comment.company_id == company_id,
-                Comment.is_archived.is_(False),
-                Comment.body.ilike(term),
-            )
-            .order_by(Comment.created_at.desc())
-            .limit(limit)
-        ).all()
-        results.extend(
-            SearchResult(
-                type="comment",
-                id=str(comment.id),
-                title=comment.body[:120],
+    @staticmethod
+    def _comments(db: Session, company_id: UUID, term: str | None, limit: int) -> list[SearchResult]:
+        statement = select(Comment).where(Comment.company_id == company_id, Comment.is_archived.is_(False))
+        if term:
+            statement = statement.where(Comment.body.ilike(term))
+        statement = statement.order_by(Comment.updated_at.desc()).limit(limit)
+        return [
+            _result(
+                item_type="comment",
+                item_id=comment.id,
+                title=_snippet(comment.body, 80) or "Comment",
                 subtitle=comment.target_entity_type,
+                description=comment.body,
+                related_entity_type=comment.target_entity_type,
+                related_entity_id=comment.target_entity_id,
+                created_at=comment.created_at,
+                updated_at=comment.updated_at,
+                href="#/work-objects" if comment.target_entity_type == "work_object" else "#/projects",
                 metadata={
-                    "target_entity_type": comment.target_entity_type,
-                    "target_entity_id": str(comment.target_entity_id),
+                    "author_user_id": str(comment.author_user_id) if comment.author_user_id else None,
+                    "author_employee_id": str(comment.author_employee_id) if comment.author_employee_id else None,
+                    "is_edited": comment.is_edited,
                 },
             )
-            for comment in comments
-        )
+            for comment in db.scalars(statement).all()
+        ]
 
-        announcements = db.scalars(
-            select(Announcement)
-            .where(
-                Announcement.company_id == company_id,
-                Announcement.is_archived.is_(False),
-                or_(Announcement.title.ilike(term), Announcement.body.ilike(term)),
-            )
-            .order_by(Announcement.created_at.desc())
-            .limit(limit)
-        ).all()
-        results.extend(
-            SearchResult(
-                type="announcement",
-                id=str(announcement.id),
+    @staticmethod
+    def _announcements(db: Session, company_id: UUID, term: str | None, limit: int) -> list[SearchResult]:
+        statement = select(Announcement).where(Announcement.company_id == company_id, Announcement.is_archived.is_(False))
+        if term:
+            statement = statement.where(_text_match(Announcement.title, Announcement.body, Announcement.priority, term=term))
+        statement = statement.order_by(Announcement.updated_at.desc()).limit(limit)
+        return [
+            _result(
+                item_type="announcement",
+                item_id=announcement.id,
                 title=announcement.title,
-                subtitle=announcement.priority,
+                subtitle="Published" if announcement.is_published else "Draft",
+                description=announcement.body,
+                priority=announcement.priority,
+                created_at=announcement.created_at,
+                updated_at=announcement.updated_at,
+                href="#/announcements",
                 metadata={"published_at": announcement.published_at.isoformat() if announcement.published_at else None},
             )
-            for announcement in announcements
-        )
+            for announcement in db.scalars(statement).all()
+        ]
 
-        events = db.scalars(
-            select(Event)
-            .where(Event.company_id == company_id, or_(Event.title.ilike(term), Event.event_type.ilike(term)))
-            .order_by(Event.created_at.desc())
-            .limit(limit)
-        ).all()
-        results.extend(
-            SearchResult(
-                type="event",
-                id=str(event.id),
+    @staticmethod
+    def _events(db: Session, company_id: UUID, term: str | None, limit: int) -> list[SearchResult]:
+        statement = select(Event).where(Event.company_id == company_id)
+        if term:
+            statement = statement.where(
+                _text_match(Event.title, Event.description, Event.event_type, Event.target_entity_type, Event.related_entity_type, term=term)
+            )
+        statement = statement.order_by(Event.created_at.desc()).limit(limit)
+        return [
+            _result(
+                item_type="event",
+                item_id=event.id,
                 title=event.title,
                 subtitle=event.event_type,
-                metadata={"created_at": event.created_at.isoformat()},
+                description=event.description,
+                related_entity_type=event.target_entity_type,
+                related_entity_id=event.target_entity_id,
+                created_at=event.created_at,
+                href="#/events",
+                metadata={
+                    "actor_user_id": str(event.actor_user_id) if event.actor_user_id else None,
+                    "actor_employee_id": str(event.actor_employee_id) if event.actor_employee_id else None,
+                    "related_entity_type": event.related_entity_type,
+                    "related_entity_id": str(event.related_entity_id) if event.related_entity_id else None,
+                },
             )
-            for event in events
-        )
+            for event in db.scalars(statement).all()
+        ]
 
-        return SearchResponse(query=query, results=results[:limit])
+    @staticmethod
+    def _notifications(
+        db: Session,
+        company_id: UUID,
+        term: str | None,
+        limit: int,
+        current_user: User | None,
+    ) -> list[SearchResult]:
+        statement = select(Notification).where(Notification.company_id == company_id, Notification.is_dismissed.is_(False))
+        conditions = _notification_visibility(db, current_user)
+        if conditions:
+            statement = statement.where(or_(*conditions))
+        if term:
+            statement = statement.where(
+                _text_match(Notification.title, Notification.message, Notification.notification_type, Notification.priority, term=term)
+            )
+        statement = statement.order_by(Notification.created_at.desc()).limit(limit)
+        return [
+            _result(
+                item_type="notification",
+                item_id=notification.id,
+                title=notification.title,
+                subtitle=notification.notification_type,
+                description=notification.message,
+                status="read" if notification.is_read else "unread",
+                priority=notification.priority,
+                related_entity_type=notification.target_entity_type,
+                related_entity_id=notification.target_entity_id,
+                created_at=notification.created_at,
+                updated_at=notification.updated_at,
+                href=notification.action_url or "#/notifications",
+                metadata={
+                    "recipient_user_id": str(notification.recipient_user_id) if notification.recipient_user_id else None,
+                    "recipient_employee_id": str(notification.recipient_employee_id) if notification.recipient_employee_id else None,
+                },
+            )
+            for notification in db.scalars(statement).all()
+        ]

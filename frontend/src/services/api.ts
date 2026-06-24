@@ -33,6 +33,7 @@ import type {
   ProjectMemberCreatePayload,
   ProjectUpdatePayload,
   RegisterPayload,
+  SearchResponse,
   Team,
   TeamCreatePayload,
   WorkObject,
@@ -195,6 +196,13 @@ export const api = {
   updateAnnouncement: (announcementId: string, companyId: string, payload: AnnouncementUpdatePayload) => request<Announcement>(companyPath(`/announcements/${announcementId}`, companyId), jsonInit("PATCH", payload)),
   archiveAnnouncement: (announcementId: string, companyId: string) => request<Announcement>(companyPath(`/announcements/${announcementId}/archive`, companyId), { method: "PATCH" }),
   notificationUnreadCount: (companyId: string) => request<NotificationUnreadCount>(companyPath("/notifications/unread-count", companyId)),
+  search: (companyId: string, params: { q?: string; types?: string[]; limit?: number }) => {
+    const searchParams = new URLSearchParams({ company_id: companyId });
+    if (params.q !== undefined) searchParams.set("q", params.q);
+    if (params.types?.length) searchParams.set("types", params.types.join(","));
+    if (params.limit !== undefined) searchParams.set("limit", params.limit.toString());
+    return request<SearchResponse>(`/search?${searchParams.toString()}`);
+  },
   markNotificationRead: (notificationId: string, companyId: string) => request<Notification>(companyPath(`/notifications/${notificationId}/read`, companyId), { method: "PATCH" }),
   markNotificationUnread: (notificationId: string, companyId: string) => request<Notification>(companyPath(`/notifications/${notificationId}/unread`, companyId), { method: "PATCH" }),
   markAllNotificationsRead: (companyId: string) => request<void>(companyPath("/notifications/read-all", companyId), { method: "PATCH" }),
