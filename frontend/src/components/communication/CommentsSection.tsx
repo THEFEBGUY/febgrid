@@ -144,6 +144,7 @@ export function CommentsSection({
         {employees.length > 0 ? (
           <div className="rounded-md border border-grid-200 bg-grid-50 p-3">
             <p className="text-xs font-bold uppercase tracking-normal text-ink-500">Mention employees</p>
+            <p className="mt-1 text-xs font-semibold text-ink-500">Select people here or type @Name in the comment.</p>
             <div className="mt-3 grid gap-2 sm:grid-cols-2">
               {employees.slice(0, 8).map((employee) => (
                 <label key={employee.id} className="flex items-center gap-2 text-sm font-semibold text-ink-700">
@@ -192,6 +193,7 @@ export function CommentsSection({
                         className="size-9 px-0"
                         disabled={isSaving}
                         icon={<Pencil className="size-4" aria-hidden="true" />}
+                        title="Edit comment"
                         onClick={() => {
                           setEditingCommentId(comment.id);
                           setEditingBody(comment.body);
@@ -204,6 +206,7 @@ export function CommentsSection({
                         className="size-9 px-0"
                         disabled={isSaving}
                         icon={<Trash2 className="size-4" aria-hidden="true" />}
+                        title="Archive comment"
                         onClick={() => void handleArchiveComment(comment)}
                       >
                         <span className="sr-only">Archive</span>

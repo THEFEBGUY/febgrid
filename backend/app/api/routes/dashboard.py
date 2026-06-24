@@ -60,7 +60,7 @@ def notification_visibility_conditions(db: Session, current_user: User | None) -
     if linked_employee is not None:
         conditions.append(Notification.recipient_employee_id == linked_employee.id)
     if current_user.role in OWNER_ADMIN_ROLES:
-        conditions.append(Notification.recipient_user_id.is_(None))
+        conditions.append(and_(Notification.recipient_user_id.is_(None), Notification.recipient_employee_id.is_(None)))
     return conditions
 
 

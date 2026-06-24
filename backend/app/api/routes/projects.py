@@ -635,22 +635,41 @@ def add_project_member(
         description="Project member was added.",
         metadata={"employee_id": str(payload.employee_id), "role_on_project": payload.role_on_project},
     )
-    NotificationService.create_notification(
-        db,
-        company_id=project.company_id,
-        recipient_employee_id=payload.employee_id,
-        actor_user_id=current_user.id,
-        actor_employee_id=actor_employee_id(db, current_user),
-        event_id=member_event.id,
-        title=f"Added to {project.name}",
-        message="You were added as a project member.",
-        notification_type="project.member_added",
-        target_entity_type="project",
-        target_entity_id=project.id,
-        priority="normal",
-        action_url="#/projects",
-        metadata={"project_id": str(project.id), "role_on_project": payload.role_on_project},
-    )
+    actor_id = actor_employee_id(db, current_user)
+    if payload.employee_id != actor_id:
+        NotificationService.create_notification(
+            db,
+            company_id=project.company_id,
+            recipient_employee_id=payload.employee_id,
+            actor_user_id=current_user.id,
+            actor_employee_id=actor_id,
+            event_id=member_event.id,
+            title=f"Added to {project.name}",
+            message="You were added as a project member.",
+            notification_type="project.member_added",
+            target_entity_type="project",
+            target_entity_id=project.id,
+            priority="normal",
+            action_url="#/projects",
+            metadata={"project_id": str(project.id), "role_on_project": payload.role_on_project},
+        )
+    if project.owner_employee_id is not None and project.owner_employee_id not in {payload.employee_id, actor_id}:
+        NotificationService.create_notification(
+            db,
+            company_id=project.company_id,
+            recipient_employee_id=project.owner_employee_id,
+            actor_user_id=current_user.id,
+            actor_employee_id=actor_id,
+            event_id=member_event.id,
+            title=f"Member added to {project.name}",
+            message="A project member was added.",
+            notification_type="project.member_added",
+            target_entity_type="project",
+            target_entity_id=project.id,
+            priority="normal",
+            action_url="#/projects",
+            metadata={"project_id": str(project.id), "employee_id": str(payload.employee_id)},
+        )
     db.commit()
     db.refresh(member)
     return member
@@ -689,22 +708,41 @@ def remove_project_member(
         description="Project member was removed.",
         metadata={"employee_id": str(employee_id)},
     )
-    NotificationService.create_notification(
-        db,
-        company_id=project.company_id,
-        recipient_employee_id=employee_id,
-        actor_user_id=current_user.id,
-        actor_employee_id=actor_employee_id(db, current_user),
-        event_id=remove_event.id,
-        title=f"Removed from {project.name}",
-        message="You were removed as a project member.",
-        notification_type="project.member_removed",
-        target_entity_type="project",
-        target_entity_id=project.id,
-        priority="normal",
-        action_url="#/projects",
-        metadata={"project_id": str(project.id)},
-    )
+    actor_id = actor_employee_id(db, current_user)
+    if employee_id != actor_id:
+        NotificationService.create_notification(
+            db,
+            company_id=project.company_id,
+            recipient_employee_id=employee_id,
+            actor_user_id=current_user.id,
+            actor_employee_id=actor_id,
+            event_id=remove_event.id,
+            title=f"Removed from {project.name}",
+            message="You were removed as a project member.",
+            notification_type="project.member_removed",
+            target_entity_type="project",
+            target_entity_id=project.id,
+            priority="normal",
+            action_url="#/projects",
+            metadata={"project_id": str(project.id)},
+        )
+    if project.owner_employee_id is not None and project.owner_employee_id not in {employee_id, actor_id}:
+        NotificationService.create_notification(
+            db,
+            company_id=project.company_id,
+            recipient_employee_id=project.owner_employee_id,
+            actor_user_id=current_user.id,
+            actor_employee_id=actor_id,
+            event_id=remove_event.id,
+            title=f"Member removed from {project.name}",
+            message="A project member was removed.",
+            notification_type="project.member_removed",
+            target_entity_type="project",
+            target_entity_id=project.id,
+            priority="normal",
+            action_url="#/projects",
+            metadata={"project_id": str(project.id), "employee_id": str(employee_id)},
+        )
     db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 

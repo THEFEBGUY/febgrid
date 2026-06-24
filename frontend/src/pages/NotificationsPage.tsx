@@ -64,6 +64,7 @@ export function NotificationsPage({
       if (query && !searchable.includes(query)) return false;
       if (readFilter === "read" && !notification.is_read) return false;
       if (readFilter === "unread" && notification.is_read) return false;
+      if (readFilter === "action" && !notification.action_url) return false;
       if (typeFilter && notification.notification_type !== typeFilter) return false;
       if (priorityFilter && notification.priority !== priorityFilter) return false;
       return true;
@@ -113,6 +114,7 @@ export function NotificationsPage({
               <option value="">All states</option>
               <option value="unread">Unread</option>
               <option value="read">Read</option>
+              <option value="action">Action needed</option>
             </SelectInput>
           </FilterField>
           <FilterField label="Type">

@@ -1,3 +1,4 @@
+import re
 from datetime import datetime, timezone
 from uuid import UUID
 
@@ -30,6 +31,7 @@ announcements_router = APIRouter(prefix="/announcements", tags=["communication"]
 
 COMMENT_TARGET_TYPES = {"work_object", "project"}
 ANNOUNCEMENT_PRIORITIES = {"low", "normal", "high", "urgent"}
+MENTION_PATTERN = re.compile(r"@([A-Za-z][A-Za-z0-9._'-]*(?:\s+[A-Za-z][A-Za-z0-9._'-]*){0,3})")
 
 
 def normalize_priority(value: str) -> str:
@@ -183,6 +185,50 @@ def validate_mentioned_users(db: Session, *, company_id: UUID, user_ids: list[UU
         ensure_company_access(user, company_id)
         users.append(user)
     return users
+
+
+def normalize_mention_name(value: str) -> str:
+    return " ".join(value.strip(".,:;!?()[]{}").lower().split())
+
+
+def parse_mentioned_employees_from_body(db: Session, *, company_id: UUID, body: str) -> list[Employee]:
+    mention_names = {normalize_mention_name(match.group(1)) for match in MENTION_PATTERN.finditer(body)}
+    mention_names.discard("")
+    if not mention_names:
+        return []
+    employees = db.scalars(
+        select(Employee).where(
+            Employee.company_id == company_id,
+            Employee.is_active.is_(True),
+        )
+    ).all()
+    matches: list[Employee] = []
+    seen: set[UUID] = set()
+    for employee in employees:
+        full_name = normalize_mention_name(employee.full_name)
+        first_name = normalize_mention_name(employee.full_name.split()[0]) if employee.full_name.split() else ""
+        email_name = normalize_mention_name(employee.email.split("@")[0]) if employee.email else ""
+        aliases = {full_name, first_name, email_name}
+        if aliases.intersection(mention_names) and employee.id not in seen:
+            matches.append(employee)
+            seen.add(employee.id)
+    return matches
+
+
+def merge_employees(*employee_lists: list[Employee]) -> list[Employee]:
+    merged: dict[UUID, Employee] = {}
+    for employees in employee_lists:
+        for employee in employees:
+            merged.setdefault(employee.id, employee)
+    return list(merged.values())
+
+
+def merge_users(*user_lists: list[User]) -> list[User]:
+    merged: dict[UUID, User] = {}
+    for users in user_lists:
+        for user in users:
+            merged.setdefault(user.id, user)
+    return list(merged.values())
 
 
 def set_comment_mentions(
@@ -471,7 +517,9 @@ def create_comment(
     if author_id is not None:
         employee = get_or_404(db, Employee, author_id, label="Author")
         ensure_company(employee, payload.company_id, label="Author")
-    employees = validate_mentioned_employees(db, company_id=payload.company_id, employee_ids=payload.mentioned_employee_ids)
+    explicit_employees = validate_mentioned_employees(db, company_id=payload.company_id, employee_ids=payload.mentioned_employee_ids)
+    parsed_employees = parse_mentioned_employees_from_body(db, company_id=payload.company_id, body=payload.body)
+    employees = merge_employees(explicit_employees, parsed_employees)
     users = validate_mentioned_users(db, company_id=payload.company_id, user_ids=payload.mentioned_user_ids)
     comment = Comment(
         company_id=payload.company_id,
@@ -530,20 +578,38 @@ def update_comment(
     comment = get_comment_for_user(db, current_user, comment_id=comment_id, company_id=company_id)
     ensure_comment_author_or_admin(db, current_user, comment)
     changed_fields: list[str] = []
+    body_changed = False
     if payload.body is not None and payload.body.strip() != comment.body:
         comment.body = payload.body.strip()
         comment.is_edited = True
         comment.edited_at = datetime.now(timezone.utc)
         changed_fields.extend(["body", "edited_at"])
+        body_changed = True
     if payload.metadata:
         comment.metadata_json = payload.metadata
         changed_fields.append("metadata")
-    if payload.mentioned_employee_ids is not None or payload.mentioned_user_ids is not None:
-        employees = validate_mentioned_employees(db, company_id=company_id, employee_ids=payload.mentioned_employee_ids or [])
-        users = validate_mentioned_users(db, company_id=company_id, user_ids=payload.mentioned_user_ids or [])
+    if body_changed or payload.mentioned_employee_ids is not None or payload.mentioned_user_ids is not None:
+        previous_employee_ids = {mention.mentioned_employee_id for mention in comment.mentions if mention.mentioned_employee_id is not None}
+        previous_user_ids = {mention.mentioned_user_id for mention in comment.mentions if mention.mentioned_user_id is not None}
+        employee_ids = (
+            payload.mentioned_employee_ids
+            if payload.mentioned_employee_ids is not None
+            else [employee_id for employee_id in previous_employee_ids]
+        )
+        user_ids = (
+            payload.mentioned_user_ids
+            if payload.mentioned_user_ids is not None
+            else [user_id for user_id in previous_user_ids]
+        )
+        explicit_employees = validate_mentioned_employees(db, company_id=company_id, employee_ids=employee_ids)
+        parsed_employees = parse_mentioned_employees_from_body(db, company_id=company_id, body=comment.body)
+        employees = merge_employees(explicit_employees, parsed_employees)
+        users = validate_mentioned_users(db, company_id=company_id, user_ids=user_ids)
         mentions = set_comment_mentions(db, comment=comment, employees=employees, users=users)
         changed_fields.append("mentions")
-        if mentions:
+        new_employees = [employee for employee in employees if employee.id not in previous_employee_ids]
+        new_users = [user for user in users if user.id not in previous_user_ids]
+        if new_employees or new_users:
             mention_event = record_comment_event(
                 db,
                 comment=comment,
@@ -556,7 +622,7 @@ def update_comment(
                     "mentioned_user_ids": [str(mention.mentioned_user_id) for mention in mentions if mention.mentioned_user_id],
                 },
             )
-            notify_comment_mentions(db, comment=comment, current_user=current_user, event=mention_event, employees=employees, users=users)
+            notify_comment_mentions(db, comment=comment, current_user=current_user, event=mention_event, employees=new_employees, users=new_users)
     if changed_fields:
         record_comment_event(
             db,

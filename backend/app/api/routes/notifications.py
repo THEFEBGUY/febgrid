@@ -2,17 +2,25 @@ from datetime import datetime, timezone
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
-from sqlalchemy import func, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
 
-from app.api.deps import db_session, get_optional_current_user
+from app.api.deps import db_session, get_current_user, get_optional_current_user
 from app.api.utils import get_or_404
 from app.core.permissions import OWNER_ADMIN_ROLES, ensure_company_access
 from app.models.company import Company
 from app.models.employee import Employee
 from app.models.notification import Notification
+from app.models.notification_preference import NotificationPreference
 from app.models.user import User
-from app.schemas.notification import NotificationCreate, NotificationRead, NotificationUnreadCount
+from app.schemas.notification import (
+    NotificationCreate,
+    NotificationPreferenceRead,
+    NotificationPreferenceUpdate,
+    NotificationRead,
+    NotificationUnreadCount,
+)
+from app.services.event_service import EventService
 from app.services.notification_service import NotificationService
 
 router = APIRouter(prefix="/notifications", tags=["notifications"])
@@ -38,7 +46,7 @@ def visible_notification_conditions(db: Session, current_user: User | None) -> l
     if linked_employee is not None:
         conditions.append(Notification.recipient_employee_id == linked_employee.id)
     if current_user.role in OWNER_ADMIN_ROLES:
-        conditions.append(Notification.recipient_user_id.is_(None))
+        conditions.append(and_(Notification.recipient_user_id.is_(None), Notification.recipient_employee_id.is_(None)))
     return conditions
 
 
@@ -69,11 +77,105 @@ def get_notification_for_user(
         can_see = notification.recipient_user_id == current_user.id or (
             linked_employee is not None and notification.recipient_employee_id == linked_employee.id
         ) or (
-            current_user.role in OWNER_ADMIN_ROLES and notification.recipient_user_id is None
+            current_user.role in OWNER_ADMIN_ROLES
+            and notification.recipient_user_id is None
+            and notification.recipient_employee_id is None
         )
         if not can_see:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Notification not found")
     return notification
+
+
+def preference_read_from_defaults(company_id: UUID) -> NotificationPreferenceRead:
+    return NotificationPreferenceRead(**NotificationService.default_preferences(company_id=company_id))
+
+
+def record_notification_action_event(
+    db: Session,
+    *,
+    notification: Notification,
+    current_user: User | None,
+    event_type: str,
+    title: str,
+    metadata: dict[str, object] | None = None,
+) -> None:
+    linked_employee = get_linked_employee(db, current_user)
+    EventService.record_event(
+        db,
+        company_id=notification.company_id,
+        actor_user_id=current_user.id if current_user else None,
+        actor_employee_id=linked_employee.id if linked_employee is not None else None,
+        event_type=event_type,
+        title=title,
+        target_entity_type="notification",
+        target_entity_id=notification.id,
+        related_entity_type=notification.target_entity_type,
+        related_entity_id=notification.target_entity_id,
+        metadata={
+            "notification_id": str(notification.id),
+            "notification_type": notification.notification_type,
+            "priority": notification.priority,
+            **(metadata or {}),
+        },
+    )
+
+
+@router.get("/preferences", response_model=NotificationPreferenceRead)
+def get_notification_preferences(
+    company_id: UUID,
+    db: Session = Depends(db_session),
+    current_user: User | None = Depends(get_optional_current_user),
+) -> NotificationPreference | NotificationPreferenceRead:
+    ensure_company_access(current_user, company_id)
+    if current_user is None:
+        return preference_read_from_defaults(company_id)
+    linked_employee = get_linked_employee(db, current_user)
+    preference = NotificationService.get_preferences(
+        db,
+        company_id=company_id,
+        user_id=current_user.id,
+        employee_id=linked_employee.id if linked_employee is not None else None,
+    )
+    return preference or NotificationPreferenceRead(
+        **NotificationService.default_preferences(
+            company_id=company_id,
+            user_id=current_user.id,
+            employee_id=linked_employee.id if linked_employee is not None else None,
+        )
+    )
+
+
+@router.put("/preferences", response_model=NotificationPreferenceRead)
+def update_notification_preferences(
+    company_id: UUID,
+    payload: NotificationPreferenceUpdate,
+    db: Session = Depends(db_session),
+    current_user: User = Depends(get_current_user),
+) -> NotificationPreference:
+    ensure_company_access(current_user, company_id)
+    linked_employee = get_linked_employee(db, current_user)
+    updates = payload.model_dump(exclude_unset=True)
+    preference = NotificationService.upsert_preferences(
+        db,
+        company_id=company_id,
+        user_id=current_user.id,
+        employee_id=linked_employee.id if linked_employee is not None else None,
+        updates=updates,
+    )
+    EventService.record_event(
+        db,
+        company_id=company_id,
+        actor_user_id=current_user.id,
+        actor_employee_id=linked_employee.id if linked_employee is not None else None,
+        event_type="notification.preference_updated",
+        title="Notification preferences updated",
+        target_entity_type="notification_preference",
+        target_entity_id=preference.id,
+        metadata={"changed_fields": sorted(updates.keys())},
+    )
+    db.commit()
+    db.refresh(preference)
+    return preference
 
 
 @router.post("", response_model=NotificationRead, status_code=status.HTTP_201_CREATED)
@@ -168,8 +270,16 @@ def mark_notification_read(
     current_user: User | None = Depends(get_optional_current_user),
 ) -> Notification:
     notification = get_notification_for_user(db, current_user, notification_id=notification_id, company_id=company_id)
-    notification.is_read = True
-    notification.read_at = datetime.now(timezone.utc)
+    if not notification.is_read:
+        notification.is_read = True
+        notification.read_at = datetime.now(timezone.utc)
+        record_notification_action_event(
+            db,
+            notification=notification,
+            current_user=current_user,
+            event_type="notification.read",
+            title="Notification marked read",
+        )
     db.commit()
     db.refresh(notification)
     return notification
@@ -183,8 +293,16 @@ def mark_notification_unread(
     current_user: User | None = Depends(get_optional_current_user),
 ) -> Notification:
     notification = get_notification_for_user(db, current_user, notification_id=notification_id, company_id=company_id)
-    notification.is_read = False
-    notification.read_at = None
+    if notification.is_read:
+        notification.is_read = False
+        notification.read_at = None
+        record_notification_action_event(
+            db,
+            notification=notification,
+            current_user=current_user,
+            event_type="notification.unread",
+            title="Notification marked unread",
+        )
     db.commit()
     db.refresh(notification)
     return notification
@@ -204,9 +322,22 @@ def mark_all_notifications_read(
     )
     statement = apply_notification_visibility(statement, db, current_user)
     now = datetime.now(timezone.utc)
-    for notification in db.scalars(statement).all():
+    notifications = list(db.scalars(statement).all())
+    for notification in notifications:
         notification.is_read = True
         notification.read_at = now
+    if notifications:
+        linked_employee = get_linked_employee(db, current_user)
+        EventService.record_event(
+            db,
+            company_id=company_id,
+            actor_user_id=current_user.id if current_user else None,
+            actor_employee_id=linked_employee.id if linked_employee is not None else None,
+            event_type="notification.read_all",
+            title="Notifications marked read",
+            target_entity_type="notification",
+            metadata={"count": len(notifications)},
+        )
     db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
@@ -219,8 +350,16 @@ def dismiss_notification(
     current_user: User | None = Depends(get_optional_current_user),
 ) -> Notification:
     notification = get_notification_for_user(db, current_user, notification_id=notification_id, company_id=company_id)
-    notification.is_dismissed = True
-    notification.dismissed_at = datetime.now(timezone.utc)
+    if not notification.is_dismissed:
+        notification.is_dismissed = True
+        notification.dismissed_at = datetime.now(timezone.utc)
+        record_notification_action_event(
+            db,
+            notification=notification,
+            current_user=current_user,
+            event_type="notification.dismissed",
+            title="Notification dismissed",
+        )
     db.commit()
     db.refresh(notification)
     return notification
@@ -234,7 +373,15 @@ def delete_notification(
     current_user: User | None = Depends(get_optional_current_user),
 ) -> Response:
     notification = get_notification_for_user(db, current_user, notification_id=notification_id, company_id=company_id)
-    notification.is_dismissed = True
-    notification.dismissed_at = datetime.now(timezone.utc)
+    if not notification.is_dismissed:
+        notification.is_dismissed = True
+        notification.dismissed_at = datetime.now(timezone.utc)
+        record_notification_action_event(
+            db,
+            notification=notification,
+            current_user=current_user,
+            event_type="notification.dismissed",
+            title="Notification dismissed",
+        )
     db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)

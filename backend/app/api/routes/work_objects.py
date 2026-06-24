@@ -206,6 +206,8 @@ def notify_assignment(db: Session, work_object: WorkObject, current_user: User |
     if work_object.assignee_employee_id is None:
         return
     actor_id = actor_employee_id(db, current_user, work_object.creator_employee_id)
+    if actor_id == work_object.assignee_employee_id:
+        return
     NotificationService.create_notification(
         db,
         company_id=work_object.company_id,

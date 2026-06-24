@@ -75,3 +75,32 @@ class NotificationReadUpdate(FebGridModel):
 class NotificationUnreadCount(FebGridModel):
     company_id: UUID
     unread_count: int
+
+
+class NotificationPreferenceBase(FebGridModel):
+    company_id: UUID
+    user_id: UUID | None = None
+    employee_id: UUID | None = None
+    in_app_enabled: bool = True
+    email_enabled: bool = False
+    mentions_enabled: bool = True
+    assignments_enabled: bool = True
+    leave_decisions_enabled: bool = True
+    project_updates_enabled: bool = True
+    announcements_enabled: bool = True
+
+
+class NotificationPreferenceRead(NotificationPreferenceBase):
+    id: UUID | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+class NotificationPreferenceUpdate(FebGridModel):
+    in_app_enabled: bool | None = None
+    email_enabled: bool | None = None
+    mentions_enabled: bool | None = None
+    assignments_enabled: bool | None = None
+    leave_decisions_enabled: bool | None = None
+    project_updates_enabled: bool | None = None
+    announcements_enabled: bool | None = None

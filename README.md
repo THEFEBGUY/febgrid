@@ -133,4 +133,4 @@ All Phase 1 endpoints are mounted under `/api/v1`.
 - `/ai-jobs`
 - `/search`
 
-Major create/update/status/approval/upload/comment/announcement actions record events for the universal timeline. Notification creation also records a `notification.sent` event and in-app notifications remain scoped to the current company and recipient.
+Major create/update/status/approval/upload/comment/announcement actions record events for the universal timeline. Notification creation also records a `notification.sent` event and in-app notifications remain scoped to the current company and recipient. Phase 2 notification preferences include an email-alert placeholder in `backend/app/services/email_service.py`; real email provider delivery is intentionally not implemented yet.

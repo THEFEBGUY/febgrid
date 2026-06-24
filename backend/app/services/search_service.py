@@ -3,7 +3,7 @@ from datetime import date, datetime
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import or_, select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session
 
 from app.core.permissions import OWNER_ADMIN_ROLES
@@ -105,7 +105,7 @@ def _notification_visibility(db: Session, current_user: User | None) -> list[Any
     if employee is not None:
         conditions.append(Notification.recipient_employee_id == employee.id)
     if current_user.role in OWNER_ADMIN_ROLES:
-        conditions.append(Notification.recipient_user_id.is_(None))
+        conditions.append(and_(Notification.recipient_user_id.is_(None), Notification.recipient_employee_id.is_(None)))
     return conditions
 
 

@@ -5,13 +5,25 @@ from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.permissions import OWNER_ADMIN_ROLES
 from app.models.employee import Employee
 from app.models.event import Event
 from app.models.notification import Notification
+from app.models.notification_preference import NotificationPreference
 from app.models.user import User
+from app.services.email_service import EmailService
 from app.services.event_service import EventService
 
 NOTIFICATION_PRIORITIES = {"low", "normal", "high", "urgent"}
+PREFERENCE_FIELDS = {
+    "in_app_enabled",
+    "email_enabled",
+    "mentions_enabled",
+    "assignments_enabled",
+    "leave_decisions_enabled",
+    "project_updates_enabled",
+    "announcements_enabled",
+}
 
 
 def metadata_dict(value: dict[str, Any] | None) -> dict[str, Any]:
@@ -61,6 +73,124 @@ class NotificationService:
         if user.company_id != company_id:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"{label} not found")
         return user
+
+    @staticmethod
+    def preference_flag_for_type(notification_type: str) -> str | None:
+        if notification_type in {"communication.mentioned", "comment.mentioned"}:
+            return "mentions_enabled"
+        if notification_type.startswith("comment."):
+            return "mentions_enabled"
+        if notification_type.startswith("work_object."):
+            return "assignments_enabled"
+        if notification_type.startswith("leave."):
+            return "leave_decisions_enabled"
+        if notification_type.startswith("project."):
+            return "project_updates_enabled"
+        if notification_type.startswith("announcement."):
+            return "announcements_enabled"
+        return None
+
+    @staticmethod
+    def default_preferences(
+        *,
+        company_id: UUID,
+        user_id: UUID | None = None,
+        employee_id: UUID | None = None,
+    ) -> dict[str, Any]:
+        return {
+            "company_id": company_id,
+            "user_id": user_id,
+            "employee_id": employee_id,
+            "in_app_enabled": True,
+            "email_enabled": False,
+            "mentions_enabled": True,
+            "assignments_enabled": True,
+            "leave_decisions_enabled": True,
+            "project_updates_enabled": True,
+            "announcements_enabled": True,
+        }
+
+    @classmethod
+    def get_preferences(
+        cls,
+        db: Session,
+        *,
+        company_id: UUID,
+        user_id: UUID | None = None,
+        employee_id: UUID | None = None,
+    ) -> NotificationPreference | None:
+        if user_id is not None:
+            preference = db.scalar(
+                select(NotificationPreference).where(
+                    NotificationPreference.company_id == company_id,
+                    NotificationPreference.user_id == user_id,
+                )
+            )
+            if preference is not None:
+                return preference
+        if employee_id is not None:
+            return db.scalar(
+                select(NotificationPreference).where(
+                    NotificationPreference.company_id == company_id,
+                    NotificationPreference.employee_id == employee_id,
+                )
+            )
+        return None
+
+    @classmethod
+    def upsert_preferences(
+        cls,
+        db: Session,
+        *,
+        company_id: UUID,
+        user_id: UUID | None,
+        employee_id: UUID | None,
+        updates: dict[str, bool | None],
+    ) -> NotificationPreference:
+        preference = cls.get_preferences(db, company_id=company_id, user_id=user_id, employee_id=employee_id)
+        if preference is None:
+            preference = NotificationPreference(**cls.default_preferences(company_id=company_id, user_id=user_id, employee_id=employee_id))
+            db.add(preference)
+            db.flush()
+        for field, value in updates.items():
+            if field in PREFERENCE_FIELDS and value is not None:
+                setattr(preference, field, value)
+        db.flush()
+        return preference
+
+    @classmethod
+    def in_app_allowed(
+        cls,
+        *,
+        preferences: NotificationPreference | None,
+        notification_type: str,
+        company_wide: bool,
+    ) -> bool:
+        if preferences is None or company_wide:
+            return True
+        if not preferences.in_app_enabled:
+            return False
+        preference_flag = cls.preference_flag_for_type(notification_type)
+        if preference_flag is None:
+            return True
+        return bool(getattr(preferences, preference_flag, True))
+
+    @staticmethod
+    def owner_admin_user_ids(
+        db: Session,
+        *,
+        company_id: UUID,
+        exclude_user_ids: set[UUID] | None = None,
+    ) -> list[UUID]:
+        exclude_user_ids = exclude_user_ids or set()
+        users = db.scalars(
+            select(User).where(
+                User.company_id == company_id,
+                User.role.in_(OWNER_ADMIN_ROLES),
+                User.is_active.is_(True),
+            )
+        ).all()
+        return [user.id for user in users if user.id not in exclude_user_ids]
 
     @staticmethod
     def _existing_open_notification(
@@ -139,13 +269,22 @@ class NotificationService:
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail="Recipient user does not match recipient employee",
             )
-        cls._validate_user(db, company_id=company_id, user_id=recipient_user_id, label="Recipient user")
+        recipient_user = cls._validate_user(db, company_id=company_id, user_id=recipient_user_id, label="Recipient user")
         cls._validate_employee(db, company_id=company_id, employee_id=actor_employee_id, label="Actor")
         cls._validate_user(db, company_id=company_id, user_id=actor_user_id, label="Actor user")
         if event_id is not None:
             event = db.get(Event, event_id)
             if event is None or event.company_id != company_id:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
+
+        preferences = cls.get_preferences(
+            db,
+            company_id=company_id,
+            user_id=recipient_user_id,
+            employee_id=recipient_employee_id,
+        )
+        if not cls.in_app_allowed(preferences=preferences, notification_type=notification_type, company_wide=company_wide):
+            return None
 
         if dedupe:
             existing = cls._existing_open_notification(
@@ -159,6 +298,20 @@ class NotificationService:
             )
             if existing is not None:
                 return existing
+
+        metadata_payload = dict(metadata_dict(metadata))
+        existing_delivery = metadata_payload.get("delivery")
+        delivery_metadata = dict(existing_delivery) if isinstance(existing_delivery, dict) else {}
+        delivery_metadata["in_app"] = {"channel": "in_app", "status": "pending"}
+        delivery_metadata["email"] = EmailService.prepare_notification_delivery(
+            notification_type=notification_type,
+            title=title,
+            recipient_user=recipient_user,
+            recipient_employee=recipient_employee,
+            preferences=preferences,
+            company_wide=company_wide,
+        )
+        metadata_payload["delivery"] = delivery_metadata
 
         notification = Notification(
             company_id=company_id,
@@ -174,7 +327,7 @@ class NotificationService:
             message=message,
             priority=notification_priority,
             action_url=action_url,
-            metadata_json=metadata_dict(metadata),
+            metadata_json=metadata_payload,
             is_read=False,
             is_dismissed=False,
         )
@@ -198,6 +351,7 @@ class NotificationService:
                 "priority": notification_priority,
                 "source_event_id": str(event_id) if event_id else None,
                 "company_wide": company_wide,
+                "email_delivery": delivery_metadata["email"],
             },
         )
         if notification.event_id is None:
@@ -222,13 +376,20 @@ class NotificationService:
         priority: str = "normal",
         action_url: str | None = None,
         metadata: dict[str, Any] | None = None,
+        exclude_employee_ids: set[UUID] | None = None,
+        exclude_user_ids: set[UUID] | None = None,
     ) -> list[Notification]:
         notifications: list[Notification] = []
         seen: set[UUID] = set()
+        exclude_employee_ids = exclude_employee_ids or set()
+        exclude_user_ids = exclude_user_ids or set()
         for employee_id in recipient_employee_ids:
-            if employee_id in seen:
+            if employee_id in seen or employee_id in exclude_employee_ids:
                 continue
             seen.add(employee_id)
+            employee = cls._validate_employee(db, company_id=company_id, employee_id=employee_id, label="Recipient")
+            if employee is not None and employee.user_id is not None and employee.user_id in exclude_user_ids:
+                continue
             notification = cls.create_notification(
                 db,
                 company_id=company_id,
@@ -248,3 +409,88 @@ class NotificationService:
             if notification is not None:
                 notifications.append(notification)
         return notifications
+
+    @classmethod
+    def create_for_users(
+        cls,
+        db: Session,
+        *,
+        company_id: UUID,
+        recipient_user_ids: list[UUID],
+        title: str,
+        message: str,
+        notification_type: str,
+        actor_user_id: UUID | None = None,
+        actor_employee_id: UUID | None = None,
+        event_id: UUID | None = None,
+        target_entity_type: str | None = None,
+        target_entity_id: UUID | None = None,
+        priority: str = "normal",
+        action_url: str | None = None,
+        metadata: dict[str, Any] | None = None,
+        exclude_user_ids: set[UUID] | None = None,
+    ) -> list[Notification]:
+        notifications: list[Notification] = []
+        seen: set[UUID] = set()
+        exclude_user_ids = exclude_user_ids or set()
+        for user_id in recipient_user_ids:
+            if user_id in seen or user_id in exclude_user_ids:
+                continue
+            seen.add(user_id)
+            notification = cls.create_notification(
+                db,
+                company_id=company_id,
+                recipient_user_id=user_id,
+                title=title,
+                message=message,
+                notification_type=notification_type,
+                actor_user_id=actor_user_id,
+                actor_employee_id=actor_employee_id,
+                event_id=event_id,
+                target_entity_type=target_entity_type,
+                target_entity_id=target_entity_id,
+                priority=priority,
+                action_url=action_url,
+                metadata=metadata,
+            )
+            if notification is not None:
+                notifications.append(notification)
+        return notifications
+
+    @classmethod
+    def create_for_owner_admins(
+        cls,
+        db: Session,
+        *,
+        company_id: UUID,
+        title: str,
+        message: str,
+        notification_type: str,
+        actor_user_id: UUID | None = None,
+        actor_employee_id: UUID | None = None,
+        event_id: UUID | None = None,
+        target_entity_type: str | None = None,
+        target_entity_id: UUID | None = None,
+        priority: str = "normal",
+        action_url: str | None = None,
+        metadata: dict[str, Any] | None = None,
+        exclude_user_ids: set[UUID] | None = None,
+    ) -> list[Notification]:
+        user_ids = cls.owner_admin_user_ids(db, company_id=company_id, exclude_user_ids=exclude_user_ids)
+        return cls.create_for_users(
+            db,
+            company_id=company_id,
+            recipient_user_ids=user_ids,
+            title=title,
+            message=message,
+            notification_type=notification_type,
+            actor_user_id=actor_user_id,
+            actor_employee_id=actor_employee_id,
+            event_id=event_id,
+            target_entity_type=target_entity_type,
+            target_entity_id=target_entity_id,
+            priority=priority,
+            action_url=action_url,
+            metadata=metadata,
+            exclude_user_ids=exclude_user_ids,
+        )
