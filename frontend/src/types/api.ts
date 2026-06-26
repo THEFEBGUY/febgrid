@@ -25,6 +25,78 @@ export interface CompanyCreatePayload {
   settings: Record<string, unknown>;
 }
 
+export interface CompanySettings {
+  company_id: string;
+  name: string;
+  industry: string | null;
+  size: string | null;
+  timezone: string;
+  description: string | null;
+  settings: Record<string, unknown>;
+  work_week: string[];
+  default_work_object_type: string;
+  default_priority: string;
+  file_upload_max_mb: number;
+  template_key: string | null;
+  metadata: Record<string, unknown>;
+}
+
+export interface CompanySettingsUpdatePayload {
+  name?: string;
+  industry?: string | null;
+  size?: string | null;
+  timezone?: string;
+  description?: string | null;
+  work_week?: string[];
+  default_work_object_type?: string;
+  default_priority?: string;
+  file_upload_max_mb?: number;
+  dashboard_flags?: Record<string, unknown>;
+  notification_defaults?: Record<string, unknown>;
+  metadata?: Record<string, unknown>;
+}
+
+export interface IndustryTemplateWorkObjectType {
+  key: string;
+  name: string;
+  description: string | null;
+  icon: string | null;
+  color: string | null;
+  is_default: boolean;
+  sort_order: number;
+}
+
+export interface IndustryTemplateCustomField {
+  type_key: string;
+  field_key: string;
+  label: string;
+  field_type: CustomFieldType;
+  required: boolean;
+  options: string[];
+  default_value: unknown;
+  help_text: string | null;
+  sort_order: number;
+}
+
+export interface IndustryTemplate {
+  key: string;
+  name: string;
+  description: string;
+  industry: string;
+  work_object_types: IndustryTemplateWorkObjectType[];
+  custom_fields: IndustryTemplateCustomField[];
+  metadata: Record<string, unknown>;
+}
+
+export interface ApplyIndustryTemplateResult {
+  company_id: string;
+  template_key: string;
+  created_type_count: number;
+  created_custom_field_count: number;
+  skipped_type_count: number;
+  skipped_custom_field_count: number;
+}
+
 export type UserRole = "company_owner" | "admin" | "manager" | "employee";
 
 export interface AuthUser extends Timestamped {
@@ -259,6 +331,92 @@ export interface WorkObject extends Timestamped {
   custom_fields: Record<string, unknown>;
   ai_summary: string | null;
   is_active: boolean;
+}
+
+export interface WorkObjectTypeDefinition extends Timestamped {
+  id: string;
+  company_id: string;
+  key: string;
+  name: string;
+  description: string | null;
+  icon: string | null;
+  color: string | null;
+  is_default: boolean;
+  is_active: boolean;
+  sort_order: number;
+  metadata: Record<string, unknown>;
+}
+
+export interface WorkObjectTypeCreatePayload {
+  company_id: string;
+  key: string;
+  name: string;
+  description?: string | null;
+  icon?: string | null;
+  color?: string | null;
+  is_default?: boolean;
+  is_active?: boolean;
+  sort_order?: number;
+  metadata?: Record<string, unknown>;
+}
+
+export interface WorkObjectTypeUpdatePayload {
+  name?: string;
+  description?: string | null;
+  icon?: string | null;
+  color?: string | null;
+  is_default?: boolean;
+  is_active?: boolean;
+  sort_order?: number;
+  metadata?: Record<string, unknown>;
+}
+
+export type CustomFieldType = "text" | "textarea" | "number" | "date" | "checkbox" | "select" | "multiselect";
+
+export interface CustomFieldDefinition extends Timestamped {
+  id: string;
+  company_id: string;
+  work_object_type_id: string | null;
+  type_key: string;
+  field_key: string;
+  label: string;
+  field_type: CustomFieldType;
+  required: boolean;
+  options: string[];
+  default_value: unknown;
+  help_text: string | null;
+  sort_order: number;
+  is_active: boolean;
+  metadata: Record<string, unknown>;
+}
+
+export interface CustomFieldCreatePayload {
+  company_id: string;
+  work_object_type_id?: string | null;
+  type_key: string;
+  field_key: string;
+  label: string;
+  field_type: CustomFieldType;
+  required?: boolean;
+  options?: string[];
+  default_value?: unknown;
+  help_text?: string | null;
+  sort_order?: number;
+  is_active?: boolean;
+  metadata?: Record<string, unknown>;
+}
+
+export interface CustomFieldUpdatePayload {
+  work_object_type_id?: string | null;
+  label?: string;
+  field_type?: CustomFieldType;
+  required?: boolean;
+  options?: string[];
+  default_value?: unknown;
+  help_text?: string | null;
+  sort_order?: number;
+  is_active?: boolean;
+  metadata?: Record<string, unknown>;
 }
 
 export interface WorkObjectCreatePayload {
@@ -618,6 +776,10 @@ export interface DashboardSummary {
 
 export interface FebGridData {
   companies: Company[];
+  companySettings: CompanySettings | null;
+  industryTemplates: IndustryTemplate[];
+  workObjectTypes: WorkObjectTypeDefinition[];
+  customFields: CustomFieldDefinition[];
   dashboardSummary: DashboardSummary | null;
   departments: Department[];
   employees: Employee[];

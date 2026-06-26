@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from app.core.permissions import OWNER_ADMIN_ROLES
 from app.models.attachment import Attachment
 from app.models.communication import Announcement, Comment
+from app.models.configuration import CustomFieldDefinition, WorkObjectType
 from app.models.department import Department
 from app.models.employee import Employee
 from app.models.event import Event
@@ -32,6 +33,8 @@ SEARCH_GROUPS = {
     "announcements",
     "comments",
     "files",
+    "work_object_types",
+    "custom_fields",
 }
 
 TYPE_ALIASES = {
@@ -53,6 +56,12 @@ TYPE_ALIASES = {
     "attachment": "files",
     "attachments": "files",
     "file": "files",
+    "work_object_type": "work_object_types",
+    "work-object-type": "work_object_types",
+    "work_type": "work_object_types",
+    "custom_field": "custom_fields",
+    "custom-field": "custom_fields",
+    "field": "custom_fields",
 }
 
 
@@ -170,6 +179,10 @@ class SearchService:
             groups["projects"] = SearchService._projects(db, company_id, term, group_limit)
         if "work_objects" in selected_types:
             groups["work_objects"] = SearchService._work_objects(db, company_id, term, group_limit)
+        if "work_object_types" in selected_types:
+            groups["work_object_types"] = SearchService._work_object_types(db, company_id, term, group_limit)
+        if "custom_fields" in selected_types:
+            groups["custom_fields"] = SearchService._custom_fields(db, company_id, term, group_limit)
         if "leaves" in selected_types:
             groups["leaves"] = SearchService._leaves(db, company_id, term, group_limit)
         if "files" in selected_types:
@@ -323,9 +336,70 @@ class SearchService:
                     "department_id": str(work_object.department_id) if work_object.department_id else None,
                     "team_id": str(work_object.team_id) if work_object.team_id else None,
                     "tags": work_object.tags,
+                    "custom_fields": work_object.custom_fields,
                 },
             )
             for work_object in db.scalars(statement).all()
+        ]
+
+    @staticmethod
+    def _work_object_types(db: Session, company_id: UUID, term: str | None, limit: int) -> list[SearchResult]:
+        statement = select(WorkObjectType).where(WorkObjectType.company_id == company_id)
+        if term:
+            statement = statement.where(_text_match(WorkObjectType.key, WorkObjectType.name, WorkObjectType.description, term=term))
+        statement = statement.order_by(WorkObjectType.updated_at.desc()).limit(limit)
+        return [
+            _result(
+                item_type="work_object_type",
+                item_id=work_type.id,
+                title=work_type.name,
+                subtitle=work_type.key,
+                description=work_type.description,
+                status="active" if work_type.is_active else "inactive",
+                created_at=work_type.created_at,
+                updated_at=work_type.updated_at,
+                href="#/settings",
+                metadata={"is_default": work_type.is_default, "sort_order": work_type.sort_order},
+            )
+            for work_type in db.scalars(statement).all()
+        ]
+
+    @staticmethod
+    def _custom_fields(db: Session, company_id: UUID, term: str | None, limit: int) -> list[SearchResult]:
+        statement = select(CustomFieldDefinition).where(CustomFieldDefinition.company_id == company_id)
+        if term:
+            statement = statement.where(
+                _text_match(
+                    CustomFieldDefinition.type_key,
+                    CustomFieldDefinition.field_key,
+                    CustomFieldDefinition.label,
+                    CustomFieldDefinition.field_type,
+                    CustomFieldDefinition.help_text,
+                    term=term,
+                )
+            )
+        statement = statement.order_by(CustomFieldDefinition.updated_at.desc()).limit(limit)
+        return [
+            _result(
+                item_type="custom_field",
+                item_id=field.id,
+                title=field.label,
+                subtitle=f"{field.type_key} / {field.field_type}",
+                description=field.help_text,
+                status="active" if field.is_active else "inactive",
+                related_entity_type="work_object_type",
+                related_entity_id=field.work_object_type_id,
+                created_at=field.created_at,
+                updated_at=field.updated_at,
+                href="#/settings",
+                metadata={
+                    "type_key": field.type_key,
+                    "field_key": field.field_key,
+                    "required": field.required,
+                    "options": field.options,
+                },
+            )
+            for field in db.scalars(statement).all()
         ]
 
     @staticmethod

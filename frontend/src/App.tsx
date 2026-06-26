@@ -15,6 +15,7 @@ import { EventsPage } from "./pages/EventsPage";
 import { LeavesPage } from "./pages/LeavesPage";
 import { NotificationsPage } from "./pages/NotificationsPage";
 import { ProjectsPage } from "./pages/ProjectsPage";
+import { SettingsPage } from "./pages/SettingsPage";
 import { TeamsPage } from "./pages/TeamsPage";
 import { WorkObjectsPage } from "./pages/WorkObjectsPage";
 import type { PageKey } from "./types/domain";
@@ -148,6 +149,27 @@ export function App(): JSX.Element {
             onMarkAllRead={febGrid.markAllNotificationsRead}
             onMarkRead={febGrid.markNotificationRead}
             onMarkUnread={febGrid.markNotificationUnread}
+          />
+        );
+      case "settings":
+        return (
+          <SettingsPage
+            {...withModuleError(
+              febGrid.moduleErrors.companySettings ??
+                febGrid.moduleErrors.industryTemplates ??
+                febGrid.moduleErrors.workObjectTypes ??
+                febGrid.moduleErrors.customFields ??
+                null,
+            )}
+            currentUserRole={auth.user?.role ?? null}
+            onApplyIndustryTemplate={febGrid.applyIndustryTemplate}
+            onArchiveCustomField={febGrid.archiveCustomField}
+            onArchiveWorkObjectType={febGrid.archiveWorkObjectType}
+            onCreateCustomField={febGrid.createCustomField}
+            onCreateWorkObjectType={febGrid.createWorkObjectType}
+            onUpdateCompanySettings={febGrid.updateCompanySettings}
+            onUpdateCustomField={febGrid.updateCustomField}
+            onUpdateWorkObjectType={febGrid.updateWorkObjectType}
           />
         );
       case "dashboard":

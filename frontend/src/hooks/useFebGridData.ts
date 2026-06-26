@@ -6,6 +6,9 @@ import type {
   AnnouncementUpdatePayload,
   Company,
   CompanyCreatePayload,
+  CompanySettingsUpdatePayload,
+  CustomFieldCreatePayload,
+  CustomFieldUpdatePayload,
   DepartmentCreatePayload,
   EmployeeCreatePayload,
   EmployeeUpdatePayload,
@@ -19,11 +22,17 @@ import type {
   ProjectUpdatePayload,
   TeamCreatePayload,
   WorkObjectCreatePayload,
+  WorkObjectTypeCreatePayload,
+  WorkObjectTypeUpdatePayload,
   WorkObjectUpdatePayload,
 } from "../types/api";
 
 const emptyData: FebGridData = {
   companies: [],
+  companySettings: null,
+  industryTemplates: [],
+  workObjectTypes: [],
+  customFields: [],
   dashboardSummary: null,
   departments: [],
   employees: [],
@@ -85,6 +94,14 @@ interface FebGridDataState {
   createAnnouncement: (payload: Omit<AnnouncementCreatePayload, "company_id">) => Promise<void>;
   updateAnnouncement: (announcementId: string, payload: AnnouncementUpdatePayload) => Promise<void>;
   archiveAnnouncement: (announcementId: string) => Promise<void>;
+  updateCompanySettings: (payload: CompanySettingsUpdatePayload) => Promise<void>;
+  applyIndustryTemplate: (templateKey: string) => Promise<void>;
+  createWorkObjectType: (payload: Omit<WorkObjectTypeCreatePayload, "company_id">) => Promise<void>;
+  updateWorkObjectType: (typeId: string, payload: WorkObjectTypeUpdatePayload) => Promise<void>;
+  archiveWorkObjectType: (typeId: string) => Promise<void>;
+  createCustomField: (payload: Omit<CustomFieldCreatePayload, "company_id">) => Promise<void>;
+  updateCustomField: (fieldId: string, payload: CustomFieldUpdatePayload) => Promise<void>;
+  archiveCustomField: (fieldId: string) => Promise<void>;
 }
 
 interface UseFebGridDataOptions {
@@ -213,7 +230,26 @@ export function useFebGridData({ enabled = true }: UseFebGridDataOptions = {}): 
     setModuleErrors({});
     setData((current) => ({ ...current, ...emptyData, companies: current.companies }));
 
-    const [dashboardSummary, departments, employees, teams, projects, workObjects, leaves, events, notifications, announcements] = await Promise.allSettled([
+    const [
+      companySettings,
+      industryTemplates,
+      workObjectTypes,
+      customFields,
+      dashboardSummary,
+      departments,
+      employees,
+      teams,
+      projects,
+      workObjects,
+      leaves,
+      events,
+      notifications,
+      announcements,
+    ] = await Promise.allSettled([
+      api.companySettings(selectedCompanyId),
+      api.industryTemplates(),
+      api.workObjectTypes(selectedCompanyId, true),
+      api.customFields(selectedCompanyId, undefined, true),
       api.dashboardSummary(selectedCompanyId),
       api.departments(selectedCompanyId),
       api.employees(selectedCompanyId),
@@ -228,6 +264,18 @@ export function useFebGridData({ enabled = true }: UseFebGridDataOptions = {}): 
 
     const nextData: Partial<FebGridData> = {};
     const nextErrors: ModuleErrors = {};
+
+    if (companySettings.status === "fulfilled") nextData.companySettings = companySettings.value;
+    else nextErrors.companySettings = getErrorMessage(companySettings.reason);
+
+    if (industryTemplates.status === "fulfilled") nextData.industryTemplates = industryTemplates.value;
+    else nextErrors.industryTemplates = getErrorMessage(industryTemplates.reason);
+
+    if (workObjectTypes.status === "fulfilled") nextData.workObjectTypes = workObjectTypes.value;
+    else nextErrors.workObjectTypes = getErrorMessage(workObjectTypes.reason);
+
+    if (customFields.status === "fulfilled") nextData.customFields = customFields.value;
+    else nextErrors.customFields = getErrorMessage(customFields.reason);
 
     if (dashboardSummary.status === "fulfilled") nextData.dashboardSummary = dashboardSummary.value;
     else nextErrors.dashboardSummary = getErrorMessage(dashboardSummary.reason);
@@ -568,6 +616,70 @@ export function useFebGridData({ enabled = true }: UseFebGridDataOptions = {}): 
     });
   }
 
+  async function updateCompanySettings(payload: CompanySettingsUpdatePayload): Promise<void> {
+    if (!selectedCompanyId) return;
+    await runMutation(async () => {
+      await api.updateCompanySettings(selectedCompanyId, payload);
+      await Promise.all([refreshModules(), refreshCompanies()]);
+    });
+  }
+
+  async function applyIndustryTemplate(templateKey: string): Promise<void> {
+    if (!selectedCompanyId) return;
+    await runMutation(async () => {
+      await api.applyIndustryTemplate(selectedCompanyId, templateKey);
+      await Promise.all([refreshModules(), refreshCompanies()]);
+    });
+  }
+
+  async function createWorkObjectType(payload: Omit<WorkObjectTypeCreatePayload, "company_id">): Promise<void> {
+    if (!selectedCompanyId) return;
+    await runMutation(async () => {
+      await api.createWorkObjectType({ ...payload, company_id: selectedCompanyId });
+      await refreshModules();
+    });
+  }
+
+  async function updateWorkObjectType(typeId: string, payload: WorkObjectTypeUpdatePayload): Promise<void> {
+    if (!selectedCompanyId) return;
+    await runMutation(async () => {
+      await api.updateWorkObjectType(typeId, selectedCompanyId, payload);
+      await refreshModules();
+    });
+  }
+
+  async function archiveWorkObjectType(typeId: string): Promise<void> {
+    if (!selectedCompanyId) return;
+    await runMutation(async () => {
+      await api.archiveWorkObjectType(typeId, selectedCompanyId);
+      await refreshModules();
+    });
+  }
+
+  async function createCustomField(payload: Omit<CustomFieldCreatePayload, "company_id">): Promise<void> {
+    if (!selectedCompanyId) return;
+    await runMutation(async () => {
+      await api.createCustomField({ ...payload, company_id: selectedCompanyId });
+      await refreshModules();
+    });
+  }
+
+  async function updateCustomField(fieldId: string, payload: CustomFieldUpdatePayload): Promise<void> {
+    if (!selectedCompanyId) return;
+    await runMutation(async () => {
+      await api.updateCustomField(fieldId, selectedCompanyId, payload);
+      await refreshModules();
+    });
+  }
+
+  async function archiveCustomField(fieldId: string): Promise<void> {
+    if (!selectedCompanyId) return;
+    await runMutation(async () => {
+      await api.archiveCustomField(fieldId, selectedCompanyId);
+      await refreshModules();
+    });
+  }
+
   return {
     data,
     selectedCompanyId,
@@ -614,5 +726,13 @@ export function useFebGridData({ enabled = true }: UseFebGridDataOptions = {}): 
     createAnnouncement,
     updateAnnouncement,
     archiveAnnouncement,
+    updateCompanySettings,
+    applyIndustryTemplate,
+    createWorkObjectType,
+    updateWorkObjectType,
+    archiveWorkObjectType,
+    createCustomField,
+    updateCustomField,
+    archiveCustomField,
   };
 }

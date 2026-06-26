@@ -13,7 +13,7 @@ import { SectionPanel } from "../components/ui/SectionPanel";
 import { EmptyState, ErrorState, LoadingState } from "../components/ui/States";
 import { priorityTone, statusTone } from "../components/ui/tone";
 import { api } from "../services/api";
-import type { Attachment, Event as FebGridEvent, WorkObject, WorkObjectCreatePayload, WorkObjectUpdatePayload } from "../types/api";
+import type { Attachment, CustomFieldDefinition, Event as FebGridEvent, WorkObject, WorkObjectCreatePayload, WorkObjectUpdatePayload } from "../types/api";
 import type { ModulePageProps } from "../types/page";
 import { compactList, formatDate, formatLabel, formatTime } from "../utils/format";
 
@@ -27,13 +27,31 @@ interface WorkObjectsPageProps extends ModulePageProps {
   onCompleteWorkObject: (workObjectId: string) => Promise<void>;
 }
 
-const objectTypeOptions = ["task", "approval_request", "issue", "site_visit", "invoice", "document_review", "general"];
+const fallbackObjectTypeOptions = ["task", "approval_request", "issue", "site_visit", "invoice", "document_review", "general"];
 const statusOptions = ["assigned", "in_progress", "under_review", "blocked", "completed", "cancelled"];
 const priorityOptions = ["low", "medium", "high", "critical"];
 const maxUploadBytes = 10 * 1024 * 1024;
 const allowedAttachmentExtensions = [".png", ".jpg", ".jpeg", ".webp", ".pdf", ".csv", ".doc", ".docx", ".xls", ".xlsx"];
 
-const initialForm = {
+interface WorkObjectForm {
+  title: string;
+  description: string;
+  object_type: string;
+  status: string;
+  priority: string;
+  project_id: string;
+  department_id: string;
+  team_id: string;
+  creator_employee_id: string;
+  assignee_employee_id: string;
+  start_date: string;
+  due_date: string;
+  tags: string;
+  metadata_notes: string;
+  custom_fields: Record<string, string | boolean>;
+}
+
+const initialForm: WorkObjectForm = {
   title: "",
   description: "",
   object_type: "task",
@@ -48,9 +66,9 @@ const initialForm = {
   due_date: "",
   tags: "",
   metadata_notes: "",
+  custom_fields: {},
 };
 
-type WorkObjectForm = typeof initialForm;
 type BadgeTone = "blue" | "green" | "amber" | "red" | "teal" | "slate";
 
 function workObjectToForm(workObject: WorkObject): WorkObjectForm {
@@ -69,6 +87,12 @@ function workObjectToForm(workObject: WorkObject): WorkObjectForm {
     due_date: workObject.due_date ? workObject.due_date.slice(0, 10) : "",
     tags: workObject.tags.join(", "),
     metadata_notes: typeof workObject.metadata.notes === "string" ? workObject.metadata.notes : "",
+    custom_fields: Object.fromEntries(
+      Object.entries(workObject.custom_fields ?? {}).map(([key, value]) => [
+        key,
+        Array.isArray(value) ? value.join(", ") : typeof value === "boolean" ? value : value == null ? "" : String(value),
+      ]),
+    ),
   };
 }
 
@@ -93,6 +117,41 @@ function validateAttachmentFile(file: File): string | null {
     return "File must be 10 MB or smaller.";
   }
   return null;
+}
+
+function customFieldDefinitionsFor(fields: CustomFieldDefinition[], typeKey: string, includeInactive = false): CustomFieldDefinition[] {
+  return fields
+    .filter((field) => field.type_key === typeKey && (includeInactive || field.is_active))
+    .sort((left, right) => left.sort_order - right.sort_order || left.label.localeCompare(right.label));
+}
+
+function serializeCustomFields(definitions: CustomFieldDefinition[], formValues: Record<string, string | boolean>): Record<string, unknown> {
+  return Object.fromEntries(
+    definitions.map((definition) => {
+      const rawValue = formValues[definition.field_key];
+      if (definition.field_type === "checkbox") {
+        return [definition.field_key, Boolean(rawValue)];
+      }
+      if (typeof rawValue !== "string" || rawValue.trim() === "") {
+        return [definition.field_key, null];
+      }
+      if (definition.field_type === "number") {
+        const numeric = Number(rawValue);
+        return [definition.field_key, Number.isFinite(numeric) ? numeric : rawValue];
+      }
+      if (definition.field_type === "multiselect") {
+        return [definition.field_key, rawValue.split(",").map((item) => item.trim()).filter(Boolean)];
+      }
+      return [definition.field_key, rawValue];
+    }),
+  );
+}
+
+function formatCustomFieldValue(value: unknown): string {
+  if (Array.isArray(value)) return value.join(", ") || "None";
+  if (typeof value === "boolean") return value ? "Yes" : "No";
+  if (value === null || value === undefined || value === "") return "None";
+  return String(value);
 }
 
 export function WorkObjectsPage({
@@ -130,6 +189,7 @@ export function WorkObjectsPage({
   const [searchFilter, setSearchFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [priorityFilter, setPriorityFilter] = useState("");
+  const [typeFilter, setTypeFilter] = useState("");
   const [assigneeFilter, setAssigneeFilter] = useState("");
   const [projectFilter, setProjectFilter] = useState("");
 
@@ -140,6 +200,28 @@ export function WorkObjectsPage({
     [data.departments],
   );
   const teamNames = useMemo(() => Object.fromEntries(data.teams.map((team) => [team.id, team.name])), [data.teams]);
+  const activeWorkObjectTypes = useMemo(() => {
+    const configured = data.workObjectTypes
+      .filter((type) => type.is_active)
+      .sort((left, right) => left.sort_order - right.sort_order || left.name.localeCompare(right.name));
+    if (configured.length > 0) return configured;
+    return fallbackObjectTypeOptions.map((key, index) => ({
+      id: key,
+      company_id: selectedCompany?.id ?? "",
+      key,
+      name: formatLabel(key),
+      description: null,
+      icon: null,
+      color: null,
+      is_default: key === "task",
+      is_active: true,
+      sort_order: index + 1,
+      metadata: {},
+      created_at: "",
+      updated_at: "",
+    }));
+  }, [data.workObjectTypes, selectedCompany?.id]);
+  const formCustomFields = useMemo(() => customFieldDefinitionsFor(data.customFields, form.object_type), [data.customFields, form.object_type]);
   const filteredWorkObjects = useMemo(() => {
     const query = searchFilter.trim().toLowerCase();
     return data.workObjects.filter((workObject) => {
@@ -148,6 +230,7 @@ export function WorkObjectsPage({
         workObject.description,
         workObject.object_type,
         workObject.tags.join(" "),
+        Object.values(workObject.custom_fields ?? {}).map(formatCustomFieldValue).join(" "),
         workObject.project_id ? projectNames[workObject.project_id] : null,
         workObject.assignee_employee_id ? employeeNames[workObject.assignee_employee_id] : null,
         workObject.department_id ? departmentNames[workObject.department_id] : null,
@@ -159,12 +242,13 @@ export function WorkObjectsPage({
       if (query && !searchable.includes(query)) return false;
       if (statusFilter && workObject.status !== statusFilter) return false;
       if (priorityFilter && workObject.priority !== priorityFilter) return false;
+      if (typeFilter && workObject.object_type !== typeFilter) return false;
       if (assigneeFilter && workObject.assignee_employee_id !== assigneeFilter) return false;
       if (projectFilter && workObject.project_id !== projectFilter) return false;
       return true;
     });
-  }, [assigneeFilter, data.workObjects, departmentNames, employeeNames, priorityFilter, projectFilter, projectNames, searchFilter, statusFilter, teamNames]);
-  const hasActiveFilters = Boolean(searchFilter || statusFilter || priorityFilter || assigneeFilter || projectFilter);
+  }, [assigneeFilter, data.workObjects, departmentNames, employeeNames, priorityFilter, projectFilter, projectNames, searchFilter, statusFilter, teamNames, typeFilter]);
+  const hasActiveFilters = Boolean(searchFilter || statusFilter || priorityFilter || typeFilter || assigneeFilter || projectFilter);
 
   const loadWorkObjectDetail = useCallback(
     async (workObjectId: string): Promise<void> => {
@@ -319,7 +403,7 @@ export function WorkObjectsPage({
 
   function openCreate(): void {
     setEditingWorkObject(null);
-    setForm(initialForm);
+    setForm({ ...initialForm, object_type: activeWorkObjectTypes[0]?.key ?? "task" });
     setFormError(null);
     setIsFormOpen(true);
   }
@@ -367,7 +451,9 @@ export function WorkObjectsPage({
       due_date: dateToIso(form.due_date, true),
       tags: form.tags.split(",").map((tag) => tag.trim()).filter(Boolean),
       metadata: form.metadata_notes.trim() ? { notes: form.metadata_notes.trim() } : {},
-      custom_fields: {},
+      custom_fields: editingWorkObject
+        ? { ...editingWorkObject.custom_fields, ...serializeCustomFields(formCustomFields, form.custom_fields) }
+        : serializeCustomFields(formCustomFields, form.custom_fields),
       is_active: true,
     };
 
@@ -476,6 +562,7 @@ export function WorkObjectsPage({
               setSearchFilter("");
               setStatusFilter("");
               setPriorityFilter("");
+              setTypeFilter("");
               setAssigneeFilter("");
               setProjectFilter("");
             }}
@@ -499,6 +586,16 @@ export function WorkObjectsPage({
                 {priorityOptions.map((priority) => (
                   <option key={priority} value={priority}>
                     {formatLabel(priority)}
+                  </option>
+                ))}
+              </SelectInput>
+            </FilterField>
+            <FilterField label="Type">
+              <SelectInput value={typeFilter} onChange={(event) => setTypeFilter(event.target.value)}>
+                <option value="">All types</option>
+                {activeWorkObjectTypes.map((objectType) => (
+                  <option key={objectType.id} value={objectType.key}>
+                    {objectType.name}
                   </option>
                 ))}
               </SelectInput>
@@ -543,9 +640,12 @@ export function WorkObjectsPage({
             </FieldShell>
             <FieldShell label="Object type">
               <SelectInput required value={form.object_type} onChange={(event) => setForm((current) => ({ ...current, object_type: event.target.value }))}>
-                {objectTypeOptions.map((objectType) => (
-                  <option key={objectType} value={objectType}>
-                    {formatLabel(objectType)}
+                {!activeWorkObjectTypes.some((objectType) => objectType.key === form.object_type) ? (
+                  <option value={form.object_type}>{formatLabel(form.object_type)}</option>
+                ) : null}
+                {activeWorkObjectTypes.map((objectType) => (
+                  <option key={objectType.id} value={objectType.key}>
+                    {objectType.name}
                   </option>
                 ))}
               </SelectInput>
@@ -634,6 +734,21 @@ export function WorkObjectsPage({
           <FieldShell label="Notes">
             <TextArea value={form.metadata_notes} onChange={(event) => setForm((current) => ({ ...current, metadata_notes: event.target.value }))} />
           </FieldShell>
+          {formCustomFields.length > 0 ? (
+            <div className="rounded-lg border border-grid-200 bg-grid-50 p-4">
+              <p className="text-xs font-bold uppercase tracking-normal text-ink-500">Custom fields</p>
+              <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                {formCustomFields.map((field) => (
+                  <CustomFieldInput
+                    key={field.id}
+                    definition={field}
+                    value={form.custom_fields[field.field_key] ?? (field.field_type === "checkbox" ? false : "")}
+                    onChange={(value) => setForm((current) => ({ ...current, custom_fields: { ...current.custom_fields, [field.field_key]: value } }))}
+                  />
+                ))}
+              </div>
+            </div>
+          ) : null}
           {formError ? <p className="text-sm font-semibold text-rose-700">{formError}</p> : null}
           <div className="flex justify-end gap-2 border-t border-grid-200 pt-4">
             <Button onClick={() => setIsFormOpen(false)}>Cancel</Button>
@@ -662,6 +777,7 @@ export function WorkObjectsPage({
 
             {detailWorkObject.description ? <p className="rounded-lg border border-grid-200 bg-grid-50 p-4 text-sm font-medium text-ink-600">{detailWorkObject.description}</p> : null}
             {typeof detailWorkObject.metadata.notes === "string" ? <p className="rounded-lg border border-grid-200 bg-grid-50 p-4 text-sm font-medium text-ink-600">{detailWorkObject.metadata.notes}</p> : null}
+            <CustomFieldsDetail fields={data.customFields} workObject={detailWorkObject} />
 
             <div className="flex flex-wrap gap-2">
               <Button icon={<Pencil className="size-4" aria-hidden="true" />} onClick={() => openEdit(detailWorkObject)}>Edit</Button>
@@ -801,5 +917,93 @@ function DetailItem({ label, value, badgeTone }: { label: string; value: string;
       <p className="text-xs font-bold uppercase tracking-normal text-ink-500">{label}</p>
       <div className="mt-2">{badgeTone ? <Badge label={value} tone={badgeTone} /> : <p className="text-sm font-bold text-ink-950">{value}</p>}</div>
     </div>
+  );
+}
+
+function CustomFieldInput({
+  definition,
+  value,
+  onChange,
+}: {
+  definition: CustomFieldDefinition;
+  value: string | boolean;
+  onChange: (value: string | boolean) => void;
+}): JSX.Element {
+  if (definition.field_type === "checkbox") {
+    return (
+      <label className="flex min-h-10 items-center gap-2 rounded-md border border-grid-200 bg-white px-3 py-2 text-sm font-semibold text-ink-700">
+        <input checked={Boolean(value)} type="checkbox" onChange={(event) => onChange(event.target.checked)} />
+        {definition.label}
+      </label>
+    );
+  }
+  if (definition.field_type === "select") {
+    return (
+      <FieldShell label={definition.label}>
+        <SelectInput required={definition.required} value={typeof value === "string" ? value : ""} onChange={(event) => onChange(event.target.value)}>
+          <option value="">Select</option>
+          {definition.options.map((option) => (
+            <option key={option} value={option}>
+              {formatLabel(option)}
+            </option>
+          ))}
+        </SelectInput>
+      </FieldShell>
+    );
+  }
+  if (definition.field_type === "textarea") {
+    return (
+      <FieldShell label={definition.label}>
+        <TextArea required={definition.required} value={typeof value === "string" ? value : ""} onChange={(event) => onChange(event.target.value)} />
+      </FieldShell>
+    );
+  }
+  return (
+    <FieldShell label={definition.label}>
+      <TextInput
+        placeholder={definition.field_type === "multiselect" ? "Comma-separated values" : definition.help_text ?? undefined}
+        required={definition.required}
+        type={definition.field_type === "number" || definition.field_type === "date" ? definition.field_type : "text"}
+        value={typeof value === "string" ? value : ""}
+        onChange={(event) => onChange(event.target.value)}
+      />
+    </FieldShell>
+  );
+}
+
+function CustomFieldsDetail({ fields, workObject }: { fields: CustomFieldDefinition[]; workObject: WorkObject }): JSX.Element | null {
+  const values = workObject.custom_fields ?? {};
+  const valueKeys = Object.keys(values);
+  if (valueKeys.length === 0) return null;
+  const knownFields = customFieldDefinitionsFor(fields, workObject.object_type, true);
+  const knownKeys = new Set(knownFields.map((field) => field.field_key));
+  const unknownKeys = valueKeys.filter((key) => !knownKeys.has(key));
+  const rows = [
+    ...knownFields.filter((field) => valueKeys.includes(field.field_key)).map((field) => ({
+      key: field.field_key,
+      label: field.label,
+      value: values[field.field_key],
+      isActive: field.is_active,
+    })),
+    ...unknownKeys.map((key) => ({ key, label: formatLabel(key), value: values[key], isActive: true })),
+  ];
+
+  if (rows.length === 0) return null;
+
+  return (
+    <section className="rounded-lg border border-grid-200 bg-grid-50 p-4">
+      <p className="text-xs font-bold uppercase tracking-normal text-ink-500">Custom fields</p>
+      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+        {rows.map((row) => (
+          <div key={row.key} className="rounded-md border border-grid-200 bg-white p-3">
+            <p className="flex items-center gap-2 text-xs font-bold uppercase tracking-normal text-ink-500">
+              {row.label}
+              {!row.isActive ? <Badge label="Archived" tone="slate" /> : null}
+            </p>
+            <p className="mt-1 text-sm font-bold text-ink-950">{formatCustomFieldValue(row.value)}</p>
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }

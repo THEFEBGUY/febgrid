@@ -8,9 +8,14 @@ import type {
   AuthSession,
   Company,
   CompanyCreatePayload,
+  CompanySettings,
+  CompanySettingsUpdatePayload,
   Comment,
   CommentCreatePayload,
   CommentUpdatePayload,
+  CustomFieldCreatePayload,
+  CustomFieldDefinition,
+  CustomFieldUpdatePayload,
   DashboardSummary,
   Department,
   DepartmentCreatePayload,
@@ -18,6 +23,8 @@ import type {
   EmployeeCreatePayload,
   EmployeeUpdatePayload,
   Event,
+  ApplyIndustryTemplateResult,
+  IndustryTemplate,
   LeaveCancelPayload,
   LeaveCreatePayload,
   LeaveDecisionPayload,
@@ -39,6 +46,9 @@ import type {
   WorkObject,
   WorkObjectCreatePayload,
   WorkObjectSummary,
+  WorkObjectTypeCreatePayload,
+  WorkObjectTypeDefinition,
+  WorkObjectTypeUpdatePayload,
   WorkObjectUpdatePayload,
 } from "../types/api";
 
@@ -133,6 +143,27 @@ export const api = {
   me: () => request<AuthMe>("/auth/me"),
   companies: () => request<Company[]>("/companies"),
   createCompany: (payload: CompanyCreatePayload) => request<Company>("/companies", jsonInit("POST", payload)),
+  companySettings: (companyId: string) => request<CompanySettings>(companyPath("/company-settings", companyId)),
+  updateCompanySettings: (companyId: string, payload: CompanySettingsUpdatePayload) => request<CompanySettings>(companyPath("/company-settings", companyId), jsonInit("PUT", payload)),
+  industryTemplates: () => request<IndustryTemplate[]>("/industry-templates"),
+  industryTemplate: (templateKey: string) => request<IndustryTemplate>(`/industry-templates/${encodeURIComponent(templateKey)}`),
+  applyIndustryTemplate: (companyId: string, templateKey: string) =>
+    request<ApplyIndustryTemplateResult>(companyPath("/company-settings/apply-template", companyId), jsonInit("POST", { template_key: templateKey })),
+  workObjectTypes: (companyId: string, includeInactive = false) =>
+    request<WorkObjectTypeDefinition[]>(companyPath(`/work-object-types?include_inactive=${includeInactive ? "true" : "false"}`, companyId)),
+  createWorkObjectType: (payload: WorkObjectTypeCreatePayload) => request<WorkObjectTypeDefinition>("/work-object-types", jsonInit("POST", payload)),
+  updateWorkObjectType: (typeId: string, companyId: string, payload: WorkObjectTypeUpdatePayload) =>
+    request<WorkObjectTypeDefinition>(companyPath(`/work-object-types/${typeId}`, companyId), jsonInit("PATCH", payload)),
+  archiveWorkObjectType: (typeId: string, companyId: string) => request<WorkObjectTypeDefinition>(companyPath(`/work-object-types/${typeId}/archive`, companyId), jsonInit("POST", {})),
+  customFields: (companyId: string, typeKey?: string, includeInactive = false) => {
+    const searchParams = new URLSearchParams({ include_inactive: includeInactive ? "true" : "false" });
+    if (typeKey) searchParams.set("type_key", typeKey);
+    return request<CustomFieldDefinition[]>(companyPath(`/custom-fields?${searchParams.toString()}`, companyId));
+  },
+  createCustomField: (payload: CustomFieldCreatePayload) => request<CustomFieldDefinition>("/custom-fields", jsonInit("POST", payload)),
+  updateCustomField: (fieldId: string, companyId: string, payload: CustomFieldUpdatePayload) =>
+    request<CustomFieldDefinition>(companyPath(`/custom-fields/${fieldId}`, companyId), jsonInit("PATCH", payload)),
+  archiveCustomField: (fieldId: string, companyId: string) => request<CustomFieldDefinition>(companyPath(`/custom-fields/${fieldId}/archive`, companyId), jsonInit("POST", {})),
   dashboardSummary: (companyId: string) => request<DashboardSummary>(companyPath("/dashboard/summary", companyId)),
   departments: (companyId: string) => request<Department[]>(companyPath("/departments", companyId)),
   createDepartment: (payload: DepartmentCreatePayload) => request<Department>("/departments", jsonInit("POST", payload)),

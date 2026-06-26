@@ -115,6 +115,8 @@ export function Topbar({
         notification: "/notifications",
         announcement: "/announcements",
         comment: item.related_entity_type === "project" ? "/projects" : "/work-objects",
+        work_object_type: "/settings",
+        custom_field: "/settings",
       };
       window.location.hash = fallbackRoutes[item.type] ?? "/dashboard";
     }

@@ -10,7 +10,8 @@ export type PageKey =
   | "leaves"
   | "events"
   | "announcements"
-  | "notifications";
+  | "notifications"
+  | "settings";
 
 export interface NavigationItem {
   key: PageKey;

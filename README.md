@@ -29,6 +29,7 @@ Phase 1 focuses on the backend foundation:
 - Sprint 9 Basic Dashboard polish with a tenant-safe live operational summary for employees, work, projects, leave, files, notifications, announcements, and recent events
 - Health check, universal timeline, and basic operational search
 - Mock-only AI boundary in `backend/app/services/ai_service.py`
+- Phase 2 Step 3 configuration foundation for company settings, industry templates v1, configurable work object types, and custom fields
 
 Not included in Phase 1: billing, WhatsApp/SMS, advanced AI, MCP servers, enterprise dashboards, or production FebGuyAI.
 
@@ -90,6 +91,8 @@ VITE_API_BASE_URL=http://localhost:8000
 
 The Phase 1 frontend includes the main dashboard shell, sidebar navigation, reusable table/card/badge UI, and pages for Dashboard, Companies, Employees, Teams, Projects, Work Objects, Leaves, Events, Announcements, and Notifications. Sprint 3 adds authenticated employee directory management, employee profile modals, status controls, department creation, and team creation. The project foundation adds create/edit project workflows, status and priority controls, project members, detail view, timeline, and linked work object readiness. Sprint 4 adds real work object CRUD, assignment, status and priority controls, project linkage, and detail timeline. Sprint 5 adds real leave submission, pending edits, approval/rejection/cancel decisions, and leave detail timeline. Sprint 6 adds work-object attachment upload, attachment list/download/delete actions, description edits, and file activity events. Notification v1 adds unread counts, mark read/unread, mark all read, dismiss, action links, and event timeline filtering. The Phase 1 communication layer adds comments to work-object/project detail views, simple employee mentions, internal announcements, communication events, and communication notifications. Sprint 9 turns the Dashboard into a real operational overview backed by `/api/v1/dashboard/summary`, with live cards, priority work, project health, leave attention, recent events, unread notifications, announcements, and quick actions.
 
+Phase 2 begins with operational search/filtering and the configuration foundation. The Settings page lets owner/admin users update company settings, apply built-in industry templates, manage company-specific work object types, and define simple custom fields for work object forms. Existing work objects keep their string `object_type`, while new configurable type records provide company-specific labels and defaults.
+
 Local uploaded files are stored under `backend/storage/uploads/` for development. That folder is ignored by Git and should not be committed.
 
 ## Alembic
@@ -130,6 +133,10 @@ All Phase 1 endpoints are mounted under `/api/v1`.
 - `/notifications`
 - `/comments`
 - `/announcements`
+- `/company-settings`
+- `/industry-templates`
+- `/work-object-types`
+- `/custom-fields`
 - `/ai-jobs`
 - `/search`
 

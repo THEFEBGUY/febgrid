@@ -37,10 +37,10 @@ from app.schemas.work_object import (
 from app.services.event_service import EventService
 from app.services.file_service import FileService
 from app.services.notification_service import NotificationService
+from app.services.configuration_service import validate_custom_field_values, validate_work_object_type_key
 
 router = APIRouter(prefix="/work-objects", tags=["work-objects"])
 
-WORK_OBJECT_TYPES = {"task", "approval_request", "issue", "site_visit", "invoice", "document_review", "general"}
 WORK_OBJECT_STATUSES = {"assigned", "in_progress", "under_review", "blocked", "completed", "cancelled"}
 WORK_OBJECT_PRIORITIES = {"low", "medium", "high", "critical"}
 OPEN_STATUSES = {"assigned", "in_progress", "under_review", "blocked"}
@@ -56,11 +56,8 @@ def ensure_aware_utc(value: datetime) -> datetime:
     return value.astimezone(timezone.utc)
 
 
-def ensure_work_object_type(object_type: str) -> str:
-    normalized = normalize_choice(object_type)
-    if normalized not in WORK_OBJECT_TYPES:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Invalid work object type")
-    return normalized
+def ensure_work_object_type(db: Session, company_id: UUID, object_type: str) -> str:
+    return validate_work_object_type_key(db, company_id, normalize_choice(object_type))
 
 
 def ensure_work_object_status(status_value: str) -> str:
@@ -187,16 +184,30 @@ def work_notification_recipients(work_object: WorkObject, actor_employee_id_valu
     return recipients
 
 
-def build_work_object_data(payload: WorkObjectCreate | WorkObjectUpdate) -> dict[str, object]:
+def build_work_object_data(
+    payload: WorkObjectCreate | WorkObjectUpdate,
+    *,
+    db: Session,
+    company_id: UUID,
+    current_object_type: str = "task",
+    validate_missing_custom_fields: bool = False,
+) -> dict[str, object]:
     data = payload.model_dump(exclude_unset=True)
     if "metadata" in data:
         data["metadata_json"] = data.pop("metadata")
+    object_type = current_object_type
     if "object_type" in data and data["object_type"] is not None:
-        data["object_type"] = ensure_work_object_type(str(data["object_type"]))
+        data["object_type"] = ensure_work_object_type(db, company_id, str(data["object_type"]))
+        object_type = str(data["object_type"])
     if "status" in data and data["status"] is not None:
         data["status"] = ensure_work_object_status(str(data["status"]))
     if "priority" in data and data["priority"] is not None:
         data["priority"] = ensure_work_object_priority(str(data["priority"]))
+    if "custom_fields" in data and data["custom_fields"] is not None:
+        custom_fields = data["custom_fields"] if isinstance(data["custom_fields"], dict) else {}
+        data["custom_fields"] = validate_custom_field_values(db, company_id=company_id, type_key=object_type, values=custom_fields)
+    elif validate_missing_custom_fields:
+        data["custom_fields"] = validate_custom_field_values(db, company_id=company_id, type_key=object_type, values={})
     if data.get("status") == "completed" and data.get("completed_at") is None:
         data["completed_at"] = datetime.now(timezone.utc)
     return data
@@ -313,7 +324,13 @@ def create_work_object(
         creator_user_id=creator_user_id,
         assignee_employee_id=payload.assignee_employee_id,
     )
-    work_data = build_work_object_data(payload)
+    work_data = build_work_object_data(
+        payload,
+        db=db,
+        company_id=payload.company_id,
+        current_object_type=payload.object_type,
+        validate_missing_custom_fields=True,
+    )
     work_data["creator_employee_id"] = creator_employee_id
     work_data["creator_user_id"] = creator_user_id
     work_object = WorkObject(**work_data)
@@ -429,7 +446,7 @@ def list_work_objects(
     if assignee_filter:
         statement = statement.where(WorkObject.assignee_employee_id == assignee_filter)
     if object_type:
-        statement = statement.where(WorkObject.object_type == ensure_work_object_type(object_type))
+        statement = statement.where(WorkObject.object_type == ensure_work_object_type(db, company_id, object_type))
     if current_user is not None and current_user.role not in MANAGER_ROLES:
         linked_employee = get_linked_employee(db, current_user)
         visibility_conditions = [WorkObject.creator_user_id == current_user.id]
@@ -481,7 +498,12 @@ def update_work_object(
     previous_status = work_object.status
     previous_priority = work_object.priority
     previous_project = work_object.project_id
-    work_data = build_work_object_data(payload)
+    work_data = build_work_object_data(
+        payload,
+        db=db,
+        company_id=company_id,
+        current_object_type=work_object.object_type,
+    )
     for field, value in work_data.items():
         setattr(work_object, field, value)
     if work_data:
