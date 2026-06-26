@@ -14,9 +14,10 @@ from app.models.employee import Employee
 from app.models.event import Event
 from app.models.team import Team, TeamMember
 from app.models.user import User
-from app.schemas.employee import EmployeeCreate, EmployeeRead, EmployeeStatusUpdate, EmployeeUpdate
+from app.schemas.employee import EmployeeCreate, EmployeeRead, EmployeeSelfUpdate, EmployeeStatusUpdate, EmployeeUpdate
 from app.schemas.event import EventRead
 from app.services.event_service import EventService
+from app.services.invitation_service import InvitationService
 
 router = APIRouter(prefix="/employees", tags=["employees"])
 
@@ -62,6 +63,18 @@ def can_view_employee(current_user: User | None, employee: Employee) -> bool:
     return employee.user_id == current_user.id
 
 
+def get_current_employee_profile(db: Session, current_user: User) -> Employee:
+    employee = db.scalar(
+        select(Employee).where(
+            Employee.company_id == current_user.company_id,
+            Employee.user_id == current_user.id,
+        )
+    )
+    if employee is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Employee profile not found")
+    return employee
+
+
 @router.post("", response_model=EmployeeRead, status_code=status.HTTP_201_CREATED)
 def create_employee(
     payload: EmployeeCreate,
@@ -98,20 +111,45 @@ def create_employee(
         profile_image_url=payload.profile_image_url,
         skills=payload.skills,
         metadata_json=payload.metadata,
+        is_active=payload.is_active,
     )
     if payload.joined_at:
         employee.joined_at = payload.joined_at
+    if payload.user_id is not None:
+        employee.account_status = "active"
+        employee.activation_status = "activated"
+        employee.profile_completion_status = "complete"
+    elif payload.email is not None:
+        employee.account_status = "pending_activation"
+        employee.activation_status = "activation_sent"
+        employee.profile_completion_status = "prefill_pending"
+    else:
+        employee.account_status = "manual_no_login"
+        employee.activation_status = "email_missing"
+        employee.profile_completion_status = "prefill_pending"
     db.add(employee)
     db.flush()
     EventService.record_event(
         db,
         company_id=employee.company_id,
+        actor_user_id=current_user.id,
+        event_type="manual_employee.created",
+        title=f"{employee.full_name} manually added",
+        target_entity_type="employee",
+        target_entity_id=employee.id,
+        metadata={"role_title": employee.role, "email_provided": bool(employee.email)},
+    )
+    EventService.record_event(
+        db,
+        company_id=employee.company_id,
+        actor_user_id=current_user.id,
         event_type="employee.created",
         title=f"{employee.full_name} added",
         target_entity_type="employee",
         target_entity_id=employee.id,
         metadata={"role_title": employee.role, "department_id": str(employee.department_id) if employee.department_id else None},
     )
+    InvitationService.create_manual_activation_for_employee(db, employee=employee, actor_user=current_user)
     db.commit()
     db.refresh(employee)
     return employee
@@ -149,6 +187,39 @@ def list_employees(
         statement = statement.where(or_(Employee.team_id == team_id, membership_exists))
     statement = statement.order_by(Employee.full_name.asc()).limit(limit).offset(offset)
     return list(db.scalars(statement).all())
+
+
+@router.get("/me", response_model=EmployeeRead)
+def get_my_employee_profile(
+    db: Session = Depends(db_session),
+    current_user: User = Depends(get_current_user),
+) -> Employee:
+    return get_current_employee_profile(db, current_user)
+
+
+@router.patch("/me", response_model=EmployeeRead)
+def update_my_employee_profile(
+    payload: EmployeeSelfUpdate,
+    db: Session = Depends(db_session),
+    current_user: User = Depends(get_current_user),
+) -> Employee:
+    employee = get_current_employee_profile(db, current_user)
+    changed = update_model(employee, payload, alias_fields={"metadata": "metadata_json"})
+    if changed:
+        employee.profile_completion_status = "complete"
+        EventService.record_event(
+            db,
+            company_id=employee.company_id,
+            actor_user_id=current_user.id,
+            event_type="employee_profile.updated",
+            title=f"{employee.full_name} updated their profile",
+            target_entity_type="employee",
+            target_entity_id=employee.id,
+            metadata={"changed_fields": sorted(changed.keys())},
+        )
+    db.commit()
+    db.refresh(employee)
+    return employee
 
 
 @router.get("/{employee_id}", response_model=EmployeeRead)

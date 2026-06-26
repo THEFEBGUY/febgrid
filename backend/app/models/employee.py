@@ -47,6 +47,9 @@ class Employee(TimestampMixin, Base):
     metadata_json = json_dict(name="metadata")
     joined_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    account_status: Mapped[str] = mapped_column(String(60), default="active", nullable=False)
+    activation_status: Mapped[str] = mapped_column(String(60), default="activated", nullable=False)
+    profile_completion_status: Mapped[str] = mapped_column(String(60), default="complete", nullable=False)
 
     company = relationship("Company", back_populates="employees")
     user = relationship("User")
@@ -77,6 +80,8 @@ class Employee(TimestampMixin, Base):
         Index("idx_employees_company_id", "company_id"),
         Index("idx_employees_company_status", "company_id", "status"),
         Index("idx_employees_company_active", "company_id", "is_active"),
+        Index("idx_employees_company_account_status", "company_id", "account_status"),
+        Index("idx_employees_company_activation_status", "company_id", "activation_status"),
         Index("idx_employees_department_id", "department_id"),
         Index("idx_employees_team_id", "team_id"),
         Index("idx_employees_manager_id", "manager_id"),

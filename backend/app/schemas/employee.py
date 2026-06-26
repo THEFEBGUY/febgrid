@@ -36,6 +36,9 @@ class EmployeeBase(MetadataField):
     skills: list[str] = Field(default_factory=list)
     joined_at: datetime | None = None
     is_active: bool = True
+    account_status: str = Field(default="active", max_length=60)
+    activation_status: str = Field(default="activated", max_length=60)
+    profile_completion_status: str = Field(default="complete", max_length=60)
 
 
 class EmployeeCreate(EmployeeBase):
@@ -91,6 +94,19 @@ class EmployeeStatusUpdate(FebGridModel):
 
 class EmployeeRead(EmployeeBase, Timestamped):
     id: UUID
+
+
+class EmployeeSelfUpdate(FebGridModel):
+    full_name: str | None = Field(default=None, min_length=1, max_length=160)
+    phone: str | None = Field(default=None, max_length=40)
+    location: str | None = Field(default=None, max_length=160)
+    profile_image_url: str | None = None
+    skills: list[str] | None = None
+    metadata: dict[str, Any] | None = Field(
+        default=None,
+        validation_alias=AliasChoices("metadata_json", "metadata"),
+        serialization_alias="metadata",
+    )
 
 
 class EmployeeActivityRead(FebGridModel):

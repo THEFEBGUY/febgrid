@@ -55,3 +55,29 @@ class EmailService:
             "subject": title,
             "skipped_reason": skipped_reason,
         }
+
+    @staticmethod
+    def prepare_employee_onboarding_delivery(
+        *,
+        template: str,
+        recipient_email: str,
+        company_name: str | None,
+        action_path: str,
+    ) -> dict[str, Any]:
+        """Prepare invite/activation email metadata without sending email.
+
+        The raw action path is returned only to the caller response for local
+        development. Persisted metadata records that a link was prepared without
+        storing the token-bearing URL.
+        """
+
+        subject_company = company_name or "FebGrid"
+        return {
+            "channel": "email",
+            "status": "pending",
+            "recipient_email": recipient_email,
+            "template": template,
+            "subject": f"{subject_company} FebGrid onboarding",
+            "skipped_reason": "real_email_provider_not_configured",
+            "action_path_prepared": bool(action_path),
+        }
