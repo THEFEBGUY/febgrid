@@ -158,6 +158,9 @@ export interface Employee extends Timestamped {
   metadata: Record<string, unknown>;
   joined_at: string | null;
   is_active: boolean;
+  account_status: string;
+  activation_status: string;
+  profile_completion_status: string;
 }
 
 export interface EmployeeCreatePayload {
@@ -199,6 +202,118 @@ export interface EmployeeUpdatePayload {
   metadata?: Record<string, unknown>;
   joined_at?: string | null;
   is_active?: boolean;
+}
+
+export interface EmployeeInvitation extends Timestamped {
+  id: string;
+  company_id: string;
+  employee_id: string | null;
+  invited_email: string;
+  normalized_email: string;
+  invited_role: string;
+  department_id: string | null;
+  team_id: string | null;
+  manager_employee_id: string | null;
+  job_title: string | null;
+  employment_type: string | null;
+  joining_date: string | null;
+  invite_source: string;
+  approval_required: boolean;
+  status: string;
+  expires_at: string;
+  sent_at: string;
+  accepted_at: string | null;
+  revoked_at: string | null;
+  revoked_by_user_id: string | null;
+  approved_at: string | null;
+  approved_by_user_id: string | null;
+  rejected_at: string | null;
+  rejected_by_user_id: string | null;
+  rejection_reason: string | null;
+  invited_by_user_id: string | null;
+  metadata: Record<string, unknown>;
+}
+
+export interface EmployeeInvitationCreatePayload {
+  company_id: string;
+  invited_email: string;
+  invited_role: UserRole;
+  full_name?: string | null;
+  department_id?: string | null;
+  team_id?: string | null;
+  manager_employee_id?: string | null;
+  job_title?: string | null;
+  employment_type?: string | null;
+  joining_date?: string | null;
+  approval_required: boolean;
+  expires_in_hours?: number;
+  note?: string | null;
+  metadata?: Record<string, unknown>;
+}
+
+export interface EmployeeInvitationActionResult {
+  invitation: EmployeeInvitation;
+  acceptance_url: string;
+  email_delivery: Record<string, unknown>;
+}
+
+export interface InvitationPreview {
+  company_id: string;
+  company_name: string;
+  employee_id: string | null;
+  employee_name: string | null;
+  invited_email: string;
+  invited_role: string;
+  invite_source: string;
+  approval_required: boolean;
+  status: string;
+  expires_at: string;
+  inviter_name: string | null;
+  job_title: string | null;
+  employment_type: string | null;
+  joining_date: string | null;
+  department_name: string | null;
+  team_name: string | null;
+  manager_name: string | null;
+  metadata: Record<string, unknown>;
+}
+
+export interface InvitationAcceptPayload {
+  token: string;
+  email: string;
+  password: string;
+  full_name?: string | null;
+}
+
+export interface InvitationAcceptResult {
+  invitation: EmployeeInvitation;
+  employee: Employee;
+  user: AuthUser;
+  requires_profile: boolean;
+  approval_required: boolean;
+  message: string;
+}
+
+export interface InvitationProfileCompletePayload {
+  token: string;
+  email: string;
+  full_name?: string | null;
+  phone?: string | null;
+  location?: string | null;
+  profile_image_url?: string | null;
+  skills?: string[];
+  bio?: string | null;
+  emergency_contact_name?: string | null;
+  emergency_contact_phone?: string | null;
+  metadata?: Record<string, unknown>;
+}
+
+export interface InvitationProfileCompleteResult {
+  invitation: EmployeeInvitation;
+  employee: Employee;
+  session: AuthSession | null;
+  approval_required: boolean;
+  message: string;
 }
 
 export interface Department extends Timestamped {
@@ -783,6 +898,7 @@ export interface FebGridData {
   dashboardSummary: DashboardSummary | null;
   departments: Department[];
   employees: Employee[];
+  invitations: EmployeeInvitation[];
   teams: Team[];
   projects: Project[];
   workObjects: WorkObject[];

@@ -21,10 +21,18 @@ import type {
   DepartmentCreatePayload,
   Employee,
   EmployeeCreatePayload,
+  EmployeeInvitation,
+  EmployeeInvitationActionResult,
+  EmployeeInvitationCreatePayload,
   EmployeeUpdatePayload,
   Event,
   ApplyIndustryTemplateResult,
   IndustryTemplate,
+  InvitationAcceptPayload,
+  InvitationAcceptResult,
+  InvitationPreview,
+  InvitationProfileCompletePayload,
+  InvitationProfileCompleteResult,
   LeaveCancelPayload,
   LeaveCreatePayload,
   LeaveDecisionPayload,
@@ -172,6 +180,24 @@ export const api = {
   updateEmployee: (employeeId: string, companyId: string, payload: EmployeeUpdatePayload) => request<Employee>(companyPath(`/employees/${employeeId}`, companyId), jsonInit("PUT", payload)),
   deactivateEmployee: (employeeId: string, companyId: string) => request<void>(companyPath(`/employees/${employeeId}`, companyId), { method: "DELETE" }),
   updateEmployeeStatus: (employeeId: string, payload: { company_id: string; current_status: string }) => request<Employee>(`/employees/${employeeId}/status`, jsonInit("PATCH", payload)),
+  invitations: (companyId: string, statusFilter?: string) => {
+    const searchParams = new URLSearchParams({ company_id: companyId });
+    if (statusFilter) searchParams.set("status", statusFilter);
+    return request<EmployeeInvitation[]>(`/invitations?${searchParams.toString()}`);
+  },
+  createInvitation: (payload: EmployeeInvitationCreatePayload) => request<EmployeeInvitationActionResult>("/invitations", jsonInit("POST", payload)),
+  resendInvitation: (invitationId: string, companyId: string) =>
+    request<EmployeeInvitationActionResult>(`/invitations/${invitationId}/resend`, jsonInit("POST", { company_id: companyId })),
+  revokeInvitation: (invitationId: string, companyId: string) =>
+    request<EmployeeInvitation>(`/invitations/${invitationId}/revoke`, jsonInit("POST", { company_id: companyId })),
+  approveInvitation: (invitationId: string, companyId: string) =>
+    request<EmployeeInvitation>(`/invitations/${invitationId}/approve`, jsonInit("POST", { company_id: companyId })),
+  rejectInvitation: (invitationId: string, companyId: string, rejectionReason?: string | null) =>
+    request<EmployeeInvitation>(`/invitations/${invitationId}/reject`, jsonInit("POST", { company_id: companyId, rejection_reason: rejectionReason ?? null })),
+  previewInvitation: (token: string) => request<InvitationPreview>(`/invitations/preview/${encodeURIComponent(token)}`),
+  acceptInvitation: (payload: InvitationAcceptPayload) => request<InvitationAcceptResult>("/invitations/accept", jsonInit("POST", payload)),
+  completeInvitationProfile: (payload: InvitationProfileCompletePayload) =>
+    request<InvitationProfileCompleteResult>("/invitations/complete-profile", jsonInit("POST", payload)),
   teams: (companyId: string) => request<Team[]>(companyPath("/teams", companyId)),
   createTeam: (payload: TeamCreatePayload) => request<Team>("/teams", jsonInit("POST", payload)),
   projects: (companyId: string) => request<Project[]>(companyPath("/projects", companyId)),

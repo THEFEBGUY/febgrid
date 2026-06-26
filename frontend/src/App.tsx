@@ -12,6 +12,7 @@ import { CompaniesPage } from "./pages/CompaniesPage";
 import { DashboardPage } from "./pages/DashboardPage";
 import { EmployeesPage } from "./pages/EmployeesPage";
 import { EventsPage } from "./pages/EventsPage";
+import { InviteAcceptPage } from "./pages/InviteAcceptPage";
 import { LeavesPage } from "./pages/LeavesPage";
 import { NotificationsPage } from "./pages/NotificationsPage";
 import { ProjectsPage } from "./pages/ProjectsPage";
@@ -26,22 +27,39 @@ function getPageFromHash(): PageKey {
   return match?.key ?? "dashboard";
 }
 
+function getInviteTokenFromLocation(): string | null {
+  const pathMatch = window.location.pathname.match(/^\/(?:accept-invite|join)\/([^/?#]+)/);
+  if (pathMatch?.[1]) return decodeURIComponent(pathMatch[1]);
+
+  const hash = window.location.hash.replace(/^#\/?/, "");
+  const hashMatch = hash.match(/^(?:accept-invite|join)\/([^/?#]+)/);
+  if (hashMatch?.[1]) return decodeURIComponent(hashMatch[1]);
+
+  return null;
+}
+
 export function App(): JSX.Element {
   const [activePage, setActivePage] = useState<PageKey>(() => getPageFromHash());
+  const [inviteToken, setInviteToken] = useState<string | null>(() => getInviteTokenFromLocation());
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const auth = useAuth();
   const { theme, toggleTheme } = useTheme();
-  const febGrid = useFebGridData({ enabled: auth.isAuthenticated });
+  const febGrid = useFebGridData({ enabled: auth.isAuthenticated && !inviteToken });
   const unreadNotificationCount = febGrid.data.notifications.filter((notification) => !notification.is_read && !notification.is_dismissed).length;
 
   useEffect(() => {
     const handleHashChange = (): void => {
       setActivePage(getPageFromHash());
+      setInviteToken(getInviteTokenFromLocation());
       setIsSidebarOpen(false);
     };
 
     window.addEventListener("hashchange", handleHashChange);
-    return () => window.removeEventListener("hashchange", handleHashChange);
+    window.addEventListener("popstate", handleHashChange);
+    return () => {
+      window.removeEventListener("hashchange", handleHashChange);
+      window.removeEventListener("popstate", handleHashChange);
+    };
   }, []);
 
   function handleNavigate(page: PageKey): void {
@@ -77,9 +95,14 @@ export function App(): JSX.Element {
       case "employees":
         return (
           <EmployeesPage
-            {...withModuleError(febGrid.moduleErrors.employees ?? febGrid.moduleErrors.departments ?? null)}
+            {...withModuleError(febGrid.moduleErrors.employees ?? febGrid.moduleErrors.departments ?? febGrid.moduleErrors.invitations ?? null)}
+            onApproveInvitation={febGrid.approveInvitation}
             onCreateEmployee={febGrid.createEmployee}
+            onCreateInvitation={febGrid.createInvitation}
             onDeactivateEmployee={febGrid.deactivateEmployee}
+            onRejectInvitation={febGrid.rejectInvitation}
+            onResendInvitation={febGrid.resendInvitation}
+            onRevokeInvitation={febGrid.revokeInvitation}
             onUpdateEmployee={febGrid.updateEmployee}
             onUpdateEmployeeStatus={febGrid.updateEmployeeStatus}
           />
@@ -180,6 +203,10 @@ export function App(): JSX.Element {
 
   if (auth.isLoading) {
     return <LoadingState label="Loading FebGrid session" />;
+  }
+
+  if (inviteToken) {
+    return <InviteAcceptPage token={inviteToken} />;
   }
 
   if (!auth.isAuthenticated) {

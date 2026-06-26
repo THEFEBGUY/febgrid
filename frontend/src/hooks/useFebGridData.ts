@@ -10,6 +10,8 @@ import type {
   CustomFieldCreatePayload,
   CustomFieldUpdatePayload,
   DepartmentCreatePayload,
+  EmployeeInvitationActionResult,
+  EmployeeInvitationCreatePayload,
   EmployeeCreatePayload,
   EmployeeUpdatePayload,
   FebGridData,
@@ -36,6 +38,7 @@ const emptyData: FebGridData = {
   dashboardSummary: null,
   departments: [],
   employees: [],
+  invitations: [],
   teams: [],
   projects: [],
   workObjects: [],
@@ -65,6 +68,11 @@ interface FebGridDataState {
   updateEmployee: (employeeId: string, payload: EmployeeUpdatePayload) => Promise<void>;
   deactivateEmployee: (employeeId: string) => Promise<void>;
   updateEmployeeStatus: (employeeId: string, currentStatus: string) => Promise<void>;
+  createInvitation: (payload: Omit<EmployeeInvitationCreatePayload, "company_id">) => Promise<EmployeeInvitationActionResult | null>;
+  resendInvitation: (invitationId: string) => Promise<EmployeeInvitationActionResult | null>;
+  revokeInvitation: (invitationId: string) => Promise<void>;
+  approveInvitation: (invitationId: string) => Promise<void>;
+  rejectInvitation: (invitationId: string, rejectionReason?: string | null) => Promise<void>;
   createDepartment: (payload: Omit<DepartmentCreatePayload, "company_id">) => Promise<void>;
   createTeam: (payload: Omit<TeamCreatePayload, "company_id">) => Promise<void>;
   createProject: (payload: Omit<ProjectCreatePayload, "company_id">) => Promise<void>;
@@ -238,6 +246,7 @@ export function useFebGridData({ enabled = true }: UseFebGridDataOptions = {}): 
       dashboardSummary,
       departments,
       employees,
+      invitations,
       teams,
       projects,
       workObjects,
@@ -253,6 +262,7 @@ export function useFebGridData({ enabled = true }: UseFebGridDataOptions = {}): 
       api.dashboardSummary(selectedCompanyId),
       api.departments(selectedCompanyId),
       api.employees(selectedCompanyId),
+      api.invitations(selectedCompanyId),
       api.teams(selectedCompanyId),
       api.projects(selectedCompanyId),
       api.workObjects(selectedCompanyId),
@@ -285,6 +295,9 @@ export function useFebGridData({ enabled = true }: UseFebGridDataOptions = {}): 
 
     if (employees.status === "fulfilled") nextData.employees = employees.value;
     else nextErrors.employees = getErrorMessage(employees.reason);
+
+    if (invitations.status === "fulfilled") nextData.invitations = invitations.value;
+    else nextErrors.invitations = getErrorMessage(invitations.reason);
 
     if (teams.status === "fulfilled") nextData.teams = teams.value;
     else nextErrors.teams = getErrorMessage(teams.reason);
@@ -380,6 +393,58 @@ export function useFebGridData({ enabled = true }: UseFebGridDataOptions = {}): 
     if (!selectedCompanyId) return;
     await runMutation(async () => {
       await api.updateEmployeeStatus(employeeId, { company_id: selectedCompanyId, current_status: currentStatus });
+      await refreshModules();
+    });
+  }
+
+  async function createInvitation(payload: Omit<EmployeeInvitationCreatePayload, "company_id">): Promise<EmployeeInvitationActionResult | null> {
+    if (!selectedCompanyId) return null;
+    setIsMutating(true);
+    setModuleErrors({});
+    setError(null);
+    try {
+      const result = await api.createInvitation({ ...payload, company_id: selectedCompanyId });
+      await refreshModules();
+      return result;
+    } finally {
+      setIsMutating(false);
+    }
+  }
+
+  async function resendInvitation(invitationId: string): Promise<EmployeeInvitationActionResult | null> {
+    if (!selectedCompanyId) return null;
+    setIsMutating(true);
+    setModuleErrors({});
+    setError(null);
+    try {
+      const result = await api.resendInvitation(invitationId, selectedCompanyId);
+      await refreshModules();
+      return result;
+    } finally {
+      setIsMutating(false);
+    }
+  }
+
+  async function revokeInvitation(invitationId: string): Promise<void> {
+    if (!selectedCompanyId) return;
+    await runMutation(async () => {
+      await api.revokeInvitation(invitationId, selectedCompanyId);
+      await refreshModules();
+    });
+  }
+
+  async function approveInvitation(invitationId: string): Promise<void> {
+    if (!selectedCompanyId) return;
+    await runMutation(async () => {
+      await api.approveInvitation(invitationId, selectedCompanyId);
+      await refreshModules();
+    });
+  }
+
+  async function rejectInvitation(invitationId: string, rejectionReason?: string | null): Promise<void> {
+    if (!selectedCompanyId) return;
+    await runMutation(async () => {
+      await api.rejectInvitation(invitationId, selectedCompanyId, rejectionReason);
       await refreshModules();
     });
   }
@@ -697,6 +762,11 @@ export function useFebGridData({ enabled = true }: UseFebGridDataOptions = {}): 
     updateEmployee,
     deactivateEmployee,
     updateEmployeeStatus,
+    createInvitation,
+    resendInvitation,
+    revokeInvitation,
+    approveInvitation,
+    rejectInvitation,
     createDepartment,
     createTeam,
     createProject,
