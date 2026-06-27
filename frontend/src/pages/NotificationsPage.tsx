@@ -8,11 +8,12 @@ import { SelectInput, TextInput } from "../components/ui/FormControls";
 import { ModuleBoundary } from "../components/ui/ModuleBoundary";
 import { SectionPanel } from "../components/ui/SectionPanel";
 import { priorityTone } from "../components/ui/tone";
-import type { Notification } from "../types/api";
+import type { Notification, UserRole } from "../types/api";
 import type { ModulePageProps } from "../types/page";
 import { formatLabel, formatTime } from "../utils/format";
 
 interface NotificationsPageProps extends ModulePageProps {
+  currentUserRole?: UserRole | null;
   onMarkRead: (notificationId: string) => Promise<void>;
   onMarkUnread: (notificationId: string) => Promise<void>;
   onMarkAllRead: () => Promise<void>;
@@ -24,9 +25,24 @@ function notificationTarget(notification: Notification): string {
   return formatLabel(notification.target_entity_type);
 }
 
-function openActionUrl(actionUrl: string): void {
+function openActionUrl(actionUrl: string, currentUserRole?: UserRole | null): void {
   if (actionUrl.startsWith("#/")) {
-    window.location.hash = actionUrl.slice(1);
+    const route = actionUrl.slice(1);
+    if (currentUserRole === "employee") {
+      const employeeRouteMap: Record<string, string> = {
+        "/dashboard": "/my-dashboard",
+        "/work-objects": "/my-work",
+        "/leaves": "/my-leave",
+        "/employees": "/my-profile",
+        "/companies": "/my-dashboard",
+        "/projects": "/my-projects",
+        "/events": "/my-dashboard",
+        "/settings": "/my-dashboard",
+      };
+      window.location.hash = employeeRouteMap[route] ?? route;
+      return;
+    }
+    window.location.hash = route;
   }
 }
 
@@ -41,6 +57,7 @@ export function NotificationsPage({
   onMarkUnread,
   onMarkAllRead,
   onDismissNotification,
+  currentUserRole,
 }: NotificationsPageProps): JSX.Element {
   const [searchFilter, setSearchFilter] = useState("");
   const [readFilter, setReadFilter] = useState("");
@@ -179,7 +196,7 @@ export function NotificationsPage({
                     <Button
                       className="h-9"
                       icon={<ExternalLink className="size-4" aria-hidden="true" />}
-                      onClick={() => openActionUrl(notification.action_url ?? "")}
+                      onClick={() => openActionUrl(notification.action_url ?? "", currentUserRole)}
                     >
                       Open
                     </Button>

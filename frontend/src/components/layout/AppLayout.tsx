@@ -2,8 +2,7 @@ import type { ReactNode } from "react";
 import { X } from "lucide-react";
 
 import type { AuthUser, Company } from "../../types/api";
-import type { PageKey } from "../../types/domain";
-import { navigationItems } from "../../data/navigation";
+import type { NavigationItem, PageKey } from "../../types/domain";
 import type { ThemeMode } from "../../hooks/useTheme";
 import { Button } from "../ui/Button";
 import { Sidebar } from "./Sidebar";
@@ -11,6 +10,7 @@ import { Topbar } from "./Topbar";
 
 interface AppLayoutProps {
   activePage: PageKey;
+  navigationItems: NavigationItem[];
   isSidebarOpen: boolean;
   onNavigate: (page: PageKey) => void;
   onCloseSidebar: () => void;
@@ -28,6 +28,7 @@ interface AppLayoutProps {
 
 export function AppLayout({
   activePage,
+  navigationItems,
   isSidebarOpen,
   onNavigate,
   onCloseSidebar,
@@ -47,7 +48,7 @@ export function AppLayout({
   return (
     <div className="min-h-screen bg-grid-50 text-ink-900">
       <div className="hidden lg:fixed lg:inset-y-0 lg:left-0 lg:block lg:w-72">
-        <Sidebar activePage={activePage} onNavigate={onNavigate} />
+        <Sidebar activePage={activePage} items={navigationItems} onNavigate={onNavigate} />
       </div>
 
       {isSidebarOpen ? (
@@ -64,7 +65,7 @@ export function AppLayout({
                 <span className="sr-only">Close navigation</span>
               </Button>
             </div>
-            <Sidebar activePage={activePage} onNavigate={onNavigate} />
+            <Sidebar activePage={activePage} items={navigationItems} onNavigate={onNavigate} />
           </div>
         </div>
       ) : null}

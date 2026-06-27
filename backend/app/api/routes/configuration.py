@@ -125,6 +125,7 @@ def get_company_settings(
     current_user: User | None = Depends(get_optional_current_user),
 ) -> CompanySettingsRead:
     ensure_company_access(current_user, company_id)
+    ensure_role(current_user, OWNER_ADMIN_ROLES)
     company = get_or_404(db, Company, company_id, label="Company")
     return settings_read(company)
 

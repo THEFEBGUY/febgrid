@@ -21,7 +21,7 @@ from app.services.invitation_service import InvitationService
 
 router = APIRouter(prefix="/employees", tags=["employees"])
 
-EMPLOYEE_STATUSES = {"working", "on_break", "offline", "on_leave", "done_for_the_day", "busy", "available"}
+EMPLOYEE_STATUSES = {"working", "online", "on_break", "offline", "on_leave", "done_for_the_day", "busy", "available"}
 
 
 def ensure_employee_status(status_value: str) -> None:

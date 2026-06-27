@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 
 import { AppLayout } from "./components/layout/AppLayout";
 import { ErrorState, LoadingState } from "./components/ui/States";
-import { navigationItems } from "./data/navigation";
+import { allNavigationItems, getDefaultPageForRole, getNavigationItemsForRole, isPageAllowedForRole } from "./data/navigation";
 import { useAuth } from "./hooks/useAuth";
 import { useFebGridData } from "./hooks/useFebGridData";
 import { useTheme } from "./hooks/useTheme";
@@ -11,9 +11,14 @@ import { AuthPage } from "./pages/AuthPage";
 import { CompaniesPage } from "./pages/CompaniesPage";
 import { DashboardPage } from "./pages/DashboardPage";
 import { EmployeesPage } from "./pages/EmployeesPage";
+import { EmployeeDashboardPage } from "./pages/EmployeeDashboardPage";
 import { EventsPage } from "./pages/EventsPage";
 import { InviteAcceptPage } from "./pages/InviteAcceptPage";
 import { LeavesPage } from "./pages/LeavesPage";
+import { MyLeavePage } from "./pages/MyLeavePage";
+import { MyProfilePage } from "./pages/MyProfilePage";
+import { MyProjectsPage } from "./pages/MyProjectsPage";
+import { MyWorkPage } from "./pages/MyWorkPage";
 import { NotificationsPage } from "./pages/NotificationsPage";
 import { ProjectsPage } from "./pages/ProjectsPage";
 import { SettingsPage } from "./pages/SettingsPage";
@@ -23,7 +28,7 @@ import type { PageKey } from "./types/domain";
 
 function getPageFromHash(): PageKey {
   const hash = window.location.hash.replace("#/", "");
-  const match = navigationItems.find((item) => item.key === hash);
+  const match = allNavigationItems.find((item) => item.key === hash);
   return match?.key ?? "dashboard";
 }
 
@@ -44,7 +49,9 @@ export function App(): JSX.Element {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const auth = useAuth();
   const { theme, toggleTheme } = useTheme();
-  const febGrid = useFebGridData({ enabled: auth.isAuthenticated && !inviteToken });
+  const currentUserRole = auth.user?.role ?? null;
+  const navigationItems = getNavigationItemsForRole(currentUserRole);
+  const febGrid = useFebGridData({ enabled: auth.isAuthenticated && !inviteToken, role: currentUserRole });
   const unreadNotificationCount = febGrid.data.notifications.filter((notification) => !notification.is_read && !notification.is_dismissed).length;
 
   useEffect(() => {
@@ -62,15 +69,28 @@ export function App(): JSX.Element {
     };
   }, []);
 
+  useEffect(() => {
+    if (!auth.isAuthenticated || !auth.user || inviteToken) return;
+    if (isPageAllowedForRole(auth.user.role, activePage)) return;
+    const nextPage = getDefaultPageForRole(auth.user.role);
+    if (activePage === nextPage) return;
+    window.location.hash = `/${nextPage}`;
+  }, [activePage, auth.isAuthenticated, auth.user, inviteToken]);
+
   function handleNavigate(page: PageKey): void {
+    const nextPage = isPageAllowedForRole(currentUserRole, page) ? page : getDefaultPageForRole(currentUserRole);
     if (page === activePage) {
       setIsSidebarOpen(false);
       return;
     }
-    window.location.hash = `/${page}`;
+    window.location.hash = `/${nextPage}`;
   }
 
   function renderPage(): JSX.Element {
+    if (auth.user && !isPageAllowedForRole(auth.user.role, activePage)) {
+      return <LoadingState label="Opening your workspace" />;
+    }
+
     if (febGrid.error) {
       return <ErrorState message={febGrid.error} onRetry={febGrid.refreshCompanies} />;
     }
@@ -90,6 +110,41 @@ export function App(): JSX.Element {
     });
 
     switch (activePage) {
+      case "my-dashboard":
+        return (
+          <EmployeeDashboardPage
+            {...withModuleError(
+              febGrid.moduleErrors.employees ??
+                febGrid.moduleErrors.workObjects ??
+                febGrid.moduleErrors.leaves ??
+                febGrid.moduleErrors.notifications ??
+                febGrid.moduleErrors.announcements ??
+                null,
+            )}
+            onNavigate={handleNavigate}
+          />
+        );
+      case "my-work":
+        return (
+          <MyWorkPage
+            {...withModuleError(febGrid.moduleErrors.workObjects ?? null)}
+            onCompleteWorkObject={febGrid.completeWorkObject}
+            onUpdateWorkObjectStatus={febGrid.updateWorkObjectStatus}
+          />
+        );
+      case "my-projects":
+        return <MyProjectsPage {...withModuleError(febGrid.moduleErrors.projects ?? null)} />;
+      case "my-leave":
+        return (
+          <MyLeavePage
+            {...withModuleError(febGrid.moduleErrors.leaves ?? febGrid.moduleErrors.employees ?? febGrid.moduleErrors.leaveApprovers ?? null)}
+            onCancelLeave={febGrid.cancelLeave}
+            onCreateLeave={febGrid.createLeave}
+            onUpdateLeave={febGrid.updateLeave}
+          />
+        );
+      case "my-profile":
+        return <MyProfilePage selectedCompany={febGrid.selectedCompany} onProfileSaved={febGrid.refreshModules} />;
       case "companies":
         return <CompaniesPage {...withModuleError(null)} onCreateCompany={febGrid.createCompany} />;
       case "employees":
@@ -159,6 +214,7 @@ export function App(): JSX.Element {
         return (
           <AnnouncementsPage
             {...withModuleError(febGrid.moduleErrors.announcements ?? null)}
+            currentUserRole={currentUserRole}
             onArchiveAnnouncement={febGrid.archiveAnnouncement}
             onCreateAnnouncement={febGrid.createAnnouncement}
             onUpdateAnnouncement={febGrid.updateAnnouncement}
@@ -168,6 +224,7 @@ export function App(): JSX.Element {
         return (
           <NotificationsPage
             {...withModuleError(febGrid.moduleErrors.notifications ?? null)}
+            currentUserRole={currentUserRole}
             onDismissNotification={febGrid.dismissNotification}
             onMarkAllRead={febGrid.markAllNotificationsRead}
             onMarkRead={febGrid.markNotificationRead}
@@ -224,6 +281,7 @@ export function App(): JSX.Element {
   return (
     <AppLayout
       activePage={activePage}
+      navigationItems={navigationItems}
       isSidebarOpen={isSidebarOpen}
       companies={febGrid.data.companies}
       currentUser={auth.user}

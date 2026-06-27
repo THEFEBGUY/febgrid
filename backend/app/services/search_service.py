@@ -118,6 +118,34 @@ def _notification_visibility(db: Session, current_user: User | None) -> list[Any
     return conditions
 
 
+def _employee_visible_work_conditions(db: Session, current_user: User | None) -> list[Any]:
+    if current_user is None or current_user.role != "employee":
+        return []
+    conditions: list[Any] = [WorkObject.creator_user_id == current_user.id]
+    employee = _linked_employee(db, current_user)
+    if employee is not None:
+        conditions.extend([WorkObject.assignee_employee_id == employee.id, WorkObject.creator_employee_id == employee.id])
+    return conditions
+
+
+def _employee_visible_leave_conditions(db: Session, current_user: User | None) -> list[Any]:
+    if current_user is None or current_user.role != "employee":
+        return []
+    conditions: list[Any] = [LeaveRequest.requested_by_user_id == current_user.id]
+    employee = _linked_employee(db, current_user)
+    if employee is not None:
+        conditions.extend([LeaveRequest.employee_id == employee.id, LeaveRequest.approver_employee_id == employee.id])
+    return conditions
+
+
+def _visible_work_object_ids_statement(db: Session, company_id: UUID, current_user: User | None):
+    statement = select(WorkObject.id).where(WorkObject.company_id == company_id, WorkObject.is_active.is_(True))
+    conditions = _employee_visible_work_conditions(db, current_user)
+    if conditions:
+        statement = statement.where(or_(*conditions))
+    return statement
+
+
 def _result(
     *,
     item_type: str,
@@ -166,6 +194,8 @@ class SearchService:
         term = f"%{trimmed_query}%" if trimmed_query else None
         group_limit = min(max(limit, 1), 25)
         selected_types = _normalize_types(types)
+        if current_user is not None and current_user.role == "employee":
+            selected_types &= {"work_objects", "leaves", "notifications", "announcements", "comments", "files"}
 
         groups: dict[str, list[SearchResult]] = {group: [] for group in SEARCH_GROUPS}
 
@@ -178,19 +208,19 @@ class SearchService:
         if "projects" in selected_types:
             groups["projects"] = SearchService._projects(db, company_id, term, group_limit)
         if "work_objects" in selected_types:
-            groups["work_objects"] = SearchService._work_objects(db, company_id, term, group_limit)
+            groups["work_objects"] = SearchService._work_objects(db, company_id, term, group_limit, current_user)
         if "work_object_types" in selected_types:
             groups["work_object_types"] = SearchService._work_object_types(db, company_id, term, group_limit)
         if "custom_fields" in selected_types:
             groups["custom_fields"] = SearchService._custom_fields(db, company_id, term, group_limit)
         if "leaves" in selected_types:
-            groups["leaves"] = SearchService._leaves(db, company_id, term, group_limit)
+            groups["leaves"] = SearchService._leaves(db, company_id, term, group_limit, current_user)
         if "files" in selected_types:
-            groups["files"] = SearchService._files(db, company_id, term, group_limit)
+            groups["files"] = SearchService._files(db, company_id, term, group_limit, current_user)
         if "comments" in selected_types:
-            groups["comments"] = SearchService._comments(db, company_id, term, group_limit)
+            groups["comments"] = SearchService._comments(db, company_id, term, group_limit, current_user)
         if "announcements" in selected_types:
-            groups["announcements"] = SearchService._announcements(db, company_id, term, group_limit)
+            groups["announcements"] = SearchService._announcements(db, company_id, term, group_limit, current_user)
         if "events" in selected_types:
             groups["events"] = SearchService._events(db, company_id, term, group_limit)
         if "notifications" in selected_types:
@@ -310,8 +340,11 @@ class SearchService:
         ]
 
     @staticmethod
-    def _work_objects(db: Session, company_id: UUID, term: str | None, limit: int) -> list[SearchResult]:
+    def _work_objects(db: Session, company_id: UUID, term: str | None, limit: int, current_user: User | None = None) -> list[SearchResult]:
         statement = select(WorkObject).where(WorkObject.company_id == company_id, WorkObject.is_active.is_(True))
+        visibility_conditions = _employee_visible_work_conditions(db, current_user)
+        if visibility_conditions:
+            statement = statement.where(or_(*visibility_conditions))
         if term:
             statement = statement.where(
                 _text_match(WorkObject.title, WorkObject.description, WorkObject.object_type, WorkObject.status, WorkObject.priority, term=term)
@@ -403,7 +436,7 @@ class SearchService:
         ]
 
     @staticmethod
-    def _leaves(db: Session, company_id: UUID, term: str | None, limit: int) -> list[SearchResult]:
+    def _leaves(db: Session, company_id: UUID, term: str | None, limit: int, current_user: User | None = None) -> list[SearchResult]:
         matching_employee_ids = []
         if term:
             matching_employee_ids = list(
@@ -415,6 +448,9 @@ class SearchService:
                 ).all()
             )
         statement = select(LeaveRequest).where(LeaveRequest.company_id == company_id, LeaveRequest.is_active.is_(True))
+        visibility_conditions = _employee_visible_leave_conditions(db, current_user)
+        if visibility_conditions:
+            statement = statement.where(or_(*visibility_conditions))
         if term:
             conditions = [
                 LeaveRequest.leave_type.ilike(term),
@@ -450,8 +486,10 @@ class SearchService:
         ]
 
     @staticmethod
-    def _files(db: Session, company_id: UUID, term: str | None, limit: int) -> list[SearchResult]:
+    def _files(db: Session, company_id: UUID, term: str | None, limit: int, current_user: User | None = None) -> list[SearchResult]:
         statement = select(Attachment).where(Attachment.company_id == company_id, Attachment.is_active.is_(True))
+        if current_user is not None and current_user.role == "employee":
+            statement = statement.where(Attachment.work_object_id.in_(_visible_work_object_ids_statement(db, company_id, current_user)))
         if term:
             statement = statement.where(
                 _text_match(
@@ -487,8 +525,13 @@ class SearchService:
         ]
 
     @staticmethod
-    def _comments(db: Session, company_id: UUID, term: str | None, limit: int) -> list[SearchResult]:
+    def _comments(db: Session, company_id: UUID, term: str | None, limit: int, current_user: User | None = None) -> list[SearchResult]:
         statement = select(Comment).where(Comment.company_id == company_id, Comment.is_archived.is_(False))
+        if current_user is not None and current_user.role == "employee":
+            statement = statement.where(
+                Comment.target_entity_type == "work_object",
+                Comment.target_entity_id.in_(_visible_work_object_ids_statement(db, company_id, current_user)),
+            )
         if term:
             statement = statement.where(Comment.body.ilike(term))
         statement = statement.order_by(Comment.updated_at.desc()).limit(limit)
@@ -514,8 +557,10 @@ class SearchService:
         ]
 
     @staticmethod
-    def _announcements(db: Session, company_id: UUID, term: str | None, limit: int) -> list[SearchResult]:
+    def _announcements(db: Session, company_id: UUID, term: str | None, limit: int, current_user: User | None = None) -> list[SearchResult]:
         statement = select(Announcement).where(Announcement.company_id == company_id, Announcement.is_archived.is_(False))
+        if current_user is not None and current_user.role not in OWNER_ADMIN_ROLES:
+            statement = statement.where(Announcement.is_published.is_(True))
         if term:
             statement = statement.where(_text_match(Announcement.title, Announcement.body, Announcement.priority, term=term))
         statement = statement.order_by(Announcement.updated_at.desc()).limit(limit)

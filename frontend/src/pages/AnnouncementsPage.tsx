@@ -9,11 +9,12 @@ import { Modal } from "../components/ui/Modal";
 import { ModuleBoundary } from "../components/ui/ModuleBoundary";
 import { SectionPanel } from "../components/ui/SectionPanel";
 import { priorityTone } from "../components/ui/tone";
-import type { Announcement, AnnouncementCreatePayload, AnnouncementUpdatePayload } from "../types/api";
+import type { Announcement, AnnouncementCreatePayload, AnnouncementUpdatePayload, UserRole } from "../types/api";
 import type { ModulePageProps } from "../types/page";
 import { formatTime } from "../utils/format";
 
 interface AnnouncementsPageProps extends ModulePageProps {
+  currentUserRole?: UserRole | null;
   onCreateAnnouncement: (payload: Omit<AnnouncementCreatePayload, "company_id">) => Promise<void>;
   onUpdateAnnouncement: (announcementId: string, payload: AnnouncementUpdatePayload) => Promise<void>;
   onArchiveAnnouncement: (announcementId: string) => Promise<void>;
@@ -38,6 +39,7 @@ export function AnnouncementsPage({
   onCreateAnnouncement,
   onUpdateAnnouncement,
   onArchiveAnnouncement,
+  currentUserRole,
 }: AnnouncementsPageProps): JSX.Element {
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingAnnouncement, setEditingAnnouncement] = useState<Announcement | null>(null);
@@ -61,6 +63,7 @@ export function AnnouncementsPage({
     });
   }, [data.announcements, priorityFilter, publishedFilter, searchFilter]);
   const hasActiveFilters = Boolean(searchFilter || priorityFilter || publishedFilter);
+  const canManageAnnouncements = currentUserRole === "company_owner" || currentUserRole === "admin";
 
   function openCreate(): void {
     setEditingAnnouncement(null);
@@ -117,7 +120,7 @@ export function AnnouncementsPage({
       <SectionPanel
         eyebrow={selectedCompany?.name ?? "Company broadcast"}
         title="Announcements"
-        action={<Button variant="primary" icon={<Plus className="size-4" aria-hidden="true" />} onClick={openCreate}>Create announcement</Button>}
+        action={canManageAnnouncements ? <Button variant="primary" icon={<Plus className="size-4" aria-hidden="true" />} onClick={openCreate}>Create announcement</Button> : undefined}
       >
         <ModuleBoundary
           emptyDescription="Internal company announcements will appear here after they are published."
@@ -183,12 +186,16 @@ export function AnnouncementsPage({
 
                 <div className="flex shrink-0 flex-wrap gap-2 lg:justify-end">
                   <Badge label={announcement.priority} tone={priorityTone(announcement.priority)} />
-                  <Button className="h-9" disabled={isMutating} icon={<Pencil className="size-4" aria-hidden="true" />} onClick={() => openEdit(announcement)}>
-                    Edit
-                  </Button>
-                  <Button className="h-9" disabled={isMutating} icon={<Archive className="size-4" aria-hidden="true" />} onClick={() => void onArchiveAnnouncement(announcement.id)}>
-                    Archive
-                  </Button>
+                  {canManageAnnouncements ? (
+                    <>
+                      <Button className="h-9" disabled={isMutating} icon={<Pencil className="size-4" aria-hidden="true" />} onClick={() => openEdit(announcement)}>
+                        Edit
+                      </Button>
+                      <Button className="h-9" disabled={isMutating} icon={<Archive className="size-4" aria-hidden="true" />} onClick={() => void onArchiveAnnouncement(announcement.id)}>
+                        Archive
+                      </Button>
+                    </>
+                  ) : null}
                 </div>
               </article>
             ))}

@@ -1,6 +1,6 @@
 export function statusTone(status: string): "blue" | "green" | "amber" | "red" | "teal" | "slate" {
   const normalized = status.toLowerCase().replace(/[_-]+/g, " ");
-  if (["active", "approved", "completed", "working", "available"].includes(normalized)) return "green";
+  if (["active", "approved", "completed", "working", "online", "available"].includes(normalized)) return "green";
   if (["pending", "assigned", "in progress", "under review", "onboarding"].includes(normalized)) return "blue";
   if (["on hold", "busy", "on leave", "on break", "done for the day", "not started"].includes(normalized)) return "amber";
   if (["blocked", "rejected", "delayed", "paused", "offline", "inactive"].includes(normalized)) return "red";

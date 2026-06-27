@@ -23,6 +23,7 @@ import type {
   ProjectMemberCreatePayload,
   ProjectUpdatePayload,
   TeamCreatePayload,
+  UserRole,
   WorkObjectCreatePayload,
   WorkObjectTypeCreatePayload,
   WorkObjectTypeUpdatePayload,
@@ -38,6 +39,7 @@ const emptyData: FebGridData = {
   dashboardSummary: null,
   departments: [],
   employees: [],
+  leaveApprovers: [],
   invitations: [],
   teams: [],
   projects: [],
@@ -114,6 +116,7 @@ interface FebGridDataState {
 
 interface UseFebGridDataOptions {
   enabled?: boolean;
+  role?: UserRole | null;
 }
 
 function getErrorMessage(error: unknown): string {
@@ -151,7 +154,7 @@ function findCompany(companies: Company[], companyId: string | null): Company | 
   return companies.find((company) => company.id === companyId);
 }
 
-export function useFebGridData({ enabled = true }: UseFebGridDataOptions = {}): FebGridDataState {
+export function useFebGridData({ enabled = true, role = null }: UseFebGridDataOptions = {}): FebGridDataState {
   const [data, setData] = useState<FebGridData>(emptyData);
   const [selectedCompanyId, setSelectedCompanyId] = useState<string | null>(() => getStoredCompanyId());
   const [isLoadingCompanies, setIsLoadingCompanies] = useState(true);
@@ -237,6 +240,49 @@ export function useFebGridData({ enabled = true }: UseFebGridDataOptions = {}): 
     setIsLoadingModules(true);
     setModuleErrors({});
     setData((current) => ({ ...current, ...emptyData, companies: current.companies }));
+
+    if (role === "employee") {
+      const [employeeMe, projects, workObjects, leaves, leaveApprovers, notifications, announcements] = await Promise.allSettled([
+        api.employeeMe(),
+        api.projects(selectedCompanyId),
+        api.workObjects(selectedCompanyId),
+        api.leaves(selectedCompanyId),
+        api.leaveApprovers(selectedCompanyId),
+        api.notifications(selectedCompanyId),
+        api.announcements(selectedCompanyId),
+      ]);
+
+      const nextData: Partial<FebGridData> = {};
+      const nextErrors: ModuleErrors = {};
+
+      if (employeeMe.status === "fulfilled") nextData.employees = [employeeMe.value];
+      else nextErrors.employees = getErrorMessage(employeeMe.reason);
+
+      if (projects.status === "fulfilled") nextData.projects = projects.value;
+      else nextErrors.projects = getErrorMessage(projects.reason);
+
+      if (workObjects.status === "fulfilled") nextData.workObjects = workObjects.value;
+      else nextErrors.workObjects = getErrorMessage(workObjects.reason);
+
+      if (leaves.status === "fulfilled") nextData.leaves = leaves.value;
+      else nextErrors.leaves = getErrorMessage(leaves.reason);
+
+      if (leaveApprovers.status === "fulfilled") nextData.leaveApprovers = leaveApprovers.value;
+      else nextErrors.leaveApprovers = getErrorMessage(leaveApprovers.reason);
+
+      if (notifications.status === "fulfilled") nextData.notifications = notifications.value;
+      else nextErrors.notifications = getErrorMessage(notifications.reason);
+
+      if (announcements.status === "fulfilled") nextData.announcements = announcements.value;
+      else nextErrors.announcements = getErrorMessage(announcements.reason);
+
+      if (moduleRequestIdRef.current !== requestId) return;
+
+      setData((current) => ({ ...current, ...nextData }));
+      setModuleErrors(nextErrors);
+      setIsLoadingModules(false);
+      return;
+    }
 
     const [
       companySettings,
@@ -325,7 +371,7 @@ export function useFebGridData({ enabled = true }: UseFebGridDataOptions = {}): 
     setData((current) => ({ ...current, ...nextData }));
     setModuleErrors(nextErrors);
     setIsLoadingModules(false);
-  }, [enabled, selectedCompanyId]);
+  }, [enabled, role, selectedCompanyId]);
 
   useEffect(() => {
     void refreshCompanies();

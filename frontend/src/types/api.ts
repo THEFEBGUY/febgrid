@@ -204,6 +204,15 @@ export interface EmployeeUpdatePayload {
   is_active?: boolean;
 }
 
+export interface EmployeeSelfUpdatePayload {
+  full_name?: string;
+  phone?: string | null;
+  location?: string | null;
+  profile_image_url?: string | null;
+  skills?: string[];
+  metadata?: Record<string, unknown>;
+}
+
 export interface EmployeeInvitation extends Timestamped {
   id: string;
   company_id: string;
@@ -898,6 +907,7 @@ export interface FebGridData {
   dashboardSummary: DashboardSummary | null;
   departments: Department[];
   employees: Employee[];
+  leaveApprovers: Employee[];
   invitations: EmployeeInvitation[];
   teams: Team[];
   projects: Project[];

@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
@@ -37,6 +37,11 @@ AUDIT_EVENT_PREFIXES = (
 
 def audit_event_filter():
     return or_(*(Event.event_type.ilike(f"{prefix}%") for prefix in AUDIT_EVENT_PREFIXES))
+
+
+def ensure_company_timeline_access(current_user: User | None) -> None:
+    if current_user is not None and current_user.role == "employee":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Employees cannot access the full company timeline")
 
 
 def apply_event_filters(
@@ -136,6 +141,7 @@ def list_events(
     offset: int = Query(default=0, ge=0),
 ) -> list[EventRead]:
     ensure_company_access(current_user, company_id)
+    ensure_company_timeline_access(current_user)
     statement = select(Event).where(Event.company_id == company_id)
     statement = apply_event_filters(
         statement,
@@ -164,6 +170,7 @@ def list_recent_events(
     limit: int = Query(default=10, ge=1, le=50),
 ) -> list[EventRead]:
     ensure_company_access(current_user, company_id)
+    ensure_company_timeline_access(current_user)
     statement = select(Event).where(Event.company_id == company_id).order_by(Event.created_at.desc()).limit(limit)
     return serialize_events(db.scalars(statement).all())
 
@@ -176,6 +183,7 @@ def get_event(
     current_user: User | None = Depends(get_optional_current_user),
 ) -> EventRead:
     ensure_company_access(current_user, company_id)
+    ensure_company_timeline_access(current_user)
     event = get_or_404(db, Event, event_id, label="Event")
     ensure_company(event, company_id, label="Event")
     return serialize_event(event)
@@ -202,6 +210,7 @@ def universal_timeline(
     offset: int = Query(default=0, ge=0),
 ) -> list[EventRead]:
     ensure_company_access(current_user, company_id)
+    ensure_company_timeline_access(current_user)
     statement = select(Event).where(Event.company_id == company_id)
     statement = apply_event_filters(
         statement,
@@ -241,6 +250,7 @@ def audit_log(
     offset: int = Query(default=0, ge=0),
 ) -> list[EventRead]:
     ensure_company_access(current_user, company_id)
+    ensure_company_timeline_access(current_user)
     statement = select(Event).where(Event.company_id == company_id)
     statement = apply_event_filters(
         statement,

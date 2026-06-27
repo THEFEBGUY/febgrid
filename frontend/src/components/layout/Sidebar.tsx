@@ -1,14 +1,14 @@
 import { Zap } from "lucide-react";
 
-import { navigationItems } from "../../data/navigation";
-import type { PageKey } from "../../types/domain";
+import type { NavigationItem, PageKey } from "../../types/domain";
 
 interface SidebarProps {
   activePage: PageKey;
+  items: NavigationItem[];
   onNavigate: (page: PageKey) => void;
 }
 
-export function Sidebar({ activePage, onNavigate }: SidebarProps): JSX.Element {
+export function Sidebar({ activePage, items, onNavigate }: SidebarProps): JSX.Element {
   return (
     <aside className="flex h-full w-full flex-col border-r border-grid-200 bg-white/95">
       <div className="flex h-20 items-center gap-3 border-b border-grid-200 px-5">
@@ -22,7 +22,7 @@ export function Sidebar({ activePage, onNavigate }: SidebarProps): JSX.Element {
       </div>
 
       <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-4" aria-label="Primary navigation">
-        {navigationItems.map((item) => {
+        {items.map((item) => {
           const Icon = item.icon;
           const isActive = activePage === item.key;
 

@@ -73,6 +73,13 @@ export function useAuth(): AuthState {
       setApiAuthToken(token);
       try {
         const session = await api.me();
+        if (session.user.role === "employee") {
+          try {
+            await api.markPresenceOnline();
+          } catch {
+            // Presence is best-effort; an auth session should still load if it cannot update.
+          }
+        }
         if (!isActive) return;
         setUser(session.user);
         setCompany(session.company);
@@ -92,6 +99,21 @@ export function useAuth(): AuthState {
       isActive = false;
     };
   }, [token]);
+
+  useEffect(() => {
+    if (!token || user?.role !== "employee") return;
+
+    const markOffline = (): void => {
+      void api.markPresenceOffline(true).catch(() => undefined);
+    };
+
+    window.addEventListener("pagehide", markOffline);
+    window.addEventListener("beforeunload", markOffline);
+    return () => {
+      window.removeEventListener("pagehide", markOffline);
+      window.removeEventListener("beforeunload", markOffline);
+    };
+  }, [token, user?.id, user?.role]);
 
   async function login(payload: LoginPayload): Promise<void> {
     setIsSubmitting(true);

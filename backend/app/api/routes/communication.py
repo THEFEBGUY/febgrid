@@ -191,8 +191,15 @@ def normalize_mention_name(value: str) -> str:
     return " ".join(value.strip(".,:;!?()[]{}").lower().split())
 
 
+def mention_name_candidates(value: str) -> set[str]:
+    words = normalize_mention_name(value).split()
+    return {" ".join(words[:index]) for index in range(1, min(len(words), 4) + 1)}
+
+
 def parse_mentioned_employees_from_body(db: Session, *, company_id: UUID, body: str) -> list[Employee]:
-    mention_names = {normalize_mention_name(match.group(1)) for match in MENTION_PATTERN.finditer(body)}
+    mention_names: set[str] = set()
+    for match in MENTION_PATTERN.finditer(body):
+        mention_names.update(mention_name_candidates(match.group(1)))
     mention_names.discard("")
     if not mention_names:
         return []
@@ -304,16 +311,49 @@ def action_url_for_comment(comment: Comment) -> str:
     return "#/work-objects"
 
 
+def comment_target_label(target: WorkObject | Project) -> str:
+    if isinstance(target, WorkObject):
+        return target.title
+    return target.name
+
+
+def comment_target_kind(target: WorkObject | Project) -> str:
+    if isinstance(target, WorkObject):
+        return "work object"
+    return "project"
+
+
+def actor_display_name(db: Session, current_user: User | None, actor_id: UUID | None) -> str:
+    if actor_id is not None:
+        employee = db.get(Employee, actor_id)
+        if employee is not None:
+            return employee.full_name
+    if current_user is not None:
+        return current_user.full_name
+    return "A company member"
+
+
 def notify_comment_mentions(
     db: Session,
     *,
     comment: Comment,
+    target: WorkObject | Project,
     current_user: User | None,
     event: Event | None,
     employees: list[Employee],
     users: list[User],
 ) -> None:
     actor_id = actor_employee_id(db, current_user, comment.author_employee_id)
+    actor_name = actor_display_name(db, current_user, actor_id)
+    target_label = comment_target_label(target)
+    target_kind = comment_target_kind(target)
+    message = f"{actor_name} mentioned you in a {target_kind} comment on {target_label}."
+    metadata = {
+        "comment_id": str(comment.id),
+        "target_entity_type": comment.target_entity_type,
+        "target_entity_id": str(comment.target_entity_id),
+        "target_label": target_label,
+    }
     mentioned_user_ids_from_employees = {employee.user_id for employee in employees if employee.user_id is not None}
     recipient_employee_ids = [employee.id for employee in employees if employee.id != actor_id]
     if recipient_employee_ids:
@@ -324,14 +364,14 @@ def notify_comment_mentions(
             actor_user_id=current_user.id if current_user else None,
             actor_employee_id=actor_id,
             event_id=event.id if event else None,
-            title="You were mentioned",
-            message="You were mentioned in a FebGrid comment.",
+            title=f"Mentioned in {target_label}",
+            message=message,
             notification_type="communication.mentioned",
             target_entity_type="comment",
             target_entity_id=comment.id,
             priority="normal",
             action_url=action_url_for_comment(comment),
-            metadata={"comment_id": str(comment.id), "target_entity_type": comment.target_entity_type},
+            metadata=metadata,
         )
     for user in users:
         if user.id == (current_user.id if current_user else None) or user.id in mentioned_user_ids_from_employees:
@@ -343,14 +383,14 @@ def notify_comment_mentions(
             actor_user_id=current_user.id if current_user else None,
             actor_employee_id=actor_id,
             event_id=event.id if event else None,
-            title="You were mentioned",
-            message="You were mentioned in a FebGrid comment.",
+            title=f"Mentioned in {target_label}",
+            message=message,
             notification_type="communication.mentioned",
             target_entity_type="comment",
             target_entity_id=comment.id,
             priority="normal",
             action_url=action_url_for_comment(comment),
-            metadata={"comment_id": str(comment.id), "target_entity_type": comment.target_entity_type},
+            metadata=metadata,
         )
 
 
@@ -388,6 +428,7 @@ def notify_comment_target_watchers(
     target: WorkObject | Project,
     current_user: User | None,
     event: Event | None,
+    exclude_employee_ids: set[UUID] | None = None,
 ) -> None:
     actor_id = actor_employee_id(db, current_user, comment.author_employee_id)
     if isinstance(target, WorkObject):
@@ -415,6 +456,7 @@ def notify_comment_target_watchers(
         priority="normal",
         action_url=action_url_for_comment(comment),
         metadata={"comment_id": str(comment.id), "target_entity_type": comment.target_entity_type},
+        exclude_employee_ids=exclude_employee_ids,
     )
 
 
@@ -559,9 +601,16 @@ def create_comment(
                 "mentioned_user_ids": [str(mention.mentioned_user_id) for mention in mentions if mention.mentioned_user_id],
             },
         )
-        notify_comment_mentions(db, comment=comment, current_user=current_user, event=mention_event, employees=employees, users=users)
+        notify_comment_mentions(db, comment=comment, target=target, current_user=current_user, event=mention_event, employees=employees, users=users)
     notify_reply(db, comment=comment, parent=parent, current_user=current_user, event=created_event)
-    notify_comment_target_watchers(db, comment=comment, target=target, current_user=current_user, event=created_event)
+    notify_comment_target_watchers(
+        db,
+        comment=comment,
+        target=target,
+        current_user=current_user,
+        event=created_event,
+        exclude_employee_ids={employee.id for employee in employees},
+    )
     db.commit()
     db.refresh(comment)
     return comment
@@ -577,6 +626,13 @@ def update_comment(
 ) -> Comment:
     comment = get_comment_for_user(db, current_user, comment_id=comment_id, company_id=company_id)
     ensure_comment_author_or_admin(db, current_user, comment)
+    target = get_comment_target(
+        db,
+        current_user,
+        company_id=company_id,
+        target_entity_type=comment.target_entity_type,
+        target_entity_id=comment.target_entity_id,
+    )
     changed_fields: list[str] = []
     body_changed = False
     if payload.body is not None and payload.body.strip() != comment.body:
@@ -622,7 +678,7 @@ def update_comment(
                     "mentioned_user_ids": [str(mention.mentioned_user_id) for mention in mentions if mention.mentioned_user_id],
                 },
             )
-            notify_comment_mentions(db, comment=comment, current_user=current_user, event=mention_event, employees=new_employees, users=new_users)
+            notify_comment_mentions(db, comment=comment, target=target, current_user=current_user, event=mention_event, employees=new_employees, users=new_users)
     if changed_fields:
         record_comment_event(
             db,
@@ -723,6 +779,8 @@ def list_announcements(
     statement = select(Announcement).where(Announcement.company_id == company_id)
     if not include_archived:
         statement = statement.where(Announcement.is_archived.is_(False))
+    if current_user is not None and current_user.role not in OWNER_ADMIN_ROLES:
+        statement = statement.where(Announcement.is_published.is_(True))
     statement = statement.order_by(Announcement.published_at.desc().nullslast(), Announcement.created_at.desc()).limit(limit).offset(offset)
     return list(db.scalars(statement).all())
 

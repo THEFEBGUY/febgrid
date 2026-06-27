@@ -15,6 +15,7 @@ from app.models.event import Event
 from app.models.leave_request import LeaveRequest
 from app.models.user import User
 from app.schemas.event import EventRead
+from app.schemas.employee import EmployeeRead
 from app.schemas.leave_request import (
     LeaveCancel,
     LeaveDecision,
@@ -393,6 +394,43 @@ def list_leave_requests(
         statement = statement.where(or_(*visibility_conditions))
     statement = statement.order_by(LeaveRequest.submitted_at.desc()).limit(limit).offset(offset)
     return list(db.scalars(statement).all())
+
+
+@router.get("/approvers", response_model=list[EmployeeRead])
+def list_leave_approvers(
+    company_id: UUID,
+    db: Session = Depends(db_session),
+    current_user: User | None = Depends(get_optional_current_user),
+    limit: int = Query(default=100, ge=1, le=200),
+) -> list[Employee]:
+    ensure_company_access(current_user, company_id)
+    statement = (
+        select(Employee)
+        .outerjoin(User, Employee.user_id == User.id)
+        .where(
+            Employee.company_id == company_id,
+            Employee.is_active.is_(True),
+            or_(
+                User.role.in_(list(MANAGER_ROLES)),
+                Employee.role.ilike("%owner%"),
+                Employee.role.ilike("%admin%"),
+                Employee.role.ilike("%manager%"),
+                Employee.role.ilike("%lead%"),
+            ),
+        )
+        .order_by(Employee.full_name.asc())
+        .limit(limit)
+    )
+    approvers = list(db.scalars(statement).unique().all())
+
+    linked_employee = get_linked_employee(db, current_user)
+    if linked_employee is not None and linked_employee.manager_id is not None:
+        manager = db.get(Employee, linked_employee.manager_id)
+        if manager is not None and manager.company_id == company_id and manager.is_active:
+            if all(existing.id != manager.id for existing in approvers):
+                approvers.append(manager)
+
+    return approvers[:limit]
 
 
 @router.get("/{leave_id}", response_model=LeaveRequestRead)

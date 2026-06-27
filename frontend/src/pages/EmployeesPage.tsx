@@ -49,7 +49,7 @@ interface EmployeesPageProps extends ModulePageProps {
   onRejectInvitation: (invitationId: string, rejectionReason?: string | null) => Promise<void>;
 }
 
-const statusOptions = ["working", "on_break", "offline", "on_leave", "done_for_the_day", "busy", "available"];
+const statusOptions = ["working", "online", "on_break", "offline", "on_leave", "done_for_the_day", "busy", "available"];
 const inviteRoleOptions: UserRole[] = ["employee", "manager"];
 const resendableInvitationStatuses = new Set(["pending", "activation_sent", "expired"]);
 const revokableInvitationStatuses = new Set(["pending", "activation_sent", "expired"]);

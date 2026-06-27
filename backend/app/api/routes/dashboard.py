@@ -1,7 +1,7 @@
 from datetime import date, datetime, time, timedelta, timezone
 from uuid import UUID
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
 
@@ -78,6 +78,8 @@ def get_dashboard_summary(
     current_user: User | None = Depends(get_optional_current_user),
 ) -> DashboardSummaryRead:
     ensure_company_access(current_user, company_id)
+    if current_user is not None and current_user.role == "employee":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Employees use the employee dashboard")
     company = get_or_404(db, Company, company_id, label="Company")
     now = datetime.now(timezone.utc)
     today = date.today()

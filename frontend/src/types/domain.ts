@@ -2,6 +2,11 @@ import type { LucideIcon } from "lucide-react";
 
 export type PageKey =
   | "dashboard"
+  | "my-dashboard"
+  | "my-work"
+  | "my-projects"
+  | "my-leave"
+  | "my-profile"
   | "companies"
   | "employees"
   | "teams"
@@ -41,7 +46,7 @@ export interface EmployeeRecord {
   name: string;
   role: string;
   team: string;
-  status: "Working" | "Available" | "Busy" | "On Leave" | "Offline";
+  status: "Working" | "Online" | "Available" | "Busy" | "On Leave" | "Offline";
   workCount: number;
 }
 
