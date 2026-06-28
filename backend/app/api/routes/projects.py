@@ -786,8 +786,17 @@ def get_project_work_objects(
             WorkObject.project_id == project.id,
             WorkObject.is_active.is_(True),
         )
-        .order_by(WorkObject.created_at.desc())
-        .limit(limit)
-        .offset(offset)
     )
+    if current_user.role not in MANAGER_ROLES:
+        linked_employee = get_linked_employee(db, current_user)
+        visibility_conditions = [WorkObject.creator_user_id == current_user.id]
+        if linked_employee is not None:
+            visibility_conditions.extend(
+                [
+                    WorkObject.assignee_employee_id == linked_employee.id,
+                    WorkObject.creator_employee_id == linked_employee.id,
+                ]
+            )
+        statement = statement.where(or_(*visibility_conditions))
+    statement = statement.order_by(WorkObject.created_at.desc()).limit(limit).offset(offset)
     return list(db.scalars(statement).all())

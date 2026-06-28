@@ -84,6 +84,9 @@ class InvitationPreviewRead(MetadataField):
     department_name: str | None = None
     team_name: str | None = None
     manager_name: str | None = None
+    account_status: str | None = None
+    activation_status: str | None = None
+    profile_completion_status: str | None = None
 
 
 class InvitationAcceptRequest(FebGridModel):

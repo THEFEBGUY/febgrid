@@ -53,7 +53,10 @@ def preview_response(invitation: EmployeeInvitation) -> InvitationPreviewRead:
         department_name=invitation.employee.department_ref.name if invitation.employee and invitation.employee.department_ref else None,
         team_name=invitation.employee.team_ref.name if invitation.employee and invitation.employee.team_ref else None,
         manager_name=invitation.manager.full_name if invitation.manager else None,
-        metadata=metadata_dict(invitation.metadata_json),
+        account_status=employee.account_status if employee else None,
+        activation_status=employee.activation_status if employee else None,
+        profile_completion_status=employee.profile_completion_status if employee else None,
+        metadata={key: value for key, value in metadata_dict(invitation.metadata_json).items() if key != "email_delivery"},
     )
 
 

@@ -284,6 +284,9 @@ export interface InvitationPreview {
   department_name: string | null;
   team_name: string | null;
   manager_name: string | null;
+  account_status: string | null;
+  activation_status: string | null;
+  profile_completion_status: string | null;
   metadata: Record<string, unknown>;
 }
 

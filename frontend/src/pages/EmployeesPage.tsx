@@ -282,15 +282,16 @@ export function EmployeesPage({
       label: "Actions",
       render: (employee) => (
         <div className="flex flex-wrap justify-end gap-2">
-          <Button className="size-9 px-0" aria-label="View profile" icon={<Eye className="size-4" aria-hidden="true" />} onClick={() => setProfileEmployee(employee)}>
+          <Button className="size-9 px-0" aria-label="View profile" title="View profile" icon={<Eye className="size-4" aria-hidden="true" />} onClick={() => setProfileEmployee(employee)}>
             <span className="sr-only">View profile</span>
           </Button>
-          <Button className="size-9 px-0" aria-label="Edit employee" icon={<Pencil className="size-4" aria-hidden="true" />} onClick={() => openEdit(employee)}>
+          <Button className="size-9 px-0" aria-label="Edit employee" title="Edit employee" icon={<Pencil className="size-4" aria-hidden="true" />} onClick={() => openEdit(employee)}>
             <span className="sr-only">Edit employee</span>
           </Button>
           <Button
             className="size-9 px-0"
             aria-label="Deactivate employee"
+            title="Deactivate employee"
             disabled={isMutating || !employee.is_active}
             icon={<Power className="size-4" aria-hidden="true" />}
             onClick={() => void onDeactivateEmployee(employee.id)}
@@ -356,6 +357,7 @@ export function EmployeesPage({
             <Button
               className="size-9 px-0"
               aria-label="Resend invite"
+              title="Resend invite"
               disabled={isMutating}
               icon={<RotateCcw className="size-4" aria-hidden="true" />}
               onClick={() => void handleResend(invitation)}
@@ -367,6 +369,7 @@ export function EmployeesPage({
             <Button
               className="size-9 px-0"
               aria-label="Revoke invite"
+              title="Revoke invite"
               disabled={isMutating}
               icon={<Ban className="size-4" aria-hidden="true" />}
               onClick={() => void onRevokeInvitation(invitation.id)}
@@ -390,6 +393,7 @@ export function EmployeesPage({
           <Button
             className="size-9 px-0"
             aria-label="Approve profile"
+            title="Approve profile"
             disabled={isMutating}
             icon={<CheckCircle2 className="size-4" aria-hidden="true" />}
             onClick={() => void onApproveInvitation(invitation.id)}
@@ -399,6 +403,7 @@ export function EmployeesPage({
           <Button
             className="size-9 px-0"
             aria-label="Reject profile"
+            title="Reject profile"
             disabled={isMutating}
             icon={<XCircle className="size-4" aria-hidden="true" />}
             onClick={() => {

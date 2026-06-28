@@ -426,6 +426,8 @@ class InvitationService:
         if user is not None:
             if user.company_id != invitation.company_id:
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invitation email does not match this company")
+            if user.role != invitation.invited_role:
+                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Existing account role does not match this invitation")
             if not verify_password(password, user.password_hash):
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
         else:
@@ -449,6 +451,8 @@ class InvitationService:
         employee.account_status = "profile_pending"
         employee.activation_status = "accepted"
         employee.profile_completion_status = "needs_completion"
+        user.role = invitation.invited_role
+        user.is_active = False
         if full_name:
             employee.full_name = full_name
             user.full_name = full_name
@@ -489,7 +493,7 @@ class InvitationService:
         payload: InvitationProfileCompleteRequest,
     ) -> tuple[EmployeeInvitation, Employee, User, Company]:
         invitation = cls._invitation_by_token(db, payload.token)
-        if invitation.status not in {INVITATION_ACCEPTED, INVITATION_SUBMITTED}:
+        if invitation.status != INVITATION_ACCEPTED:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Invitation must be accepted before profile completion")
         normalized_email = cls._ensure_invited_email(invitation, str(payload.email))
         employee = db.get(Employee, invitation.employee_id) if invitation.employee_id else None
@@ -498,6 +502,8 @@ class InvitationService:
         user = db.get(User, employee.user_id) if employee.user_id else None
         if user is None or user.email != normalized_email or user.company_id != invitation.company_id:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Linked user account not found")
+        if employee.account_status != "profile_pending" or employee.profile_completion_status != "needs_completion":
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Employee profile has already been completed or submitted")
         company = cls._company(db, invitation.company_id)
 
         if payload.full_name:

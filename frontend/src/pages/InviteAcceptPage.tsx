@@ -42,13 +42,22 @@ function storeSessionToken(token: string): void {
   setApiAuthToken(token);
 }
 
-function statusMessage(status: string): string | null {
-  if (status === "accepted") return "This invitation has already been accepted. Continue from the original onboarding session or ask your company admin to resend if needed.";
-  if (status === "approved") return "This employee profile has already been approved.";
-  if (status === "rejected") return "This employee profile was rejected. Ask your company admin for the next step.";
-  if (status === "revoked") return "This invitation has been revoked by the company.";
-  if (status === "expired") return "This invitation has expired. Ask your company admin to resend it.";
-  if (status === "submitted_for_approval") return "Your profile has already been submitted and is waiting for company approval.";
+function needsProfileCompletion(preview: InvitationPreview): boolean {
+  return preview.status === "accepted" && (
+    preview.profile_completion_status === "needs_completion" ||
+    preview.account_status === "profile_pending"
+  );
+}
+
+function statusMessage(preview: InvitationPreview): string | null {
+  if (preview.status === "accepted" && !needsProfileCompletion(preview)) {
+    return "This invitation has already been accepted and completed. Ask your company admin to resend if you need a new onboarding link.";
+  }
+  if (preview.status === "approved") return "This employee profile has already been approved.";
+  if (preview.status === "rejected") return "This employee profile was rejected. Ask your company admin for the next step.";
+  if (preview.status === "revoked") return "This invitation has been revoked by the company.";
+  if (preview.status === "expired") return "This invitation has expired. Ask your company admin to resend it.";
+  if (preview.status === "submitted_for_approval") return "Your profile has already been submitted and is waiting for company approval.";
   return null;
 }
 
@@ -183,7 +192,8 @@ export function InviteAcceptPage({ token }: InviteAcceptPageProps): JSX.Element 
     );
   }
 
-  const terminalStatusMessage = statusMessage(preview.status);
+  const canCompletePendingProfile = needsProfileCompletion(preview);
+  const terminalStatusMessage = statusMessage(preview);
   const assignment = compactList([preview.department_name, preview.team_name, preview.manager_name ? `Manager: ${preview.manager_name}` : null]) || "No org assignment";
 
   return (
@@ -227,7 +237,7 @@ export function InviteAcceptPage({ token }: InviteAcceptPageProps): JSX.Element 
           </section>
         ) : null}
 
-        {!terminalStatusMessage && !accepted && !completionMessage ? (
+        {!terminalStatusMessage && !accepted && !canCompletePendingProfile && !completionMessage ? (
           <section className="rounded-lg border border-grid-200 bg-white shadow-sm">
             <div className="border-b border-grid-200 px-5 py-4">
               <h2 className="text-lg font-black text-ink-950">Accept invitation</h2>
@@ -264,7 +274,7 @@ export function InviteAcceptPage({ token }: InviteAcceptPageProps): JSX.Element 
           </section>
         ) : null}
 
-        {accepted && !completionMessage ? (
+        {(accepted || canCompletePendingProfile) && !completionMessage ? (
           <section className="rounded-lg border border-grid-200 bg-white shadow-sm">
             <div className="border-b border-grid-200 px-5 py-4">
               <h2 className="text-lg font-black text-ink-950">Complete profile</h2>
