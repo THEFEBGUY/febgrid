@@ -4,6 +4,7 @@ from app.api.routes import (
     attachments,
     auth,
     ai_jobs,
+    billing,
     companies,
     configuration,
     communication,
@@ -24,6 +25,7 @@ from app.api.routes import (
 api_router = APIRouter()
 api_router.include_router(health.router)
 api_router.include_router(auth.router)
+api_router.include_router(billing.router)
 api_router.include_router(companies.router)
 api_router.include_router(configuration.settings_router)
 api_router.include_router(configuration.templates_router)

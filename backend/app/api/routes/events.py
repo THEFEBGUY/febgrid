@@ -5,14 +5,15 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
-from app.api.deps import db_session, get_optional_current_user
+from app.api.deps import db_session, get_current_user, get_optional_current_user
 from app.api.serializers import serialize_event, serialize_events
 from app.api.utils import ensure_company, get_or_404
-from app.core.permissions import ensure_company_access
+from app.core.permissions import OWNER_ADMIN_ROLES, ensure_company_access, ensure_role
 from app.models.company import Company
+from app.models.employee import Employee
 from app.models.event import Event
 from app.models.user import User
-from app.schemas.event import EventCreate, EventRead
+from app.schemas.event import AuditLogRead, EventCreate, EventRead
 from app.services.event_service import EventService
 
 router = APIRouter(prefix="/events", tags=["events"])
@@ -21,15 +22,24 @@ audit_router = APIRouter(prefix="/audit-log", tags=["audit-log"])
 
 AUDIT_EVENT_PREFIXES = (
     "auth.",
+    "billing.",
     "company.",
-    "user.",
-    "employee.",
+    "custom_field.",
     "department.",
-    "team.",
-    "project.",
-    "work_object.",
-    "leave.",
+    "employee.",
+    "employee_account.",
+    "employee_invite.",
+    "employee_profile.",
     "file.",
+    "industry_template.",
+    "leave.",
+    "manual_employee.",
+    "notification.",
+    "project.",
+    "team.",
+    "user.",
+    "work_object.",
+    "work_object_type.",
     "comment.",
     "announcement.",
 )
@@ -91,6 +101,23 @@ def apply_event_filters(
     if audit_only:
         statement = statement.where(audit_event_filter())
     return statement
+
+
+def serialize_audit_event(db: Session, event: Event) -> AuditLogRead:
+    actor_user = db.get(User, event.actor_user_id) if event.actor_user_id else None
+    actor_employee = db.get(Employee, event.actor_employee_id) if event.actor_employee_id else None
+    company = db.get(Company, event.company_id)
+    base = serialize_event(event)
+    return AuditLogRead(
+        **base.model_dump(),
+        actor_name=actor_user.full_name if actor_user else None,
+        actor_role=actor_user.role if actor_user else None,
+        actor_employee_name=actor_employee.full_name if actor_employee else None,
+        target_label=event.target_entity_type,
+        company_name=company.name if company else None,
+        summary=event.description or event.title,
+        is_audit_relevant=True,
+    )
 
 
 @router.post("", response_model=EventRead)
@@ -231,11 +258,12 @@ def universal_timeline(
     return serialize_events(db.scalars(statement).all())
 
 
-@audit_router.get("", response_model=list[EventRead])
+@audit_router.get("", response_model=list[AuditLogRead])
 def audit_log(
     company_id: UUID,
     db: Session = Depends(db_session),
-    current_user: User | None = Depends(get_optional_current_user),
+    current_user: User = Depends(get_current_user),
+    action: str | None = Query(default=None, max_length=120),
     event_type: str | None = None,
     actor_user_id: UUID | None = None,
     actor_employee_id: UUID | None = None,
@@ -248,9 +276,10 @@ def audit_log(
     date_to: datetime | None = None,
     limit: int = Query(default=100, ge=1, le=300),
     offset: int = Query(default=0, ge=0),
-) -> list[EventRead]:
+) -> list[AuditLogRead]:
     ensure_company_access(current_user, company_id)
-    ensure_company_timeline_access(current_user)
+    ensure_role(current_user, OWNER_ADMIN_ROLES)
+    event_type = event_type or action
     statement = select(Event).where(Event.company_id == company_id)
     statement = apply_event_filters(
         statement,
@@ -267,4 +296,22 @@ def audit_log(
         audit_only=True,
     )
     statement = statement.order_by(Event.created_at.desc()).limit(limit).offset(offset)
-    return serialize_events(db.scalars(statement).all())
+    return [serialize_audit_event(db, event) for event in db.scalars(statement).all()]
+
+
+@audit_router.get("/{event_id}", response_model=AuditLogRead)
+def get_audit_log_entry(
+    event_id: UUID,
+    company_id: UUID,
+    db: Session = Depends(db_session),
+    current_user: User = Depends(get_current_user),
+) -> AuditLogRead:
+    ensure_company_access(current_user, company_id)
+    ensure_role(current_user, OWNER_ADMIN_ROLES)
+    event = get_or_404(db, Event, event_id, label="Audit log entry")
+    ensure_company(event, company_id, label="Audit log entry")
+    statement = apply_event_filters(select(Event).where(Event.id == event.id), audit_only=True)
+    audit_event = db.scalar(statement)
+    if audit_event is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Audit log entry not found")
+    return serialize_audit_event(db, audit_event)

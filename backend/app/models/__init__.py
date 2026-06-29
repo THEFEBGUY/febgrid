@@ -1,5 +1,6 @@
 from app.models.ai_job import AIJob
 from app.models.attachment import Attachment
+from app.models.billing import CompanyBillingPlan
 from app.models.company import Company
 from app.models.communication import Announcement, Comment, CommentMention
 from app.models.configuration import CustomFieldDefinition, WorkObjectType
@@ -18,6 +19,7 @@ from app.models.work_object import WorkObject
 __all__ = [
     "AIJob",
     "Attachment",
+    "CompanyBillingPlan",
     "Announcement",
     "Comment",
     "CommentMention",

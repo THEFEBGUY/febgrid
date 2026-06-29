@@ -39,3 +39,13 @@ class EventCreate(EventBase):
 class EventRead(EventBase):
     id: UUID
     created_at: datetime
+
+
+class AuditLogRead(EventRead):
+    actor_name: str | None = None
+    actor_role: str | None = None
+    actor_employee_name: str | None = None
+    target_label: str | None = None
+    company_name: str | None = None
+    summary: str | None = None
+    is_audit_relevant: bool = True

@@ -1,3 +1,4 @@
+import hashlib
 import mimetypes
 import re
 import shutil
@@ -17,6 +18,8 @@ class StoredUpload:
     original_file_name: str
     content_type: str
     file_size: int
+    extension: str
+    checksum_sha256: str
     storage_provider: str
     storage_path: str
 
@@ -89,6 +92,7 @@ class FileService:
         absolute_path.parent.mkdir(parents=True, exist_ok=True)
 
         size = 0
+        checksum = hashlib.sha256()
         try:
             with absolute_path.open("wb") as output:
                 while True:
@@ -103,6 +107,7 @@ class FileService:
                             status_code=status.HTTP_413_CONTENT_TOO_LARGE,
                             detail="File is larger than the 10 MB upload limit",
                         )
+                    checksum.update(chunk)
                     output.write(chunk)
         finally:
             file.file.seek(0)
@@ -112,6 +117,8 @@ class FileService:
             original_file_name=original_file_name,
             content_type=content_type,
             file_size=size,
+            extension=Path(original_file_name).suffix.lower(),
+            checksum_sha256=checksum.hexdigest(),
             storage_provider=cls.STORAGE_PROVIDER,
             storage_path=storage_path,
         )
@@ -130,10 +137,15 @@ class FileService:
             original_file_name=payload.original_file_name,
             content_type=payload.content_type,
             file_size=payload.file_size,
+            extension=payload.extension,
+            checksum_sha256=payload.checksum_sha256,
             storage_provider=payload.storage_provider,
             storage_path=payload.storage_path,
             public_url=payload.public_url,
             description=payload.description,
+            tags=payload.tags,
+            processing_status=payload.processing_status,
+            scan_status=payload.scan_status,
             ai_processing_status=payload.ai_processing_status,
             metadata_json=payload.metadata,
             is_active=payload.is_active,
@@ -171,6 +183,8 @@ class FileService:
             original_file_name=original,
             content_type=content_type,
             file_size=source_path.stat().st_size,
+            extension=Path(original).suffix.lower(),
+            checksum_sha256=hashlib.sha256(source_path.read_bytes()).hexdigest(),
             storage_provider=cls.STORAGE_PROVIDER,
             storage_path=storage_path,
         )

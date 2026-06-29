@@ -4,10 +4,13 @@ import type {
   AnnouncementUpdatePayload,
   Attachment,
   AttachmentUpdatePayload,
+  AuditLog,
   AuthMe,
   AuthSession,
+  BillingSummary,
   Company,
   CompanyCreatePayload,
+  CompanyPlanUpdatePayload,
   CompanySettings,
   CompanySettingsUpdatePayload,
   Comment,
@@ -43,6 +46,7 @@ import type {
   LoginPayload,
   Notification,
   NotificationUnreadCount,
+  PlanDefinition,
   Project,
   ProjectCreatePayload,
   ProjectMember,
@@ -155,6 +159,10 @@ export const api = {
   companies: () => request<Company[]>("/companies"),
   createCompany: (payload: CompanyCreatePayload) => request<Company>("/companies", jsonInit("POST", payload)),
   companySettings: (companyId: string) => request<CompanySettings>(companyPath("/company-settings", companyId)),
+  billingPlans: () => request<PlanDefinition[]>("/billing/plans"),
+  billingSummary: (companyId: string) => request<BillingSummary>(companyPath("/billing/summary", companyId)),
+  updateCompanyPlan: (companyId: string, payload: CompanyPlanUpdatePayload) =>
+    request<BillingSummary["plan"]>(companyPath("/billing/company-plan", companyId), jsonInit("PUT", payload)),
   updateCompanySettings: (companyId: string, payload: CompanySettingsUpdatePayload) => request<CompanySettings>(companyPath("/company-settings", companyId), jsonInit("PUT", payload)),
   industryTemplates: () => request<IndustryTemplate[]>("/industry-templates"),
   industryTemplate: (templateKey: string) => request<IndustryTemplate>(`/industry-templates/${encodeURIComponent(templateKey)}`),
@@ -241,6 +249,17 @@ export const api = {
   updateAttachment: (attachmentId: string, companyId: string, payload: AttachmentUpdatePayload) => request<Attachment>(companyPath(`/attachments/${attachmentId}`, companyId), jsonInit("PATCH", payload)),
   deleteAttachment: (attachmentId: string, companyId: string) => request<void>(companyPath(`/attachments/${attachmentId}`, companyId), { method: "DELETE" }),
   downloadAttachment: (attachmentId: string, companyId: string) => requestBlob(companyPath(`/attachments/${attachmentId}/download`, companyId)),
+  files: (companyId: string, params: { q?: string; content_type?: string; include_archived?: boolean; include_deleted?: boolean } = {}) => {
+    const searchParams = new URLSearchParams({ company_id: companyId });
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined && value !== null && value !== "") searchParams.set(key, String(value));
+    });
+    return request<Attachment[]>(`/files?${searchParams.toString()}`);
+  },
+  updateFile: (attachmentId: string, companyId: string, payload: AttachmentUpdatePayload) =>
+    request<Attachment>(companyPath(`/files/${attachmentId}`, companyId), jsonInit("PATCH", payload)),
+  archiveFile: (attachmentId: string, companyId: string) => request<Attachment>(companyPath(`/files/${attachmentId}/archive`, companyId), jsonInit("POST", {})),
+  restoreFile: (attachmentId: string, companyId: string) => request<Attachment>(companyPath(`/files/${attachmentId}/restore`, companyId), jsonInit("POST", {})),
   leaves: (companyId: string) => request<LeaveRequest[]>(companyPath("/leaves", companyId)),
   leaveApprovers: (companyId: string) => request<Employee[]>(companyPath("/leaves/approvers", companyId)),
   leave: (leaveId: string, companyId: string) => request<LeaveRequest>(companyPath(`/leaves/${leaveId}`, companyId)),
@@ -253,6 +272,7 @@ export const api = {
   deactivateLeave: (leaveId: string, companyId: string) => request<void>(companyPath(`/leaves/${leaveId}`, companyId), { method: "DELETE" }),
   leaveTimeline: (leaveId: string, companyId: string) => request<Event[]>(companyPath(`/leaves/${leaveId}/timeline`, companyId)),
   events: (companyId: string) => request<Event[]>(companyPath("/timeline", companyId)),
+  auditLogs: (companyId: string) => request<AuditLog[]>(companyPath("/audit-log", companyId)),
   notifications: (companyId: string) => request<Notification[]>(companyPath("/notifications", companyId)),
   announcements: (companyId: string) => request<Announcement[]>(companyPath("/announcements", companyId)),
   createAnnouncement: (payload: AnnouncementCreatePayload) => request<Announcement>("/announcements", jsonInit("POST", payload)),

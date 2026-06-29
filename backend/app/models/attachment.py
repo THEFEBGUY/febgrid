@@ -1,11 +1,13 @@
 from uuid import UUID
 
-from sqlalchemy import BigInteger, Boolean, ForeignKey, Index, String, Text
+from datetime import datetime
+
+from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Index, String, Text
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
-from app.models.common import TimestampMixin, json_dict, uuid_pk
+from app.models.common import TimestampMixin, json_dict, json_list, uuid_pk
 
 
 class Attachment(TimestampMixin, Base):
@@ -39,13 +41,21 @@ class Attachment(TimestampMixin, Base):
     original_file_name: Mapped[str] = mapped_column(String(255), nullable=False)
     content_type: Mapped[str | None] = mapped_column("file_type", String(120))
     file_size: Mapped[int | None] = mapped_column(BigInteger)
+    extension: Mapped[str | None] = mapped_column(String(20))
+    checksum_sha256: Mapped[str | None] = mapped_column(String(128))
     storage_provider: Mapped[str] = mapped_column(String(40), default="local", nullable=False)
     storage_path: Mapped[str] = mapped_column(Text, nullable=False)
     public_url: Mapped[str | None] = mapped_column("storage_url", Text)
     description: Mapped[str | None] = mapped_column(Text)
+    tags: Mapped[list[str]] = json_list()
+    processing_status: Mapped[str] = mapped_column(String(40), default="uploaded", nullable=False)
+    scan_status: Mapped[str] = mapped_column(String(40), default="not_scanned", nullable=False)
     ai_processing_status: Mapped[str] = mapped_column(String(40), default="pending", nullable=False)
     metadata_json = json_dict(name="metadata")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    is_deleted: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     company = relationship("Company")
     work_object = relationship("WorkObject")
@@ -75,5 +85,8 @@ class Attachment(TimestampMixin, Base):
         Index("idx_attachments_work_object_id", "work_object_id"),
         Index("idx_attachments_project_id", "project_id"),
         Index("idx_attachments_uploaded_by_user_id", "uploaded_by_user_id"),
+        Index("idx_attachments_uploaded_by_employee_id", "uploaded_by_employee_id"),
         Index("idx_attachments_linked_entity", "linked_entity_type", "linked_entity_id"),
+        Index("idx_attachments_company_processing", "company_id", "processing_status"),
+        Index("idx_attachments_company_deleted", "company_id", "is_deleted"),
     )

@@ -614,17 +614,28 @@ export interface Attachment extends Timestamped {
   original_file_name: string;
   content_type: string | null;
   file_size: number | null;
+  extension: string | null;
+  checksum_sha256: string | null;
   storage_provider: string;
   storage_path: string;
   public_url: string | null;
   description: string | null;
+  tags: string[];
+  processing_status: string;
+  scan_status: string;
   ai_processing_status: string;
   metadata: Record<string, unknown>;
   is_active: boolean;
+  is_deleted: boolean;
+  archived_at: string | null;
+  deleted_at: string | null;
 }
 
 export interface AttachmentUpdatePayload {
   description?: string | null;
+  tags?: string[];
+  processing_status?: string;
+  scan_status?: string;
   metadata?: Record<string, unknown>;
 }
 
@@ -786,6 +797,102 @@ export interface Event {
   created_at: string;
 }
 
+export interface AuditLog extends Event {
+  actor_name: string | null;
+  actor_role: string | null;
+  actor_employee_name: string | null;
+  target_label: string | null;
+  company_name: string | null;
+  summary: string | null;
+  is_audit_relevant: boolean;
+}
+
+export interface PlanDefinition {
+  key: string;
+  name: string;
+  description: string;
+  seat_limit: number;
+  storage_limit_mb: number;
+  work_object_limit: number;
+  project_limit: number;
+  employee_limit: number;
+  notification_limit: number | null;
+  file_upload_limit_mb: number;
+  metadata: Record<string, unknown>;
+}
+
+export interface CompanyBillingPlan extends Timestamped {
+  id: string;
+  company_id: string;
+  plan_key: string;
+  billing_status: string;
+  trial_start_at: string | null;
+  trial_ends_at: string | null;
+  current_period_start: string | null;
+  current_period_end: string | null;
+  seat_limit: number;
+  storage_limit_mb: number;
+  work_object_limit: number;
+  project_limit: number;
+  employee_limit: number;
+  notification_limit: number | null;
+  file_upload_limit_mb: number;
+  is_trial: boolean;
+  is_active: boolean;
+  metadata: Record<string, unknown>;
+}
+
+export interface BillingUsage {
+  company_id: string;
+  active_employees: number;
+  active_projects: number;
+  active_work_objects: number;
+  uploaded_file_count: number;
+  storage_used_mb: number;
+  active_departments: number;
+  active_teams: number;
+  notifications_count: number;
+  monthly_events_count: number;
+}
+
+export interface UsageWarning {
+  code: string;
+  message: string;
+  current: number;
+  limit: number;
+  severity: "warning" | "critical";
+}
+
+export interface BillingSummary {
+  company_id: string;
+  company_name: string;
+  generated_at: string;
+  plan: CompanyBillingPlan;
+  usage: BillingUsage;
+  warnings: UsageWarning[];
+  payment_provider_enabled: boolean;
+  payment_provider_note: string;
+}
+
+export interface CompanyPlanUpdatePayload {
+  plan_key?: string | null;
+  billing_status?: string | null;
+  trial_start_at?: string | null;
+  trial_ends_at?: string | null;
+  current_period_start?: string | null;
+  current_period_end?: string | null;
+  seat_limit?: number | null;
+  storage_limit_mb?: number | null;
+  work_object_limit?: number | null;
+  project_limit?: number | null;
+  employee_limit?: number | null;
+  notification_limit?: number | null;
+  file_upload_limit_mb?: number | null;
+  is_trial?: boolean | null;
+  is_active?: boolean | null;
+  metadata?: Record<string, unknown> | null;
+}
+
 export interface Notification {
   id: string;
   company_id: string;
@@ -903,6 +1010,9 @@ export interface DashboardSummary {
 
 export interface FebGridData {
   companies: Company[];
+  auditLogs: AuditLog[];
+  billingPlans: PlanDefinition[];
+  billingSummary: BillingSummary | null;
   companySettings: CompanySettings | null;
   industryTemplates: IndustryTemplate[];
   workObjectTypes: WorkObjectTypeDefinition[];
@@ -919,4 +1029,5 @@ export interface FebGridData {
   events: Event[];
   notifications: Notification[];
   announcements: Announcement[];
+  files: Attachment[];
 }

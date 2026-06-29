@@ -1002,10 +1002,15 @@ def add_work_object_attachment(
         original_file_name=stored_file.original_file_name,
         content_type=stored_file.content_type,
         file_size=stored_file.file_size,
+        extension=stored_file.extension,
+        checksum_sha256=stored_file.checksum_sha256,
         storage_provider=stored_file.storage_provider,
         storage_path=stored_file.storage_path,
         public_url=None,
         description=description.strip() if description else None,
+        tags=[],
+        processing_status="uploaded",
+        scan_status="not_scanned",
         metadata=parse_metadata_form(metadata),
         ai_processing_status="pending",
         is_active=True,
@@ -1081,6 +1086,7 @@ def list_work_object_attachments(
             Attachment.linked_entity_type == "work_object",
             Attachment.linked_entity_id == work_object_id,
             Attachment.is_active.is_(True),
+            Attachment.is_deleted.is_(False),
         )
         .order_by(Attachment.created_at.desc())
         .limit(limit)

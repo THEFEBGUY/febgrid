@@ -487,7 +487,11 @@ class SearchService:
 
     @staticmethod
     def _files(db: Session, company_id: UUID, term: str | None, limit: int, current_user: User | None = None) -> list[SearchResult]:
-        statement = select(Attachment).where(Attachment.company_id == company_id, Attachment.is_active.is_(True))
+        statement = select(Attachment).where(
+            Attachment.company_id == company_id,
+            Attachment.is_active.is_(True),
+            Attachment.is_deleted.is_(False),
+        )
         if current_user is not None and current_user.role == "employee":
             statement = statement.where(Attachment.work_object_id.in_(_visible_work_object_ids_statement(db, company_id, current_user)))
         if term:
@@ -498,6 +502,8 @@ class SearchService:
                     Attachment.content_type,
                     Attachment.description,
                     Attachment.linked_entity_type,
+                    Attachment.extension,
+                    Attachment.checksum_sha256,
                     term=term,
                 )
             )
@@ -516,6 +522,10 @@ class SearchService:
                 href="#/work-objects" if attachment.work_object_id else "#/projects",
                 metadata={
                     "file_size": attachment.file_size,
+                    "extension": attachment.extension,
+                    "tags": attachment.tags,
+                    "processing_status": attachment.processing_status,
+                    "scan_status": attachment.scan_status,
                     "work_object_id": str(attachment.work_object_id) if attachment.work_object_id else None,
                     "project_id": str(attachment.project_id) if attachment.project_id else None,
                     "uploaded_by_employee_id": str(attachment.uploaded_by_employee_id) if attachment.uploaded_by_employee_id else None,

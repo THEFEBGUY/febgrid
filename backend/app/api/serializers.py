@@ -7,8 +7,26 @@ from app.schemas.event import EventRead
 
 def json_dict_or_empty(value: Any) -> dict[str, Any]:
     if isinstance(value, dict):
-        return value
+        return sanitize_metadata(value)
     return {}
+
+
+SENSITIVE_KEY_PARTS = ("token", "password", "secret", "action_path", "acceptance_url", "invite_link", "activation_link")
+
+
+def sanitize_metadata(value: Any) -> Any:
+    if isinstance(value, dict):
+        sanitized: dict[str, Any] = {}
+        for key, item in value.items():
+            normalized_key = str(key).lower()
+            if any(part in normalized_key for part in SENSITIVE_KEY_PARTS):
+                sanitized[key] = "[redacted]"
+            else:
+                sanitized[key] = sanitize_metadata(item)
+        return sanitized
+    if isinstance(value, list):
+        return [sanitize_metadata(item) for item in value]
+    return value
 
 
 def serialize_event(event: Event) -> EventRead:

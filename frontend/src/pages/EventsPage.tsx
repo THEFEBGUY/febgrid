@@ -7,21 +7,30 @@ import { FilterBar, FilterField } from "../components/ui/FilterBar";
 import { SelectInput, TextInput } from "../components/ui/FormControls";
 import { ModuleBoundary } from "../components/ui/ModuleBoundary";
 import { SectionPanel } from "../components/ui/SectionPanel";
-import type { Event } from "../types/api";
+import type { AuditLog, Event } from "../types/api";
 import type { ModulePageProps } from "../types/page";
 import { compactList, formatDate, formatLabel, formatTime } from "../utils/format";
 
 const auditPrefixes = [
   "auth.",
+  "billing.",
   "company.",
+  "custom_field.",
   "user.",
   "employee.",
+  "employee_account.",
+  "employee_invite.",
+  "employee_profile.",
   "department.",
   "team.",
   "project.",
   "work_object.",
+  "work_object_type.",
   "leave.",
   "file.",
+  "industry_template.",
+  "manual_employee.",
+  "notification.",
   "comment.",
   "announcement.",
 ];
@@ -78,6 +87,10 @@ function timelineBucket(event: Event): string {
   if (createdAt >= startOfToday) return "Today";
   if (createdAt >= startOfYesterday) return "Yesterday";
   return "Older";
+}
+
+function auditActor(entry: AuditLog, employeeNames: Record<string, string>): string {
+  return entry.actor_name ?? entry.actor_employee_name ?? (entry.actor_employee_id ? employeeNames[entry.actor_employee_id] : null) ?? "System";
 }
 
 export function EventsPage({ data, selectedCompany, isLoadingModules, moduleError, onRetry }: ModulePageProps): JSX.Element {
@@ -148,6 +161,7 @@ export function EventsPage({ data, selectedCompany, isLoadingModules, moduleErro
   const hasActiveFilters = Boolean(searchFilter || eventTypeFilter || targetFilter || actorFilter || projectFilter || dateFromFilter || dateToFilter || auditOnly);
 
   return (
+    <>
     <SectionPanel
       eyebrow={selectedCompany?.name ?? "Universal timeline"}
       title="Events"
@@ -295,5 +309,43 @@ export function EventsPage({ data, selectedCompany, isLoadingModules, moduleErro
         )}
       </ModuleBoundary>
     </SectionPanel>
+
+    <div className="mt-6">
+      <SectionPanel eyebrow="Audit trail" title="Strong Audit Log">
+        <ModuleBoundary
+          emptyDescription="Audit-relevant events such as billing, settings, employee, file, project, work, leave, and announcement changes will appear here."
+          emptyTitle="No audit log entries"
+          error={moduleError}
+          isEmpty={data.auditLogs.length === 0}
+          isLoading={isLoadingModules}
+          onRetry={onRetry}
+        >
+          <div className="divide-y divide-grid-100">
+            {data.auditLogs.slice(0, 50).map((entry) => (
+              <article key={entry.id} className="grid gap-3 px-5 py-4 lg:grid-cols-[1.2fr_0.7fr_0.7fr_120px] lg:items-center">
+                <div className="min-w-0">
+                  <p className="text-sm font-bold text-ink-950">{entry.title}</p>
+                  <p className="mt-1 line-clamp-2 text-sm font-medium text-ink-500">{entry.summary ?? entry.description ?? "Audit event recorded."}</p>
+                </div>
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-normal text-ink-500">Actor</p>
+                  <p className="mt-1 text-sm font-semibold text-ink-800">{auditActor(entry, employeeNames)}</p>
+                  {entry.actor_role ? <p className="text-xs font-semibold text-ink-500">{formatLabel(entry.actor_role)}</p> : null}
+                </div>
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-normal text-ink-500">Target</p>
+                  <p className="mt-1 text-sm font-semibold text-ink-800">{entry.target_label ? formatLabel(entry.target_label) : eventTarget(entry)}</p>
+                </div>
+                <div className="flex flex-col items-start gap-2 lg:items-end">
+                  <Badge label={formatLabel(entry.event_type)} tone="amber" />
+                  <span className="text-xs font-semibold text-ink-500">{formatTime(entry.created_at)}</span>
+                </div>
+              </article>
+            ))}
+          </div>
+        </ModuleBoundary>
+      </SectionPanel>
+    </div>
+    </>
   );
 }

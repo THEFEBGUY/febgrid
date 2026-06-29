@@ -1,4 +1,4 @@
-import { Archive, Pencil, Plus, Save, Wand2 } from "lucide-react";
+import { Archive, CreditCard, FileText, Pencil, Plus, RotateCcw, Save, Wand2 } from "lucide-react";
 import { type FormEvent, useEffect, useMemo, useState } from "react";
 
 import { Badge } from "../components/ui/Badge";
@@ -10,6 +10,9 @@ import { ModuleBoundary } from "../components/ui/ModuleBoundary";
 import { SectionPanel } from "../components/ui/SectionPanel";
 import { EmptyState } from "../components/ui/States";
 import type {
+  Attachment,
+  AttachmentUpdatePayload,
+  CompanyPlanUpdatePayload,
   CompanySettingsUpdatePayload,
   CustomFieldCreatePayload,
   CustomFieldDefinition,
@@ -21,18 +24,22 @@ import type {
   WorkObjectTypeUpdatePayload,
 } from "../types/api";
 import type { ModulePageProps } from "../types/page";
-import { formatDate, formatLabel } from "../utils/format";
+import { compactList, formatDate, formatLabel } from "../utils/format";
 
 interface SettingsPageProps extends ModulePageProps {
   currentUserRole: UserRole | null;
   onApplyIndustryTemplate: (templateKey: string) => Promise<void>;
+  onArchiveFile: (attachmentId: string) => Promise<void>;
   onArchiveCustomField: (fieldId: string) => Promise<void>;
   onArchiveWorkObjectType: (typeId: string) => Promise<void>;
   onCreateCustomField: (payload: Omit<CustomFieldCreatePayload, "company_id">) => Promise<void>;
   onCreateWorkObjectType: (payload: Omit<WorkObjectTypeCreatePayload, "company_id">) => Promise<void>;
   onUpdateCompanySettings: (payload: CompanySettingsUpdatePayload) => Promise<void>;
+  onUpdateCompanyPlan: (payload: CompanyPlanUpdatePayload) => Promise<void>;
   onUpdateCustomField: (fieldId: string, payload: CustomFieldUpdatePayload) => Promise<void>;
+  onUpdateFile: (attachmentId: string, payload: AttachmentUpdatePayload) => Promise<void>;
   onUpdateWorkObjectType: (typeId: string, payload: WorkObjectTypeUpdatePayload) => Promise<void>;
+  onRestoreFile: (attachmentId: string) => Promise<void>;
 }
 
 const weekDays = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
@@ -57,6 +64,11 @@ const emptyFieldForm = {
   default_value: "",
   help_text: "",
   sort_order: "100",
+};
+
+const emptyFileForm = {
+  description: "",
+  tags: "",
 };
 
 function slugify(value: string): string {
@@ -90,6 +102,11 @@ function parseDefaultValue(fieldType: CustomFieldType, value: string): unknown {
   return value;
 }
 
+function formatFileSize(value: number | null): string {
+  if (!value) return "0 MB";
+  return `${(value / (1024 * 1024)).toFixed(value > 1024 * 1024 ? 2 : 3)} MB`;
+}
+
 export function SettingsPage({
   data,
   selectedCompany,
@@ -99,13 +116,17 @@ export function SettingsPage({
   isMutating,
   currentUserRole,
   onApplyIndustryTemplate,
+  onArchiveFile,
   onArchiveCustomField,
   onArchiveWorkObjectType,
   onCreateCustomField,
   onCreateWorkObjectType,
   onUpdateCompanySettings,
+  onUpdateCompanyPlan,
   onUpdateCustomField,
+  onUpdateFile,
   onUpdateWorkObjectType,
+  onRestoreFile,
 }: SettingsPageProps): JSX.Element {
   const canManage = currentUserRole === "company_owner" || currentUserRole === "admin";
   const activeTypes = useMemo(() => data.workObjectTypes.filter((type) => type.is_active), [data.workObjectTypes]);
@@ -129,6 +150,10 @@ export function SettingsPage({
   const [isFieldModalOpen, setIsFieldModalOpen] = useState(false);
   const [editingField, setEditingField] = useState<CustomFieldDefinition | null>(null);
   const [fieldForm, setFieldForm] = useState(emptyFieldForm);
+  const [fileSearch, setFileSearch] = useState("");
+  const [fileTypeFilter, setFileTypeFilter] = useState("");
+  const [editingFile, setEditingFile] = useState<Attachment | null>(null);
+  const [fileForm, setFileForm] = useState(emptyFileForm);
   const [formError, setFormError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -165,6 +190,22 @@ export function SettingsPage({
         .sort((left, right) => left.sort_order - right.sort_order || left.label.localeCompare(right.label)),
     [data.customFields, selectedTypeKey],
   );
+  const fileTypes = useMemo(
+    () => Array.from(new Set(data.files.map((file) => file.content_type).filter(Boolean) as string[])).sort(),
+    [data.files],
+  );
+  const filteredFiles = useMemo(() => {
+    const query = fileSearch.trim().toLowerCase();
+    return data.files.filter((file) => {
+      const searchable = [file.original_file_name, file.file_name, file.description, file.content_type, file.extension, file.tags.join(" ")]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      if (query && !searchable.includes(query)) return false;
+      if (fileTypeFilter && file.content_type !== fileTypeFilter) return false;
+      return true;
+    });
+  }, [data.files, fileSearch, fileTypeFilter]);
 
   const typeColumns: DataTableColumn<WorkObjectTypeDefinition>[] = [
     {
@@ -258,6 +299,66 @@ export function SettingsPage({
     },
   ];
 
+  const fileColumns: DataTableColumn<Attachment>[] = [
+    {
+      key: "file",
+      label: "File",
+      render: (file) => (
+        <span>
+          <span className="block font-bold text-ink-950">{file.original_file_name}</span>
+          <span className="block text-xs font-semibold text-ink-500">{file.description || file.content_type || "No description"}</span>
+        </span>
+      ),
+    },
+    { key: "size", label: "Size", render: (file) => formatFileSize(file.file_size) },
+    { key: "status", label: "Pipeline", render: (file) => <Badge label={formatLabel(file.processing_status)} tone={file.is_active ? "blue" : "slate"} /> },
+    { key: "scan", label: "Scan", render: (file) => <Badge label={formatLabel(file.scan_status)} tone="slate" /> },
+    { key: "linked", label: "Linked entity", render: (file) => compactList([formatLabel(file.linked_entity_type), file.linked_entity_id.slice(0, 8)]) },
+    { key: "uploaded", label: "Uploaded", render: (file) => formatDate(file.created_at) },
+    {
+      key: "actions",
+      label: "Actions",
+      render: (file) => (
+        <div className="flex justify-end gap-2">
+          <Button
+            aria-label={`Edit ${file.original_file_name}`}
+            className="size-9 px-0"
+            disabled={!canManage}
+            icon={<Pencil className="size-4" aria-hidden="true" />}
+            title={`Edit ${file.original_file_name}`}
+            onClick={() => openFileModal(file)}
+          >
+            <span className="sr-only">Edit file</span>
+          </Button>
+          {file.is_active ? (
+            <Button
+              aria-label={`Archive ${file.original_file_name}`}
+              className="size-9 px-0"
+              disabled={!canManage || isMutating}
+              icon={<Archive className="size-4" aria-hidden="true" />}
+              title={`Archive ${file.original_file_name}`}
+              onClick={() => void onArchiveFile(file.id)}
+            >
+              <span className="sr-only">Archive file</span>
+            </Button>
+          ) : (
+            <Button
+              aria-label={`Restore ${file.original_file_name}`}
+              className="size-9 px-0"
+              disabled={!canManage || isMutating}
+              icon={<RotateCcw className="size-4" aria-hidden="true" />}
+              title={`Restore ${file.original_file_name}`}
+              onClick={() => void onRestoreFile(file.id)}
+            >
+              <span className="sr-only">Restore file</span>
+            </Button>
+          )}
+        </div>
+      ),
+      className: "text-right",
+    },
+  ];
+
   function toggleWorkDay(day: string): void {
     setSettingsForm((current) => {
       const hasDay = current.work_week.includes(day);
@@ -304,6 +405,26 @@ export function SettingsPage({
         : emptyFieldForm,
     );
     setIsFieldModalOpen(true);
+  }
+
+  function openFileModal(file: Attachment): void {
+    setEditingFile(file);
+    setFormError(null);
+    setFileForm({
+      description: file.description ?? "",
+      tags: file.tags.join(", "),
+    });
+  }
+
+  async function handlePlanChange(planKey: string): Promise<void> {
+    if (!planKey || !canManage) return;
+    setSettingsMessage(null);
+    try {
+      await onUpdateCompanyPlan({ plan_key: planKey });
+      setSettingsMessage("Local billing plan updated. Payment integration remains intentionally disabled.");
+    } catch {
+      setSettingsMessage("Billing plan could not be updated.");
+    }
   }
 
   async function handleSettingsSubmit(event: FormEvent<HTMLFormElement>): Promise<void> {
@@ -400,6 +521,21 @@ export function SettingsPage({
       setIsFieldModalOpen(false);
     } catch {
       setFormError("Custom field could not be saved.");
+    }
+  }
+
+  async function handleFileSubmit(event: FormEvent<HTMLFormElement>): Promise<void> {
+    event.preventDefault();
+    if (!editingFile) return;
+    setFormError(null);
+    try {
+      await onUpdateFile(editingFile.id, {
+        description: fileForm.description.trim() || null,
+        tags: parseOptions(fileForm.tags),
+      });
+      setEditingFile(null);
+    } catch {
+      setFormError("File metadata could not be saved.");
     }
   }
 
@@ -507,6 +643,98 @@ export function SettingsPage({
         </ModuleBoundary>
       </SectionPanel>
 
+      <div className="mt-6 grid gap-6 xl:grid-cols-[0.9fr_1.1fr]">
+        <SectionPanel
+          eyebrow="Billing preparation"
+          title="Plan and usage"
+          action={<CreditCard className="size-5 text-ink-500" aria-hidden="true" />}
+        >
+          {data.billingSummary ? (
+            <div className="space-y-5 p-5">
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                <div className="rounded-lg border border-grid-200 bg-grid-50 p-4">
+                  <p className="text-xs font-bold uppercase tracking-normal text-ink-500">Current plan</p>
+                  <p className="mt-2 text-2xl font-black text-ink-950">{formatLabel(data.billingSummary.plan.plan_key)}</p>
+                  <p className="mt-1 text-sm font-semibold text-ink-500">{formatLabel(data.billingSummary.plan.billing_status)}</p>
+                </div>
+                <div className="rounded-lg border border-grid-200 bg-grid-50 p-4">
+                  <p className="text-xs font-bold uppercase tracking-normal text-ink-500">Employees</p>
+                  <p className="mt-2 text-2xl font-black text-ink-950">
+                    {data.billingSummary.usage.active_employees}/{data.billingSummary.plan.employee_limit}
+                  </p>
+                </div>
+                <div className="rounded-lg border border-grid-200 bg-grid-50 p-4">
+                  <p className="text-xs font-bold uppercase tracking-normal text-ink-500">Work objects</p>
+                  <p className="mt-2 text-2xl font-black text-ink-950">
+                    {data.billingSummary.usage.active_work_objects}/{data.billingSummary.plan.work_object_limit}
+                  </p>
+                </div>
+                <div className="rounded-lg border border-grid-200 bg-grid-50 p-4">
+                  <p className="text-xs font-bold uppercase tracking-normal text-ink-500">Storage</p>
+                  <p className="mt-2 text-2xl font-black text-ink-950">
+                    {data.billingSummary.usage.storage_used_mb}/{data.billingSummary.plan.storage_limit_mb} MB
+                  </p>
+                </div>
+              </div>
+              <div className="grid gap-3 md:grid-cols-[1fr_1.3fr]">
+                <FieldShell label="Local/dev plan">
+                  <SelectInput disabled={!canManage || isMutating} value={data.billingSummary.plan.plan_key} onChange={(event) => void handlePlanChange(event.target.value)}>
+                    {data.billingPlans.map((plan) => (
+                      <option key={plan.key} value={plan.key}>
+                        {plan.name}
+                      </option>
+                    ))}
+                  </SelectInput>
+                </FieldShell>
+                <div className="rounded-lg border border-grid-200 bg-grid-50 px-4 py-3 text-sm font-semibold text-ink-600">
+                  {data.billingSummary.payment_provider_note} No card, bank, invoice, Stripe, or Razorpay flow exists in this foundation.
+                </div>
+              </div>
+              {data.billingSummary.warnings.length > 0 ? (
+                <div className="space-y-2">
+                  {data.billingSummary.warnings.map((warning) => (
+                    <div key={warning.code} className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800">
+                      {warning.message}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="rounded-lg border border-grid-200 bg-grid-50 px-4 py-3 text-sm font-semibold text-ink-600">Usage is within prepared plan limits.</p>
+              )}
+            </div>
+          ) : (
+            <EmptyState description="Billing preparation data will appear after the company modules load." title="No billing summary" />
+          )}
+        </SectionPanel>
+
+        <SectionPanel
+          eyebrow="File pipeline"
+          title="Company files"
+          action={<FileText className="size-5 text-ink-500" aria-hidden="true" />}
+        >
+          <div className="grid gap-3 border-b border-grid-200 p-5 md:grid-cols-[1fr_240px]">
+            <FieldShell label="Search files">
+              <TextInput placeholder="Name, description, type, tag" value={fileSearch} onChange={(event) => setFileSearch(event.target.value)} />
+            </FieldShell>
+            <FieldShell label="File type">
+              <SelectInput value={fileTypeFilter} onChange={(event) => setFileTypeFilter(event.target.value)}>
+                <option value="">All file types</option>
+                {fileTypes.map((fileType) => (
+                  <option key={fileType} value={fileType}>
+                    {fileType}
+                  </option>
+                ))}
+              </SelectInput>
+            </FieldShell>
+          </div>
+          {filteredFiles.length === 0 ? (
+            <EmptyState description="Files uploaded to permitted work objects will appear here with pipeline metadata." title="No files found" />
+          ) : (
+            <DataTable columns={fileColumns} rows={filteredFiles} getRowKey={(file) => file.id} />
+          )}
+        </SectionPanel>
+      </div>
+
       <div className="mt-6 grid gap-6 xl:grid-cols-[1fr_0.9fr]">
         <SectionPanel
           eyebrow="Work object engine"
@@ -551,6 +779,29 @@ export function SettingsPage({
           )}
         </SectionPanel>
       </div>
+
+      <Modal description="Update searchable file metadata. Storage and scan providers are intentionally not configurable here." isOpen={Boolean(editingFile)} title="Edit file metadata" onClose={() => setEditingFile(null)}>
+        <form className="space-y-4 p-5" onSubmit={handleFileSubmit}>
+          <FieldShell label="Description">
+            <TextArea value={fileForm.description} onChange={(event) => setFileForm((current) => ({ ...current, description: event.target.value }))} />
+          </FieldShell>
+          <FieldShell label="Tags">
+            <TextInput placeholder="invoice, receipt, proof" value={fileForm.tags} onChange={(event) => setFileForm((current) => ({ ...current, tags: event.target.value }))} />
+          </FieldShell>
+          {editingFile ? (
+            <div className="rounded-lg border border-grid-200 bg-grid-50 px-4 py-3 text-sm font-semibold text-ink-600">
+              {editingFile.original_file_name} / {formatFileSize(editingFile.file_size)} / {formatLabel(editingFile.processing_status)}
+            </div>
+          ) : null}
+          {formError ? <p className="text-sm font-semibold text-rose-700">{formError}</p> : null}
+          <div className="flex justify-end gap-2 border-t border-grid-200 pt-4">
+            <Button onClick={() => setEditingFile(null)}>Cancel</Button>
+            <Button disabled={isMutating} type="submit" variant="primary">
+              {isMutating ? "Saving..." : "Save file"}
+            </Button>
+          </div>
+        </form>
+      </Modal>
 
       <Modal description="Configure a company-specific work object type." isOpen={isTypeModalOpen} title={editingType ? "Edit work type" : "Add work type"} onClose={() => setIsTypeModalOpen(false)}>
         <form className="space-y-4 p-5" onSubmit={handleTypeSubmit}>

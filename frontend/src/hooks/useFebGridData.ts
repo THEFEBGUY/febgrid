@@ -4,8 +4,10 @@ import { api, ApiError } from "../services/api";
 import type {
   AnnouncementCreatePayload,
   AnnouncementUpdatePayload,
+  AttachmentUpdatePayload,
   Company,
   CompanyCreatePayload,
+  CompanyPlanUpdatePayload,
   CompanySettingsUpdatePayload,
   CustomFieldCreatePayload,
   CustomFieldUpdatePayload,
@@ -32,6 +34,9 @@ import type {
 
 const emptyData: FebGridData = {
   companies: [],
+  auditLogs: [],
+  billingPlans: [],
+  billingSummary: null,
   companySettings: null,
   industryTemplates: [],
   workObjectTypes: [],
@@ -48,6 +53,7 @@ const emptyData: FebGridData = {
   events: [],
   notifications: [],
   announcements: [],
+  files: [],
 };
 
 type ModuleDataKey = Exclude<keyof FebGridData, "companies">;
@@ -105,6 +111,10 @@ interface FebGridDataState {
   updateAnnouncement: (announcementId: string, payload: AnnouncementUpdatePayload) => Promise<void>;
   archiveAnnouncement: (announcementId: string) => Promise<void>;
   updateCompanySettings: (payload: CompanySettingsUpdatePayload) => Promise<void>;
+  updateCompanyPlan: (payload: CompanyPlanUpdatePayload) => Promise<void>;
+  updateFile: (attachmentId: string, payload: AttachmentUpdatePayload) => Promise<void>;
+  archiveFile: (attachmentId: string) => Promise<void>;
+  restoreFile: (attachmentId: string) => Promise<void>;
   applyIndustryTemplate: (templateKey: string) => Promise<void>;
   createWorkObjectType: (payload: Omit<WorkObjectTypeCreatePayload, "company_id">) => Promise<void>;
   updateWorkObjectType: (typeId: string, payload: WorkObjectTypeUpdatePayload) => Promise<void>;
@@ -286,6 +296,8 @@ export function useFebGridData({ enabled = true, role = null }: UseFebGridDataOp
 
     const [
       companySettings,
+      billingPlans,
+      billingSummary,
       industryTemplates,
       workObjectTypes,
       customFields,
@@ -298,10 +310,14 @@ export function useFebGridData({ enabled = true, role = null }: UseFebGridDataOp
       workObjects,
       leaves,
       events,
+      auditLogs,
       notifications,
       announcements,
+      files,
     ] = await Promise.allSettled([
       api.companySettings(selectedCompanyId),
+      api.billingPlans(),
+      api.billingSummary(selectedCompanyId),
       api.industryTemplates(),
       api.workObjectTypes(selectedCompanyId, true),
       api.customFields(selectedCompanyId, undefined, true),
@@ -314,8 +330,10 @@ export function useFebGridData({ enabled = true, role = null }: UseFebGridDataOp
       api.workObjects(selectedCompanyId),
       api.leaves(selectedCompanyId),
       api.events(selectedCompanyId),
+      api.auditLogs(selectedCompanyId),
       api.notifications(selectedCompanyId),
       api.announcements(selectedCompanyId),
+      api.files(selectedCompanyId),
     ]);
 
     const nextData: Partial<FebGridData> = {};
@@ -323,6 +341,12 @@ export function useFebGridData({ enabled = true, role = null }: UseFebGridDataOp
 
     if (companySettings.status === "fulfilled") nextData.companySettings = companySettings.value;
     else nextErrors.companySettings = getErrorMessage(companySettings.reason);
+
+    if (billingPlans.status === "fulfilled") nextData.billingPlans = billingPlans.value;
+    else nextErrors.billingPlans = getErrorMessage(billingPlans.reason);
+
+    if (billingSummary.status === "fulfilled") nextData.billingSummary = billingSummary.value;
+    else nextErrors.billingSummary = getErrorMessage(billingSummary.reason);
 
     if (industryTemplates.status === "fulfilled") nextData.industryTemplates = industryTemplates.value;
     else nextErrors.industryTemplates = getErrorMessage(industryTemplates.reason);
@@ -360,11 +384,17 @@ export function useFebGridData({ enabled = true, role = null }: UseFebGridDataOp
     if (events.status === "fulfilled") nextData.events = events.value;
     else nextErrors.events = getErrorMessage(events.reason);
 
+    if (auditLogs.status === "fulfilled") nextData.auditLogs = auditLogs.value;
+    else nextErrors.auditLogs = getErrorMessage(auditLogs.reason);
+
     if (notifications.status === "fulfilled") nextData.notifications = notifications.value;
     else nextErrors.notifications = getErrorMessage(notifications.reason);
 
     if (announcements.status === "fulfilled") nextData.announcements = announcements.value;
     else nextErrors.announcements = getErrorMessage(announcements.reason);
+
+    if (files.status === "fulfilled") nextData.files = files.value;
+    else nextErrors.files = getErrorMessage(files.reason);
 
     if (moduleRequestIdRef.current !== requestId) return;
 
@@ -735,6 +765,38 @@ export function useFebGridData({ enabled = true, role = null }: UseFebGridDataOp
     });
   }
 
+  async function updateCompanyPlan(payload: CompanyPlanUpdatePayload): Promise<void> {
+    if (!selectedCompanyId) return;
+    await runMutation(async () => {
+      await api.updateCompanyPlan(selectedCompanyId, payload);
+      await refreshModules();
+    });
+  }
+
+  async function updateFile(attachmentId: string, payload: AttachmentUpdatePayload): Promise<void> {
+    if (!selectedCompanyId) return;
+    await runMutation(async () => {
+      await api.updateFile(attachmentId, selectedCompanyId, payload);
+      await refreshModules();
+    });
+  }
+
+  async function archiveFile(attachmentId: string): Promise<void> {
+    if (!selectedCompanyId) return;
+    await runMutation(async () => {
+      await api.archiveFile(attachmentId, selectedCompanyId);
+      await refreshModules();
+    });
+  }
+
+  async function restoreFile(attachmentId: string): Promise<void> {
+    if (!selectedCompanyId) return;
+    await runMutation(async () => {
+      await api.restoreFile(attachmentId, selectedCompanyId);
+      await refreshModules();
+    });
+  }
+
   async function applyIndustryTemplate(templateKey: string): Promise<void> {
     if (!selectedCompanyId) return;
     await runMutation(async () => {
@@ -843,6 +905,10 @@ export function useFebGridData({ enabled = true, role = null }: UseFebGridDataOp
     updateAnnouncement,
     archiveAnnouncement,
     updateCompanySettings,
+    updateCompanyPlan,
+    updateFile,
+    archiveFile,
+    restoreFile,
     applyIndustryTemplate,
     createWorkObjectType,
     updateWorkObjectType,

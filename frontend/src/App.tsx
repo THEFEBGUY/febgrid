@@ -209,7 +209,7 @@ export function App(): JSX.Element {
           />
         );
       case "events":
-        return <EventsPage {...withModuleError(febGrid.moduleErrors.events ?? null)} />;
+        return <EventsPage {...withModuleError(febGrid.moduleErrors.events ?? febGrid.moduleErrors.auditLogs ?? null)} />;
       case "announcements":
         return (
           <AnnouncementsPage
@@ -236,6 +236,9 @@ export function App(): JSX.Element {
           <SettingsPage
             {...withModuleError(
               febGrid.moduleErrors.companySettings ??
+                febGrid.moduleErrors.billingPlans ??
+                febGrid.moduleErrors.billingSummary ??
+                febGrid.moduleErrors.files ??
                 febGrid.moduleErrors.industryTemplates ??
                 febGrid.moduleErrors.workObjectTypes ??
                 febGrid.moduleErrors.customFields ??
@@ -243,13 +246,17 @@ export function App(): JSX.Element {
             )}
             currentUserRole={auth.user?.role ?? null}
             onApplyIndustryTemplate={febGrid.applyIndustryTemplate}
+            onArchiveFile={febGrid.archiveFile}
             onArchiveCustomField={febGrid.archiveCustomField}
             onArchiveWorkObjectType={febGrid.archiveWorkObjectType}
             onCreateCustomField={febGrid.createCustomField}
             onCreateWorkObjectType={febGrid.createWorkObjectType}
             onUpdateCompanySettings={febGrid.updateCompanySettings}
+            onUpdateCompanyPlan={febGrid.updateCompanyPlan}
             onUpdateCustomField={febGrid.updateCustomField}
+            onUpdateFile={febGrid.updateFile}
             onUpdateWorkObjectType={febGrid.updateWorkObjectType}
+            onRestoreFile={febGrid.restoreFile}
           />
         );
       case "dashboard":

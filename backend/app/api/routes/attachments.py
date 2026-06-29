@@ -1,8 +1,9 @@
+from datetime import datetime, timezone
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from fastapi.responses import FileResponse
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import db_session, get_optional_current_user
@@ -56,6 +57,29 @@ def ensure_work_object_visible(db: Session, current_user: User | None, work_obje
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Work object not found")
 
 
+def attachment_visibility_conditions(db: Session, current_user: User | None, company_id: UUID) -> list[object]:
+    if current_user is None or current_user.role in MANAGER_ROLES:
+        return []
+    linked_employee = get_linked_employee(db, current_user)
+    visible_work_conditions = [WorkObject.creator_user_id == current_user.id]
+    conditions: list[object] = [Attachment.uploaded_by_user_id == current_user.id]
+    if linked_employee is not None:
+        visible_work_conditions.extend(
+            [
+                WorkObject.assignee_employee_id == linked_employee.id,
+                WorkObject.creator_employee_id == linked_employee.id,
+            ]
+        )
+        conditions.append(Attachment.uploaded_by_employee_id == linked_employee.id)
+    visible_work_ids = select(WorkObject.id).where(
+        WorkObject.company_id == company_id,
+        WorkObject.is_active.is_(True),
+        or_(*visible_work_conditions),
+    )
+    conditions.append(Attachment.work_object_id.in_(visible_work_ids))
+    return conditions
+
+
 def validate_attachment_refs(
     db: Session,
     *,
@@ -95,6 +119,9 @@ def record_file_event(
         "project_id": str(attachment.project_id) if attachment.project_id else None,
         "content_type": attachment.content_type,
         "file_size": attachment.file_size,
+        "extension": attachment.extension,
+        "processing_status": attachment.processing_status,
+        "scan_status": attachment.scan_status,
     }
     if current_user is not None:
         event_metadata["actor_user_id"] = str(current_user.id)
@@ -127,7 +154,7 @@ def get_attachment_for_user(
     ensure_company_access(current_user, company_id)
     attachment = get_or_404(db, Attachment, attachment_id, label="Attachment")
     ensure_company(attachment, company_id, label="Attachment")
-    if not include_inactive and not attachment.is_active:
+    if not include_inactive and (not attachment.is_active or attachment.is_deleted):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Attachment not found")
     if attachment.work_object_id is not None:
         work_object = get_or_404(db, WorkObject, attachment.work_object_id, label="Work object")
@@ -182,6 +209,12 @@ def list_attachments(
     linked_entity_type: str | None = None,
     linked_entity_id: UUID | None = None,
     include_inactive: bool = False,
+    include_deleted: bool = False,
+    q: str | None = Query(default=None, max_length=200),
+    content_type: str | None = None,
+    uploaded_by_employee_id: UUID | None = None,
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
 ) -> list[Attachment]:
@@ -189,6 +222,11 @@ def list_attachments(
     statement = select(Attachment).where(Attachment.company_id == company_id)
     if not include_inactive:
         statement = statement.where(Attachment.is_active.is_(True))
+    if not include_deleted:
+        statement = statement.where(Attachment.is_deleted.is_(False))
+    visibility_conditions = attachment_visibility_conditions(db, current_user, company_id)
+    if visibility_conditions:
+        statement = statement.where(or_(*visibility_conditions))
     if work_object_id:
         work_object = get_or_404(db, WorkObject, work_object_id, label="Work object")
         ensure_company(work_object, company_id, label="Work object")
@@ -200,6 +238,25 @@ def list_attachments(
         statement = statement.where(Attachment.linked_entity_type == linked_entity_type)
     if linked_entity_id:
         statement = statement.where(Attachment.linked_entity_id == linked_entity_id)
+    if q:
+        term = f"%{q.strip()}%"
+        statement = statement.where(
+            or_(
+                Attachment.file_name.ilike(term),
+                Attachment.original_file_name.ilike(term),
+                Attachment.description.ilike(term),
+                Attachment.content_type.ilike(term),
+                Attachment.extension.ilike(term),
+            )
+        )
+    if content_type:
+        statement = statement.where(Attachment.content_type == content_type)
+    if uploaded_by_employee_id:
+        statement = statement.where(Attachment.uploaded_by_employee_id == uploaded_by_employee_id)
+    if date_from:
+        statement = statement.where(Attachment.created_at >= date_from)
+    if date_to:
+        statement = statement.where(Attachment.created_at <= date_to)
     statement = statement.order_by(Attachment.created_at.desc()).limit(limit).offset(offset)
     return list(db.scalars(statement).all())
 
@@ -248,6 +305,15 @@ def update_attachment(
     if "description" in data:
         attachment.description = data["description"]
         changed.append("description")
+    if "tags" in data:
+        attachment.tags = data["tags"] or []
+        changed.append("tags")
+    if "processing_status" in data and data["processing_status"]:
+        attachment.processing_status = data["processing_status"]
+        changed.append("processing_status")
+    if "scan_status" in data and data["scan_status"]:
+        attachment.scan_status = data["scan_status"]
+        changed.append("scan_status")
     if "metadata" in data:
         attachment.metadata_json = data["metadata"] or {}
         changed.append("metadata")
@@ -288,6 +354,8 @@ def delete_attachment(
     attachment = get_attachment_for_user(db, current_user, attachment_id=attachment_id, company_id=company_id)
     ensure_role(current_user, MANAGER_ROLES)
     attachment.is_active = False
+    attachment.is_deleted = True
+    attachment.deleted_at = datetime.now(timezone.utc)
     record_file_event(
         db,
         attachment=attachment,
@@ -316,12 +384,38 @@ def list_files(
     company_id: UUID,
     db: Session = Depends(db_session),
     current_user: User | None = Depends(get_optional_current_user),
+    entity_type: str | None = None,
+    entity_id: UUID | None = None,
     linked_entity_type: str | None = None,
     linked_entity_id: UUID | None = None,
+    q: str | None = Query(default=None, max_length=200),
+    content_type: str | None = None,
+    uploaded_by: UUID | None = None,
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
+    include_archived: bool = False,
+    include_deleted: bool = False,
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
 ) -> list[Attachment]:
-    return list_attachments(company_id, db, current_user, None, None, linked_entity_type, linked_entity_id, False, limit, offset)
+    return list_attachments(
+        company_id,
+        db,
+        current_user,
+        None,
+        None,
+        linked_entity_type or entity_type,
+        linked_entity_id or entity_id,
+        include_archived,
+        include_deleted,
+        q,
+        content_type,
+        uploaded_by,
+        date_from,
+        date_to,
+        limit,
+        offset,
+    )
 
 
 @files_router.get("/{attachment_id}", response_model=AttachmentRead)
@@ -332,3 +426,65 @@ def get_file(
     current_user: User | None = Depends(get_optional_current_user),
 ) -> Attachment:
     return get_attachment(attachment_id, company_id, db, current_user)
+
+
+@files_router.patch("/{attachment_id}", response_model=AttachmentRead)
+def update_file(
+    attachment_id: UUID,
+    company_id: UUID,
+    payload: AttachmentUpdate,
+    db: Session = Depends(db_session),
+    current_user: User | None = Depends(get_optional_current_user),
+) -> Attachment:
+    return update_attachment(attachment_id, company_id, payload, db, current_user)
+
+
+@files_router.post("/{attachment_id}/archive", response_model=AttachmentRead)
+def archive_file(
+    attachment_id: UUID,
+    company_id: UUID,
+    db: Session = Depends(db_session),
+    current_user: User | None = Depends(get_optional_current_user),
+) -> Attachment:
+    attachment = get_attachment_for_user(db, current_user, attachment_id=attachment_id, company_id=company_id)
+    ensure_role(current_user, MANAGER_ROLES)
+    attachment.is_active = False
+    attachment.is_deleted = False
+    attachment.archived_at = datetime.now(timezone.utc)
+    record_file_event(
+        db,
+        attachment=attachment,
+        current_user=current_user,
+        event_type="file.archived",
+        title=f"{attachment.original_file_name} archived",
+        description="File was archived.",
+    )
+    db.commit()
+    db.refresh(attachment)
+    return attachment
+
+
+@files_router.post("/{attachment_id}/restore", response_model=AttachmentRead)
+def restore_file(
+    attachment_id: UUID,
+    company_id: UUID,
+    db: Session = Depends(db_session),
+    current_user: User | None = Depends(get_optional_current_user),
+) -> Attachment:
+    attachment = get_attachment_for_user(db, current_user, attachment_id=attachment_id, company_id=company_id, include_inactive=True)
+    ensure_role(current_user, MANAGER_ROLES)
+    attachment.is_active = True
+    attachment.is_deleted = False
+    attachment.archived_at = None
+    attachment.deleted_at = None
+    record_file_event(
+        db,
+        attachment=attachment,
+        current_user=current_user,
+        event_type="file.restored",
+        title=f"{attachment.original_file_name} restored",
+        description="File was restored.",
+    )
+    db.commit()
+    db.refresh(attachment)
+    return attachment
