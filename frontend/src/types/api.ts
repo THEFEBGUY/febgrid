@@ -645,7 +645,10 @@ export type AIJobType =
   | "project_summary_mock"
   | "employee_workload_mock"
   | "file_summary_mock"
-  | "company_brief_mock";
+  | "company_brief_mock"
+  | "work_object_summary_safe"
+  | "project_summary_safe"
+  | "company_brief_safe";
 
 export interface AIJob extends Timestamped {
   id: string;
@@ -661,7 +664,7 @@ export interface AIJob extends Timestamped {
   output_payload: Record<string, unknown>;
   error_message: string | null;
   provider_key: string;
-  provider_mode: "mock" | "disabled" | "future_external" | string;
+  provider_mode: AIProviderMode | string;
   attempts: number;
   max_attempts: number;
   scheduled_at: string | null;
@@ -674,7 +677,7 @@ export interface AIJob extends Timestamped {
 
 export interface AIJobCreatePayload {
   company_id: string;
-  job_type: AIJobType;
+  job_type: AIJobType | string;
   priority?: "low" | "normal" | "high" | "urgent";
   input_entity_type?: string | null;
   input_entity_id?: string | null;
@@ -694,11 +697,47 @@ export interface AICapability {
 export interface AICapabilities {
   company_id: string;
   provider_key: string;
-  provider_mode: "mock" | "disabled" | "future_external";
+  provider_mode: AIProviderMode | string;
   real_ai_connected: boolean;
   external_calls_enabled: boolean;
   capabilities: AICapability[];
   message: string;
+}
+
+export type AIProviderMode = "disabled" | "mock" | "groq" | "openai_future" | "custom_openai_compatible_future";
+
+export interface AIProviderStatus {
+  company_id: string;
+  provider_key: string;
+  provider_mode: AIProviderMode | string;
+  configured: boolean;
+  model_name: string | null;
+  external_processing_enabled: boolean;
+  external_processing_allowed: boolean;
+  ai_enabled: boolean;
+  real_ai_connected: boolean;
+  supported_real_job_types: string[];
+  supported_mock_job_types: string[];
+  message: string;
+}
+
+export interface AISafetySettings {
+  company_id: string;
+  ai_enabled: boolean;
+  external_ai_processing_allowed: boolean;
+  default_provider_mode: AIProviderMode | string;
+  allowed_ai_job_types: string[];
+  max_monthly_ai_jobs: number | null;
+  metadata: Record<string, unknown>;
+}
+
+export interface AISafetySettingsUpdatePayload {
+  ai_enabled?: boolean;
+  external_ai_processing_allowed?: boolean;
+  default_provider_mode?: AIProviderMode | string;
+  allowed_ai_job_types?: string[];
+  max_monthly_ai_jobs?: number | null;
+  metadata?: Record<string, unknown>;
 }
 
 export interface CommentMention {
@@ -1073,6 +1112,8 @@ export interface DashboardSummary {
 export interface FebGridData {
   companies: Company[];
   aiCapabilities: AICapabilities | null;
+  aiProviderStatus: AIProviderStatus | null;
+  aiSafetySettings: AISafetySettings | null;
   aiJobs: AIJob[];
   auditLogs: AuditLog[];
   billingPlans: PlanDefinition[];

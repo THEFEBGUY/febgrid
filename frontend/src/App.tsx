@@ -240,6 +240,8 @@ export function App(): JSX.Element {
                 febGrid.moduleErrors.billingSummary ??
                 febGrid.moduleErrors.files ??
                 febGrid.moduleErrors.aiCapabilities ??
+                febGrid.moduleErrors.aiProviderStatus ??
+                febGrid.moduleErrors.aiSafetySettings ??
                 febGrid.moduleErrors.aiJobs ??
                 febGrid.moduleErrors.industryTemplates ??
                 febGrid.moduleErrors.workObjectTypes ??
@@ -256,6 +258,7 @@ export function App(): JSX.Element {
             onCreateCustomField={febGrid.createCustomField}
             onCreateWorkObjectType={febGrid.createWorkObjectType}
             onRunAIJob={febGrid.runAIJob}
+            onUpdateAISafetySettings={febGrid.updateAISafetySettings}
             onUpdateCompanySettings={febGrid.updateCompanySettings}
             onUpdateCompanyPlan={febGrid.updateCompanyPlan}
             onUpdateCustomField={febGrid.updateCustomField}

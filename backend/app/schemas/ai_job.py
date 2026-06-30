@@ -6,17 +6,23 @@ from pydantic import AliasChoices, Field, field_validator, model_validator
 
 from app.schemas.common import FebGridModel, Timestamped
 
-AI_JOB_TYPES = {
+MOCK_AI_JOB_TYPES = {
     "work_object_summary_mock",
     "project_summary_mock",
     "employee_workload_mock",
     "file_summary_mock",
     "company_brief_mock",
 }
+REAL_AI_JOB_TYPES = {
+    "work_object_summary_safe",
+    "project_summary_safe",
+    "company_brief_safe",
+}
+AI_JOB_TYPES = MOCK_AI_JOB_TYPES | REAL_AI_JOB_TYPES
 AI_JOB_STATUSES = {"queued", "running", "succeeded", "failed", "cancelled", "skipped"}
 AI_JOB_PRIORITIES = {"low", "normal", "high", "urgent"}
 
-ProviderMode = Literal["mock", "disabled", "future_external"]
+ProviderMode = Literal["disabled", "mock", "groq", "openai_future", "custom_openai_compatible_future"]
 
 
 def ensure_dict(value: Any) -> dict[str, Any]:
@@ -108,8 +114,76 @@ class AICapability(FebGridModel):
 class AICapabilitiesRead(FebGridModel):
     company_id: UUID
     provider_key: str = "mock"
-    provider_mode: ProviderMode = "mock"
+    provider_mode: ProviderMode | str = "mock"
     real_ai_connected: bool = False
     external_calls_enabled: bool = False
     capabilities: list[AICapability]
     message: str
+
+
+class AIProviderStatusRead(FebGridModel):
+    company_id: UUID
+    provider_key: str
+    provider_mode: ProviderMode | str
+    configured: bool
+    model_name: str | None = None
+    external_processing_enabled: bool
+    external_processing_allowed: bool
+    ai_enabled: bool
+    real_ai_connected: bool
+    supported_real_job_types: list[str] = Field(default_factory=list)
+    supported_mock_job_types: list[str] = Field(default_factory=list)
+    message: str
+
+
+class AISafetySettingsRead(FebGridModel):
+    company_id: UUID
+    ai_enabled: bool
+    external_ai_processing_allowed: bool
+    default_provider_mode: ProviderMode | str
+    allowed_ai_job_types: list[str] = Field(default_factory=list)
+    max_monthly_ai_jobs: int | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("metadata", mode="before")
+    @classmethod
+    def ensure_settings_metadata_dict(cls, value: Any) -> dict[str, Any]:
+        return ensure_dict(value)
+
+
+class AISafetySettingsUpdate(FebGridModel):
+    ai_enabled: bool | None = None
+    external_ai_processing_allowed: bool | None = None
+    default_provider_mode: ProviderMode | str | None = None
+    allowed_ai_job_types: list[str] | None = None
+    max_monthly_ai_jobs: int | None = Field(default=None, ge=1, le=100_000)
+    metadata: dict[str, Any] | None = None
+
+    @field_validator("default_provider_mode")
+    @classmethod
+    def validate_provider_mode(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip().lower()
+        valid_modes = {"disabled", "mock", "groq", "openai_future", "custom_openai_compatible_future"}
+        if normalized not in valid_modes:
+            raise ValueError("Invalid AI provider mode")
+        return normalized
+
+    @field_validator("allowed_ai_job_types")
+    @classmethod
+    def validate_allowed_job_types(cls, value: list[str] | None) -> list[str] | None:
+        if value is None:
+            return None
+        normalized = sorted({item.strip() for item in value if item.strip()})
+        invalid = [item for item in normalized if item not in AI_JOB_TYPES]
+        if invalid:
+            raise ValueError("Invalid AI job type in allowlist")
+        return normalized
+
+    @field_validator("metadata", mode="before")
+    @classmethod
+    def ensure_update_metadata_dict(cls, value: Any) -> dict[str, Any] | None:
+        if value is None:
+            return None
+        return ensure_dict(value)

@@ -14,6 +14,15 @@ class Settings(BaseSettings):
     )
     cors_origins: str = Field(default="http://localhost:5173", validation_alias="CORS_ORIGINS")
     ai_provider: str = Field(default="mock", validation_alias="AI_PROVIDER")
+    ai_provider_mode: str = Field(default="mock", validation_alias="AI_PROVIDER_MODE")
+    ai_external_processing_enabled: bool = Field(default=False, validation_alias="AI_EXTERNAL_PROCESSING_ENABLED")
+    groq_api_key: SecretStr | None = Field(default=None, validation_alias="GROQ_API_KEY")
+    groq_model: str = Field(default="llama-3.3-70b-versatile", validation_alias="GROQ_MODEL")
+    groq_base_url: str = Field(default="https://api.groq.com/openai/v1", validation_alias="GROQ_BASE_URL")
+    groq_timeout_seconds: int = Field(default=30, validation_alias="GROQ_TIMEOUT_SECONDS")
+    groq_max_input_chars: int = Field(default=12_000, validation_alias="GROQ_MAX_INPUT_CHARS")
+    ai_default_temperature: float = Field(default=0.2, validation_alias="AI_DEFAULT_TEMPERATURE")
+    ai_default_max_tokens: int = Field(default=800, validation_alias="AI_DEFAULT_MAX_TOKENS")
     jwt_secret_key: SecretStr | None = Field(default=None, validation_alias="JWT_SECRET_KEY")
 
     model_config = SettingsConfigDict(

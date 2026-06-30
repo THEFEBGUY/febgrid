@@ -7,7 +7,7 @@ from app.api.deps import db_session, get_current_user
 from app.core.permissions import ensure_company_access
 from app.models.ai_job import AIJob
 from app.models.user import User
-from app.schemas.ai_job import AICapabilitiesRead, AIJobCreate, AIJobRead
+from app.schemas.ai_job import AICapabilitiesRead, AIJobCreate, AIJobRead, AIProviderStatusRead, AISafetySettingsRead, AISafetySettingsUpdate
 from app.services.ai_service import ai_service
 
 router = APIRouter(prefix="/ai", tags=["ai"])
@@ -36,10 +36,41 @@ def list_jobs_for_company(
 @router.get("/capabilities", response_model=AICapabilitiesRead)
 def get_ai_capabilities(
     company_id: UUID,
+    db: Session = Depends(db_session),
     current_user: User = Depends(get_current_user),
 ) -> AICapabilitiesRead:
     ensure_company_access(current_user, company_id)
-    return ai_service.capabilities(company_id=company_id)
+    return ai_service.capabilities(db, company_id=company_id, current_user=current_user)
+
+
+@router.get("/provider-status", response_model=AIProviderStatusRead)
+def get_ai_provider_status(
+    company_id: UUID,
+    db: Session = Depends(db_session),
+    current_user: User = Depends(get_current_user),
+) -> AIProviderStatusRead:
+    return ai_service.provider_status(db, company_id=company_id, current_user=current_user)
+
+
+@router.get("/safety-settings", response_model=AISafetySettingsRead)
+def get_ai_safety_settings(
+    company_id: UUID,
+    db: Session = Depends(db_session),
+    current_user: User = Depends(get_current_user),
+) -> AISafetySettingsRead:
+    return ai_service.safety_settings(db, company_id=company_id, current_user=current_user)
+
+
+@router.put("/safety-settings", response_model=AISafetySettingsRead)
+def update_ai_safety_settings(
+    company_id: UUID,
+    payload: AISafetySettingsUpdate,
+    db: Session = Depends(db_session),
+    current_user: User = Depends(get_current_user),
+) -> AISafetySettingsRead:
+    settings = ai_service.update_safety_settings(db, company_id=company_id, payload=payload, current_user=current_user)
+    db.commit()
+    return settings
 
 
 @router.get("/jobs", response_model=list[AIJobRead])

@@ -1,4 +1,4 @@
-import { Archive, Bot, CreditCard, FileText, Pencil, Play, Plus, RotateCcw, Save, XCircle, Wand2 } from "lucide-react";
+import { Archive, Bot, CreditCard, FileText, Pencil, Play, Plus, RotateCcw, Save, ShieldAlert, XCircle, Wand2 } from "lucide-react";
 import { type FormEvent, useEffect, useMemo, useState } from "react";
 
 import { MagicBentoCard } from "../components/premium/MagicBento";
@@ -15,6 +15,7 @@ import type {
   AttachmentUpdatePayload,
   AIJob,
   AIJobCreatePayload,
+  AISafetySettingsUpdatePayload,
   CompanyPlanUpdatePayload,
   CompanySettingsUpdatePayload,
   CustomFieldCreatePayload,
@@ -40,6 +41,7 @@ interface SettingsPageProps extends ModulePageProps {
   onCreateCustomField: (payload: Omit<CustomFieldCreatePayload, "company_id">) => Promise<void>;
   onCreateWorkObjectType: (payload: Omit<WorkObjectTypeCreatePayload, "company_id">) => Promise<void>;
   onRunAIJob: (jobId: string) => Promise<void>;
+  onUpdateAISafetySettings: (payload: AISafetySettingsUpdatePayload) => Promise<void>;
   onUpdateCompanySettings: (payload: CompanySettingsUpdatePayload) => Promise<void>;
   onUpdateCompanyPlan: (payload: CompanyPlanUpdatePayload) => Promise<void>;
   onUpdateCustomField: (fieldId: string, payload: CustomFieldUpdatePayload) => Promise<void>;
@@ -145,6 +147,7 @@ export function SettingsPage({
   onCreateCustomField,
   onCreateWorkObjectType,
   onRunAIJob,
+  onUpdateAISafetySettings,
   onUpdateCompanySettings,
   onUpdateCompanyPlan,
   onUpdateCustomField,
@@ -179,6 +182,7 @@ export function SettingsPage({
   const [editingFile, setEditingFile] = useState<Attachment | null>(null);
   const [fileForm, setFileForm] = useState(emptyFileForm);
   const [formError, setFormError] = useState<string | null>(null);
+  const [isExternalAIWarningOpen, setIsExternalAIWarningOpen] = useState(false);
 
   useEffect(() => {
     const settings = data.companySettings;
@@ -627,6 +631,67 @@ export function SettingsPage({
     }
   }
 
+  async function handleCreateSafeGroqJob(): Promise<void> {
+    if (!canManage || !selectedCompany) return;
+    setSettingsMessage(null);
+    try {
+      await onCreateAIJob({
+        job_type: "company_brief_safe",
+        priority: "normal",
+        input_entity_type: "company",
+        input_entity_id: selectedCompany.id,
+        input_payload: { source: "settings_groq_safe_test" },
+        metadata: { safe_text_only: true },
+      });
+      setSettingsMessage("Safe Groq-ready AI job queued. Run it from the AI jobs table.");
+    } catch {
+      setSettingsMessage("Safe Groq-ready AI job could not be queued.");
+    }
+  }
+
+  async function handleToggleAIEnabled(nextValue: boolean): Promise<void> {
+    if (!canManage) return;
+    setSettingsMessage(null);
+    try {
+      await onUpdateAISafetySettings({ ai_enabled: nextValue });
+      setSettingsMessage(nextValue ? "AI foundation enabled for this company." : "AI foundation disabled for this company.");
+    } catch {
+      setSettingsMessage("AI safety setting could not be updated.");
+    }
+  }
+
+  async function confirmEnableExternalAI(): Promise<void> {
+    if (!canManage) return;
+    setSettingsMessage(null);
+    try {
+      await onUpdateAISafetySettings({ external_ai_processing_allowed: true });
+      setSettingsMessage("External AI processing is now explicitly allowed for this company.");
+      setIsExternalAIWarningOpen(false);
+    } catch {
+      setSettingsMessage("External AI processing could not be enabled.");
+    }
+  }
+
+  async function disableExternalAI(): Promise<void> {
+    if (!canManage) return;
+    setSettingsMessage(null);
+    try {
+      await onUpdateAISafetySettings({ external_ai_processing_allowed: false });
+      setSettingsMessage("External AI processing is disabled for this company.");
+    } catch {
+      setSettingsMessage("External AI processing could not be disabled.");
+    }
+  }
+
+  const aiProviderStatus = data.aiProviderStatus;
+  const aiSafetySettings = data.aiSafetySettings;
+  const displayedProviderMode = aiProviderStatus?.provider_mode ?? data.aiCapabilities?.provider_mode ?? "mock";
+  const displayedModelName = aiProviderStatus?.model_name ?? (displayedProviderMode === "mock" ? "mock-deterministic" : "Not configured");
+  const groqConfigured = displayedProviderMode === "groq" && Boolean(aiProviderStatus?.configured);
+  const externalProcessingAllowed = Boolean(aiSafetySettings?.external_ai_processing_allowed ?? aiProviderStatus?.external_processing_allowed);
+  const aiEnabled = Boolean(aiSafetySettings?.ai_enabled ?? aiProviderStatus?.ai_enabled ?? true);
+  const canCreateSafeGroqJob = Boolean(canManage && selectedCompany && aiEnabled && displayedProviderMode === "groq" && groqConfigured && externalProcessingAllowed);
+
   return (
     <>
       <SectionPanel
@@ -825,36 +890,97 @@ export function SettingsPage({
 
       <SectionPanel
         eyebrow="AI foundation"
-        title="Mock provider and job lifecycle"
+        title="Provider-safe AI jobs"
         className="mt-6"
         action={
-          <Button disabled={!canManage || !selectedCompany || isMutating} icon={<Bot className="size-4" aria-hidden="true" />} onClick={() => void handleCreateMockAIJob()}>
-            Create mock job
-          </Button>
+          <div className="flex flex-wrap justify-end gap-2">
+            <Button disabled={!canManage || !selectedCompany || isMutating} icon={<Bot className="size-4" aria-hidden="true" />} onClick={() => void handleCreateMockAIJob()}>
+              Create mock job
+            </Button>
+            <Button
+              disabled={!canCreateSafeGroqJob || isMutating}
+              icon={<Wand2 className="size-4" aria-hidden="true" />}
+              title={canCreateSafeGroqJob ? "Create safe Groq test job" : "Enable Groq configuration and external processing first"}
+              onClick={() => void handleCreateSafeGroqJob()}
+            >
+              Create Groq test
+            </Button>
+          </div>
         }
       >
         <div className="space-y-5 p-5">
           <div className="grid gap-3 lg:grid-cols-[0.9fr_1.1fr]">
             <MagicBentoCard className="p-4" tone="teal">
               <p className="text-xs font-black uppercase tracking-normal text-ink-500">Provider mode</p>
-              <p className="mt-2 text-2xl font-black text-ink-950">{formatLabel(data.aiCapabilities?.provider_mode ?? "mock")}</p>
-              <p className="mt-1 text-sm font-semibold text-ink-500">Mock AI foundation only. Real AI is not connected.</p>
+              <p className="mt-2 text-2xl font-black text-ink-950">{formatLabel(displayedProviderMode)}</p>
+              <p className="mt-1 text-sm font-semibold text-ink-500">
+                {aiProviderStatus?.message ?? "AI provider status loads after company modules finish."}
+              </p>
             </MagicBentoCard>
             <div className="febgrid-muted-surface rounded-lg p-4">
+              <p className="text-sm font-bold text-ink-950">Provider safety</p>
+              <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                <div className="rounded-lg border border-grid-200 bg-white/70 p-3">
+                  <p className="text-xs font-black uppercase text-ink-500">Model</p>
+                  <p className="mt-1 truncate text-sm font-black text-ink-950">{displayedModelName}</p>
+                </div>
+                <div className="rounded-lg border border-grid-200 bg-white/70 p-3">
+                  <p className="text-xs font-black uppercase text-ink-500">Configured</p>
+                  <Badge label={aiProviderStatus?.configured ? "Ready" : "Not configured"} tone={aiProviderStatus?.configured ? "green" : "amber"} />
+                </div>
+                <div className="rounded-lg border border-grid-200 bg-white/70 p-3">
+                  <p className="text-xs font-black uppercase text-ink-500">AI enabled</p>
+                  <Badge label={aiEnabled ? "Enabled" : "Disabled"} tone={aiEnabled ? "green" : "slate"} />
+                </div>
+                <div className="rounded-lg border border-grid-200 bg-white/70 p-3">
+                  <p className="text-xs font-black uppercase text-ink-500">External processing</p>
+                  <Badge label={externalProcessingAllowed ? "Allowed" : "Off"} tone={externalProcessingAllowed ? "amber" : "slate"} />
+                </div>
+              </div>
+              <p className="mt-3 text-sm font-semibold text-ink-500">
+                Groq is the current real AI provider target. Switching providers later should only require environment/config changes.
+              </p>
+            </div>
+          </div>
+          <div className="grid gap-3 lg:grid-cols-[1fr_1.2fr]">
+            <div className="rounded-lg border border-grid-200 bg-white/70 p-4">
+              <p className="text-sm font-black text-ink-950">Company AI controls</p>
+              <p className="mt-1 text-sm font-semibold text-ink-500">
+                External AI is never enabled silently. Company owners/admins must explicitly allow sanitized context to leave FebGrid.
+              </p>
+              <div className="mt-4 flex flex-wrap gap-2">
+                <Button disabled={!canManage || isMutating || aiEnabled} onClick={() => void handleToggleAIEnabled(true)}>
+                  Enable AI
+                </Button>
+                <Button disabled={!canManage || isMutating || !aiEnabled} onClick={() => void handleToggleAIEnabled(false)}>
+                  Disable AI
+                </Button>
+                {externalProcessingAllowed ? (
+                  <Button disabled={!canManage || isMutating} icon={<ShieldAlert className="size-4" aria-hidden="true" />} onClick={() => void disableExternalAI()}>
+                    Disable external AI
+                  </Button>
+                ) : (
+                  <Button disabled={!canManage || isMutating || !aiEnabled} icon={<ShieldAlert className="size-4" aria-hidden="true" />} onClick={() => setIsExternalAIWarningOpen(true)}>
+                    Allow external AI
+                  </Button>
+                )}
+              </div>
+            </div>
+            <div className="rounded-lg border border-grid-200 bg-white/70 p-4">
               <p className="text-sm font-bold text-ink-950">Capabilities prepared for Phase 3</p>
               <div className="mt-3 flex flex-wrap gap-2">
                 {(data.aiCapabilities?.capabilities ?? []).map((capability) => (
-                  <Badge key={capability.job_type} label={capability.label} tone="blue" />
+                  <Badge key={capability.job_type} label={capability.label} tone={capability.mock_only ? "blue" : "teal"} />
                 ))}
                 {!data.aiCapabilities ? <Badge label="Mock provider" tone="slate" /> : null}
               </div>
               <p className="mt-3 text-sm font-semibold text-ink-500">
-                {data.aiCapabilities?.message ?? "AI job APIs load after the company modules finish."}
+                Safe real jobs are text-only and server-prompted. Raw files, tokens, passwords, and prompt templates are not sent.
               </p>
             </div>
           </div>
           {data.aiJobs.length === 0 ? (
-            <EmptyState description="Create a mock job to verify tenant-safe AI job storage, events, and notifications." title="No AI jobs yet" />
+            <EmptyState description="Create a mock or safe Groq-ready job to verify tenant-safe AI job storage, events, and notifications." title="No AI jobs yet" />
           ) : (
             <DataTable columns={aiJobColumns} rows={data.aiJobs} getRowKey={(job) => job.id} />
           )}
@@ -905,6 +1031,28 @@ export function SettingsPage({
           )}
         </SectionPanel>
       </div>
+
+      <Modal
+        description="External AI processing can send selected, sanitized business context to the configured provider."
+        isOpen={isExternalAIWarningOpen}
+        title="Allow external AI processing?"
+        onClose={() => setIsExternalAIWarningOpen(false)}
+      >
+        <div className="space-y-4 p-5">
+          <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900">
+            FebGrid will only send server-built, text-only context for allowlisted jobs. Secrets, passwords, tokens, raw files, file paths, and API keys must never be sent.
+          </div>
+          <p className="text-sm font-semibold text-ink-600">
+            Groq is the current real provider target. If `GROQ_API_KEY` is not configured locally, real jobs will fail safely without exposing any secret.
+          </p>
+          <div className="flex justify-end gap-2 border-t border-grid-200 pt-4">
+            <Button onClick={() => setIsExternalAIWarningOpen(false)}>Cancel</Button>
+            <Button disabled={isMutating} variant="primary" onClick={() => void confirmEnableExternalAI()}>
+              I understand, allow
+            </Button>
+          </div>
+        </div>
+      </Modal>
 
       <Modal description="Update searchable file metadata. Storage and scan providers are intentionally not configurable here." isOpen={Boolean(editingFile)} title="Edit file metadata" onClose={() => setEditingFile(null)}>
         <form className="space-y-4 p-5" onSubmit={handleFileSubmit}>

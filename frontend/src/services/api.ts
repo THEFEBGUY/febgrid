@@ -5,6 +5,9 @@ import type {
   Attachment,
   AttachmentUpdatePayload,
   AICapabilities,
+  AIProviderStatus,
+  AISafetySettings,
+  AISafetySettingsUpdatePayload,
   AIJob,
   AIJobCreatePayload,
   AuditLog,
@@ -264,6 +267,10 @@ export const api = {
   archiveFile: (attachmentId: string, companyId: string) => request<Attachment>(companyPath(`/files/${attachmentId}/archive`, companyId), jsonInit("POST", {})),
   restoreFile: (attachmentId: string, companyId: string) => request<Attachment>(companyPath(`/files/${attachmentId}/restore`, companyId), jsonInit("POST", {})),
   aiCapabilities: (companyId: string) => request<AICapabilities>(companyPath("/ai/capabilities", companyId)),
+  aiProviderStatus: (companyId: string) => request<AIProviderStatus>(companyPath("/ai/provider-status", companyId)),
+  aiSafetySettings: (companyId: string) => request<AISafetySettings>(companyPath("/ai/safety-settings", companyId)),
+  updateAISafetySettings: (companyId: string, payload: AISafetySettingsUpdatePayload) =>
+    request<AISafetySettings>(companyPath("/ai/safety-settings", companyId), jsonInit("PUT", payload)),
   aiJobs: (companyId: string, params: { status?: string; job_type?: string; limit?: number } = {}) => {
     const searchParams = new URLSearchParams({ company_id: companyId });
     Object.entries(params).forEach(([key, value]) => {
