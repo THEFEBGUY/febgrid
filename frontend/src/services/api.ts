@@ -4,6 +4,9 @@ import type {
   AnnouncementUpdatePayload,
   Attachment,
   AttachmentUpdatePayload,
+  AICapabilities,
+  AIJob,
+  AIJobCreatePayload,
   AuditLog,
   AuthMe,
   AuthSession,
@@ -260,6 +263,17 @@ export const api = {
     request<Attachment>(companyPath(`/files/${attachmentId}`, companyId), jsonInit("PATCH", payload)),
   archiveFile: (attachmentId: string, companyId: string) => request<Attachment>(companyPath(`/files/${attachmentId}/archive`, companyId), jsonInit("POST", {})),
   restoreFile: (attachmentId: string, companyId: string) => request<Attachment>(companyPath(`/files/${attachmentId}/restore`, companyId), jsonInit("POST", {})),
+  aiCapabilities: (companyId: string) => request<AICapabilities>(companyPath("/ai/capabilities", companyId)),
+  aiJobs: (companyId: string, params: { status?: string; job_type?: string; limit?: number } = {}) => {
+    const searchParams = new URLSearchParams({ company_id: companyId });
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined && value !== null && value !== "") searchParams.set(key, String(value));
+    });
+    return request<AIJob[]>(`/ai/jobs?${searchParams.toString()}`);
+  },
+  createAIJob: (payload: AIJobCreatePayload) => request<AIJob>("/ai/jobs", jsonInit("POST", payload)),
+  runAIJob: (jobId: string, companyId: string) => request<AIJob>(companyPath(`/ai/jobs/${jobId}/run`, companyId), jsonInit("POST", {})),
+  cancelAIJob: (jobId: string, companyId: string) => request<AIJob>(companyPath(`/ai/jobs/${jobId}/cancel`, companyId), jsonInit("POST", {})),
   leaves: (companyId: string) => request<LeaveRequest[]>(companyPath("/leaves", companyId)),
   leaveApprovers: (companyId: string) => request<Employee[]>(companyPath("/leaves/approvers", companyId)),
   leave: (leaveId: string, companyId: string) => request<LeaveRequest>(companyPath(`/leaves/${leaveId}`, companyId)),

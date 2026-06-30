@@ -1,4 +1,4 @@
-import { Archive, CreditCard, FileText, Pencil, Plus, RotateCcw, Save, Wand2 } from "lucide-react";
+import { Archive, Bot, CreditCard, FileText, Pencil, Play, Plus, RotateCcw, Save, XCircle, Wand2 } from "lucide-react";
 import { type FormEvent, useEffect, useMemo, useState } from "react";
 
 import { MagicBentoCard } from "../components/premium/MagicBento";
@@ -13,6 +13,8 @@ import { EmptyState } from "../components/ui/States";
 import type {
   Attachment,
   AttachmentUpdatePayload,
+  AIJob,
+  AIJobCreatePayload,
   CompanyPlanUpdatePayload,
   CompanySettingsUpdatePayload,
   CustomFieldCreatePayload,
@@ -33,8 +35,11 @@ interface SettingsPageProps extends ModulePageProps {
   onArchiveFile: (attachmentId: string) => Promise<void>;
   onArchiveCustomField: (fieldId: string) => Promise<void>;
   onArchiveWorkObjectType: (typeId: string) => Promise<void>;
+  onCancelAIJob: (jobId: string) => Promise<void>;
+  onCreateAIJob: (payload: Omit<AIJobCreatePayload, "company_id">) => Promise<void>;
   onCreateCustomField: (payload: Omit<CustomFieldCreatePayload, "company_id">) => Promise<void>;
   onCreateWorkObjectType: (payload: Omit<WorkObjectTypeCreatePayload, "company_id">) => Promise<void>;
+  onRunAIJob: (jobId: string) => Promise<void>;
   onUpdateCompanySettings: (payload: CompanySettingsUpdatePayload) => Promise<void>;
   onUpdateCompanyPlan: (payload: CompanyPlanUpdatePayload) => Promise<void>;
   onUpdateCustomField: (fieldId: string, payload: CustomFieldUpdatePayload) => Promise<void>;
@@ -108,6 +113,21 @@ function formatFileSize(value: number | null): string {
   return `${(value / (1024 * 1024)).toFixed(value > 1024 * 1024 ? 2 : 3)} MB`;
 }
 
+function aiJobTone(status: string): "blue" | "green" | "amber" | "red" | "slate" {
+  if (status === "succeeded") return "green";
+  if (status === "failed") return "red";
+  if (status === "running") return "blue";
+  if (status === "cancelled" || status === "skipped") return "slate";
+  return "amber";
+}
+
+function aiOutputSummary(job: AIJob): string {
+  const summary = job.output_payload.summary;
+  if (typeof summary === "string" && summary.trim()) return summary;
+  if (job.error_message) return job.error_message;
+  return "No mock output yet.";
+}
+
 export function SettingsPage({
   data,
   selectedCompany,
@@ -120,8 +140,11 @@ export function SettingsPage({
   onArchiveFile,
   onArchiveCustomField,
   onArchiveWorkObjectType,
+  onCancelAIJob,
+  onCreateAIJob,
   onCreateCustomField,
   onCreateWorkObjectType,
+  onRunAIJob,
   onUpdateCompanySettings,
   onUpdateCompanyPlan,
   onUpdateCustomField,
@@ -360,6 +383,52 @@ export function SettingsPage({
     },
   ];
 
+  const aiJobColumns: DataTableColumn<AIJob>[] = [
+    {
+      key: "job",
+      label: "Job",
+      render: (job) => (
+        <span>
+          <span className="block font-bold text-ink-950">{formatLabel(job.job_type)}</span>
+          <span className="block text-xs font-semibold text-ink-500">{aiOutputSummary(job)}</span>
+        </span>
+      ),
+    },
+    { key: "status", label: "Status", render: (job) => <Badge label={formatLabel(job.status)} tone={aiJobTone(job.status)} /> },
+    { key: "provider", label: "Provider", render: (job) => <Badge label={formatLabel(job.provider_mode)} tone="slate" /> },
+    { key: "attempts", label: "Attempts", render: (job) => `${job.attempts}/${job.max_attempts}` },
+    { key: "created", label: "Created", render: (job) => formatDate(job.created_at) },
+    {
+      key: "actions",
+      label: "Actions",
+      render: (job) => (
+        <div className="flex justify-end gap-2">
+          <Button
+            aria-label={`Run ${formatLabel(job.job_type)}`}
+            className="size-9 px-0"
+            disabled={!canManage || isMutating || job.status !== "queued"}
+            icon={<Play className="size-4" aria-hidden="true" />}
+            title={`Run ${formatLabel(job.job_type)}`}
+            onClick={() => void onRunAIJob(job.id)}
+          >
+            <span className="sr-only">Run AI job</span>
+          </Button>
+          <Button
+            aria-label={`Cancel ${formatLabel(job.job_type)}`}
+            className="size-9 px-0"
+            disabled={!canManage || isMutating || !["queued", "running"].includes(job.status)}
+            icon={<XCircle className="size-4" aria-hidden="true" />}
+            title={`Cancel ${formatLabel(job.job_type)}`}
+            onClick={() => void onCancelAIJob(job.id)}
+          >
+            <span className="sr-only">Cancel AI job</span>
+          </Button>
+        </div>
+      ),
+      className: "text-right",
+    },
+  ];
+
   function toggleWorkDay(day: string): void {
     setSettingsForm((current) => {
       const hasDay = current.work_week.includes(day);
@@ -537,6 +606,24 @@ export function SettingsPage({
       setEditingFile(null);
     } catch {
       setFormError("File metadata could not be saved.");
+    }
+  }
+
+  async function handleCreateMockAIJob(): Promise<void> {
+    if (!canManage) return;
+    setSettingsMessage(null);
+    try {
+      await onCreateAIJob({
+        job_type: "company_brief_mock",
+        priority: "normal",
+        input_entity_type: selectedCompany ? "company" : null,
+        input_entity_id: selectedCompany?.id ?? null,
+        input_payload: { source: "settings_ai_foundation" },
+        metadata: { mock_only: true },
+      });
+      setSettingsMessage("Mock AI job queued. Real AI providers remain disconnected.");
+    } catch {
+      setSettingsMessage("Mock AI job could not be queued.");
     }
   }
 
@@ -735,6 +822,44 @@ export function SettingsPage({
           )}
         </SectionPanel>
       </div>
+
+      <SectionPanel
+        eyebrow="AI foundation"
+        title="Mock provider and job lifecycle"
+        className="mt-6"
+        action={
+          <Button disabled={!canManage || !selectedCompany || isMutating} icon={<Bot className="size-4" aria-hidden="true" />} onClick={() => void handleCreateMockAIJob()}>
+            Create mock job
+          </Button>
+        }
+      >
+        <div className="space-y-5 p-5">
+          <div className="grid gap-3 lg:grid-cols-[0.9fr_1.1fr]">
+            <MagicBentoCard className="p-4" tone="teal">
+              <p className="text-xs font-black uppercase tracking-normal text-ink-500">Provider mode</p>
+              <p className="mt-2 text-2xl font-black text-ink-950">{formatLabel(data.aiCapabilities?.provider_mode ?? "mock")}</p>
+              <p className="mt-1 text-sm font-semibold text-ink-500">Mock AI foundation only. Real AI is not connected.</p>
+            </MagicBentoCard>
+            <div className="febgrid-muted-surface rounded-lg p-4">
+              <p className="text-sm font-bold text-ink-950">Capabilities prepared for Phase 3</p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {(data.aiCapabilities?.capabilities ?? []).map((capability) => (
+                  <Badge key={capability.job_type} label={capability.label} tone="blue" />
+                ))}
+                {!data.aiCapabilities ? <Badge label="Mock provider" tone="slate" /> : null}
+              </div>
+              <p className="mt-3 text-sm font-semibold text-ink-500">
+                {data.aiCapabilities?.message ?? "AI job APIs load after the company modules finish."}
+              </p>
+            </div>
+          </div>
+          {data.aiJobs.length === 0 ? (
+            <EmptyState description="Create a mock job to verify tenant-safe AI job storage, events, and notifications." title="No AI jobs yet" />
+          ) : (
+            <DataTable columns={aiJobColumns} rows={data.aiJobs} getRowKey={(job) => job.id} />
+          )}
+        </div>
+      </SectionPanel>
 
       <div className="mt-6 grid gap-6 xl:grid-cols-[1fr_0.9fr]">
         <SectionPanel

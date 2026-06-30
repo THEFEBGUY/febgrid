@@ -5,6 +5,7 @@ import type {
   AnnouncementCreatePayload,
   AnnouncementUpdatePayload,
   AttachmentUpdatePayload,
+  AIJobCreatePayload,
   Company,
   CompanyCreatePayload,
   CompanyPlanUpdatePayload,
@@ -34,6 +35,8 @@ import type {
 
 const emptyData: FebGridData = {
   companies: [],
+  aiCapabilities: null,
+  aiJobs: [],
   auditLogs: [],
   billingPlans: [],
   billingSummary: null,
@@ -115,6 +118,9 @@ interface FebGridDataState {
   updateFile: (attachmentId: string, payload: AttachmentUpdatePayload) => Promise<void>;
   archiveFile: (attachmentId: string) => Promise<void>;
   restoreFile: (attachmentId: string) => Promise<void>;
+  createAIJob: (payload: Omit<AIJobCreatePayload, "company_id">) => Promise<void>;
+  runAIJob: (jobId: string) => Promise<void>;
+  cancelAIJob: (jobId: string) => Promise<void>;
   applyIndustryTemplate: (templateKey: string) => Promise<void>;
   createWorkObjectType: (payload: Omit<WorkObjectTypeCreatePayload, "company_id">) => Promise<void>;
   updateWorkObjectType: (typeId: string, payload: WorkObjectTypeUpdatePayload) => Promise<void>;
@@ -314,6 +320,8 @@ export function useFebGridData({ enabled = true, role = null }: UseFebGridDataOp
       notifications,
       announcements,
       files,
+      aiCapabilities,
+      aiJobs,
     ] = await Promise.allSettled([
       api.companySettings(selectedCompanyId),
       api.billingPlans(),
@@ -334,6 +342,8 @@ export function useFebGridData({ enabled = true, role = null }: UseFebGridDataOp
       api.notifications(selectedCompanyId),
       api.announcements(selectedCompanyId),
       api.files(selectedCompanyId),
+      api.aiCapabilities(selectedCompanyId),
+      api.aiJobs(selectedCompanyId, { limit: 10 }),
     ]);
 
     const nextData: Partial<FebGridData> = {};
@@ -395,6 +405,12 @@ export function useFebGridData({ enabled = true, role = null }: UseFebGridDataOp
 
     if (files.status === "fulfilled") nextData.files = files.value;
     else nextErrors.files = getErrorMessage(files.reason);
+
+    if (aiCapabilities.status === "fulfilled") nextData.aiCapabilities = aiCapabilities.value;
+    else nextErrors.aiCapabilities = getErrorMessage(aiCapabilities.reason);
+
+    if (aiJobs.status === "fulfilled") nextData.aiJobs = aiJobs.value;
+    else nextErrors.aiJobs = getErrorMessage(aiJobs.reason);
 
     if (moduleRequestIdRef.current !== requestId) return;
 
@@ -797,6 +813,30 @@ export function useFebGridData({ enabled = true, role = null }: UseFebGridDataOp
     });
   }
 
+  async function createAIJob(payload: Omit<AIJobCreatePayload, "company_id">): Promise<void> {
+    if (!selectedCompanyId) return;
+    await runMutation(async () => {
+      await api.createAIJob({ ...payload, company_id: selectedCompanyId });
+      await refreshModules();
+    });
+  }
+
+  async function runAIJob(jobId: string): Promise<void> {
+    if (!selectedCompanyId) return;
+    await runMutation(async () => {
+      await api.runAIJob(jobId, selectedCompanyId);
+      await refreshModules();
+    });
+  }
+
+  async function cancelAIJob(jobId: string): Promise<void> {
+    if (!selectedCompanyId) return;
+    await runMutation(async () => {
+      await api.cancelAIJob(jobId, selectedCompanyId);
+      await refreshModules();
+    });
+  }
+
   async function applyIndustryTemplate(templateKey: string): Promise<void> {
     if (!selectedCompanyId) return;
     await runMutation(async () => {
@@ -909,6 +949,9 @@ export function useFebGridData({ enabled = true, role = null }: UseFebGridDataOp
     updateFile,
     archiveFile,
     restoreFile,
+    createAIJob,
+    runAIJob,
+    cancelAIJob,
     applyIndustryTemplate,
     createWorkObjectType,
     updateWorkObjectType,

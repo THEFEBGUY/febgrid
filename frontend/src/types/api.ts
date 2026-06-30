@@ -639,6 +639,68 @@ export interface AttachmentUpdatePayload {
   metadata?: Record<string, unknown>;
 }
 
+export type AIJobStatus = "queued" | "running" | "succeeded" | "failed" | "cancelled" | "skipped";
+export type AIJobType =
+  | "work_object_summary_mock"
+  | "project_summary_mock"
+  | "employee_workload_mock"
+  | "file_summary_mock"
+  | "company_brief_mock";
+
+export interface AIJob extends Timestamped {
+  id: string;
+  company_id: string;
+  requested_by_user_id: string | null;
+  requested_by_employee_id: string | null;
+  job_type: AIJobType | string;
+  status: AIJobStatus | string;
+  priority: "low" | "normal" | "high" | "urgent" | string;
+  input_entity_type: string | null;
+  input_entity_id: string | null;
+  input_payload: Record<string, unknown>;
+  output_payload: Record<string, unknown>;
+  error_message: string | null;
+  provider_key: string;
+  provider_mode: "mock" | "disabled" | "future_external" | string;
+  attempts: number;
+  max_attempts: number;
+  scheduled_at: string | null;
+  started_at: string | null;
+  completed_at: string | null;
+  failed_at: string | null;
+  cancelled_at: string | null;
+  metadata: Record<string, unknown>;
+}
+
+export interface AIJobCreatePayload {
+  company_id: string;
+  job_type: AIJobType;
+  priority?: "low" | "normal" | "high" | "urgent";
+  input_entity_type?: string | null;
+  input_entity_id?: string | null;
+  input_payload?: Record<string, unknown>;
+  max_attempts?: number;
+  scheduled_at?: string | null;
+  metadata?: Record<string, unknown>;
+}
+
+export interface AICapability {
+  job_type: AIJobType | string;
+  label: string;
+  description: string;
+  mock_only: boolean;
+}
+
+export interface AICapabilities {
+  company_id: string;
+  provider_key: string;
+  provider_mode: "mock" | "disabled" | "future_external";
+  real_ai_connected: boolean;
+  external_calls_enabled: boolean;
+  capabilities: AICapability[];
+  message: string;
+}
+
 export interface CommentMention {
   id: string;
   company_id: string;
@@ -1010,6 +1072,8 @@ export interface DashboardSummary {
 
 export interface FebGridData {
   companies: Company[];
+  aiCapabilities: AICapabilities | null;
+  aiJobs: AIJob[];
   auditLogs: AuditLog[];
   billingPlans: PlanDefinition[];
   billingSummary: BillingSummary | null;
