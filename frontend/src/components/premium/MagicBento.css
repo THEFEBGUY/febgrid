@@ -1,0 +1,146 @@
+.magic-bento-grid {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.magic-bento-card {
+  --magic-accent: 37 99 235;
+  --magic-accent-soft: rgba(37, 99, 235, 0.14);
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--febgrid-border) 76%, transparent);
+  border-radius: 0.5rem;
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.78), rgba(255, 255, 255, 0.48)),
+    radial-gradient(circle at var(--magic-x) var(--magic-y), var(--magic-accent-soft), transparent 34rem);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05), 0 22px 60px rgba(15, 23, 42, 0.08);
+  transition:
+    transform 180ms ease,
+    border-color 180ms ease,
+    box-shadow 180ms ease;
+}
+
+.magic-bento-card:hover {
+  transform: translateY(-1px);
+  border-color: rgba(var(--magic-accent), 0.34);
+  box-shadow: 0 20px 70px rgba(15, 23, 42, 0.13);
+}
+
+.magic-bento-card::before {
+  position: absolute;
+  inset: 0;
+  z-index: -2;
+  content: "";
+  background:
+    linear-gradient(rgba(15, 23, 42, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(15, 23, 42, 0.025) 1px, transparent 1px);
+  background-size: 26px 26px;
+  mask-image: linear-gradient(145deg, black, transparent 74%);
+}
+
+.magic-bento-card__shine {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  opacity: 0.75;
+  background:
+    radial-gradient(circle at var(--magic-x) var(--magic-y), rgba(var(--magic-accent), 0.18), transparent 18rem),
+    linear-gradient(120deg, rgba(255, 255, 255, 0.45), transparent 38%);
+  transition: opacity 180ms ease;
+}
+
+.magic-bento-card__content {
+  position: relative;
+  min-height: 100%;
+}
+
+.magic-bento-card__eyebrow {
+  color: rgb(var(--magic-accent));
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.magic-bento-card__metric {
+  margin-top: 0.2rem;
+  color: var(--febgrid-ink);
+  font-size: clamp(1.75rem, 3vw, 2.65rem);
+  font-weight: 950;
+  letter-spacing: 0;
+  line-height: 1;
+}
+
+.magic-bento-card__title {
+  margin-top: 0.55rem;
+  color: var(--febgrid-ink);
+  font-size: 0.95rem;
+  font-weight: 900;
+  letter-spacing: 0;
+}
+
+.magic-bento-card__description {
+  margin-top: 0.45rem;
+  color: var(--febgrid-muted);
+  font-size: 0.86rem;
+  font-weight: 650;
+  line-height: 1.55;
+}
+
+.magic-bento-card--teal {
+  --magic-accent: 13 148 136;
+  --magic-accent-soft: rgba(13, 148, 136, 0.14);
+}
+
+.magic-bento-card--amber {
+  --magic-accent: 217 119 6;
+  --magic-accent-soft: rgba(217, 119, 6, 0.14);
+}
+
+.magic-bento-card--green {
+  --magic-accent: 22 163 74;
+  --magic-accent-soft: rgba(22, 163, 74, 0.14);
+}
+
+.magic-bento-card--red {
+  --magic-accent: 225 29 72;
+  --magic-accent-soft: rgba(225, 29, 72, 0.13);
+}
+
+.magic-bento-card--slate {
+  --magic-accent: 71 85 105;
+  --magic-accent-soft: rgba(71, 85, 105, 0.12);
+}
+
+html.dark .magic-bento-card {
+  background:
+    linear-gradient(145deg, rgba(17, 25, 40, 0.92), rgba(9, 15, 28, 0.78)),
+    radial-gradient(circle at var(--magic-x) var(--magic-y), rgba(var(--magic-accent), 0.16), transparent 35rem);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.03) inset, 0 28px 88px rgba(0, 0, 0, 0.36);
+}
+
+html.dark .magic-bento-card::before {
+  background:
+    linear-gradient(rgba(148, 163, 184, 0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(148, 163, 184, 0.035) 1px, transparent 1px);
+}
+
+html.dark .magic-bento-card__shine {
+  background:
+    radial-gradient(circle at var(--magic-x) var(--magic-y), rgba(var(--magic-accent), 0.22), transparent 19rem),
+    linear-gradient(120deg, rgba(255, 255, 255, 0.08), transparent 42%);
+}
+
+html.dark .magic-bento-card__eyebrow {
+  color: rgb(147, 197, 253);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .magic-bento-card,
+  .magic-bento-card:hover,
+  .magic-bento-card__shine {
+    transform: none;
+    transition: none;
+  }
+}

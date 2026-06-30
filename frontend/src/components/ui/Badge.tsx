@@ -15,7 +15,7 @@ const toneClasses = {
 export function Badge({ label, tone = "slate" }: BadgeProps): JSX.Element {
   return (
     <span
-      className={`inline-flex h-7 max-w-full items-center rounded-md border px-2.5 text-xs font-semibold leading-none ${toneClasses[tone]}`}
+      className={`inline-flex h-7 max-w-full items-center rounded-md border px-2.5 text-xs font-bold leading-none shadow-sm ${toneClasses[tone]}`}
     >
       <span className="truncate">{label}</span>
     </span>

@@ -3,8 +3,16 @@
 @tailwind utilities;
 
 :root {
-  color: #17202e;
-  background: #f6f7f9;
+  --febgrid-app-bg: #f8fafc;
+  --febgrid-surface: #ffffff;
+  --febgrid-surface-muted: #f1f5f9;
+  --febgrid-surface-raised: #ffffff;
+  --febgrid-surface-panel: rgba(255, 255, 255, 0.76);
+  --febgrid-border: #d8e0ea;
+  --febgrid-ink: #172033;
+  --febgrid-muted: #667085;
+  color: var(--febgrid-ink);
+  background: var(--febgrid-app-bg);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -12,8 +20,16 @@
 }
 
 html.dark {
-  color: #e5edf7;
-  background: #0b1120;
+  --febgrid-app-bg: #070b14;
+  --febgrid-surface: #101827;
+  --febgrid-surface-muted: #0c1322;
+  --febgrid-surface-raised: #111b2c;
+  --febgrid-surface-panel: rgba(12, 19, 34, 0.72);
+  --febgrid-border: #263244;
+  --febgrid-ink: #eef4ff;
+  --febgrid-muted: #9aa8bd;
+  color: var(--febgrid-ink);
+  background: var(--febgrid-app-bg);
   color-scheme: dark;
 }
 
@@ -26,15 +42,18 @@ body {
   min-height: 100vh;
   margin: 0;
   background:
-    linear-gradient(180deg, rgba(246, 247, 249, 0.95), rgba(235, 238, 242, 0.82)),
-    #f6f7f9;
+    linear-gradient(rgba(15, 23, 42, 0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(15, 23, 42, 0.025) 1px, transparent 1px),
+    linear-gradient(180deg, #fbfdff 0%, #f8fafc 42%, #eef2f7 100%);
+  background-size: 36px 36px, 36px 36px, auto;
 }
 
 html.dark body {
   background:
-    radial-gradient(circle at top right, rgba(37, 99, 235, 0.14), transparent 34rem),
-    linear-gradient(180deg, rgba(15, 23, 42, 0.98), rgba(2, 6, 23, 0.96)),
-    #0b1120;
+    linear-gradient(rgba(148, 163, 184, 0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(148, 163, 184, 0.035) 1px, transparent 1px),
+    linear-gradient(180deg, #0c1424 0%, #070b14 58%, #050814 100%);
+  background-size: 40px 40px, 40px 40px, auto;
 }
 
 button,
@@ -67,27 +86,55 @@ button:disabled .febgrid-button-icon {
 }
 
 html.dark .bg-white {
-  background-color: #111827;
+  background-color: #101827;
 }
 
 html.dark .bg-white\/95 {
-  background-color: rgba(17, 24, 39, 0.95);
+  background-color: rgba(16, 24, 39, 0.94);
+}
+
+html.dark .bg-white\/90 {
+  background-color: rgba(16, 24, 39, 0.9);
+}
+
+html.dark .bg-white\/80 {
+  background-color: rgba(8, 13, 24, 0.82);
+}
+
+html.dark .bg-white\/70 {
+  background-color: rgba(16, 24, 39, 0.7);
+}
+
+html.dark .bg-white\/65 {
+  background-color: rgba(16, 24, 39, 0.72);
+}
+
+html.dark .bg-white\/60 {
+  background-color: rgba(16, 24, 39, 0.68);
+}
+
+html.dark .bg-white\/55 {
+  background-color: rgba(16, 24, 39, 0.62);
 }
 
 html.dark .bg-grid-50 {
-  background-color: #0b1120;
+  background-color: #070b14;
 }
 
 html.dark .bg-grid-50\/60 {
-  background-color: rgba(15, 23, 42, 0.58);
+  background-color: rgba(12, 19, 34, 0.7);
+}
+
+html.dark .bg-grid-50\/70 {
+  background-color: rgba(12, 19, 34, 0.74);
 }
 
 html.dark .bg-grid-50\/90 {
-  background-color: rgba(15, 23, 42, 0.9);
+  background-color: rgba(8, 13, 24, 0.9);
 }
 
 html.dark .bg-grid-100 {
-  background-color: #1e293b;
+  background-color: #151f32;
 }
 
 html.dark .bg-ink-950 {
@@ -99,8 +146,9 @@ html.dark .hover\:bg-ink-900:hover {
 }
 
 html.dark .hover\:bg-grid-50:hover,
+html.dark .hover\:bg-grid-50\/70:hover,
 html.dark .hover\:bg-grid-100:hover {
-  background-color: #1e293b;
+  background-color: #17233a;
 }
 
 html.dark .bg-ink-950\/40 {
@@ -112,11 +160,15 @@ html.dark .bg-ink-950\/45 {
 }
 
 html.dark .border-grid-100 {
-  border-color: #1f2a3a;
+  border-color: #202b3e;
 }
 
 html.dark .border-grid-200 {
-  border-color: #334155;
+  border-color: #2d3a51;
+}
+
+html.dark .border-grid-300 {
+  border-color: #3b4a62;
 }
 
 html.dark .divide-grid-100 > :not([hidden]) ~ :not([hidden]),
@@ -136,13 +188,41 @@ html.dark .text-ink-700 {
   color: #cbd5e1;
 }
 
+html.dark .text-ink-600 {
+  color: #b9c5d6;
+}
+
 html.dark .text-ink-500,
 html.dark .placeholder\:text-ink-500::placeholder {
   color: #94a3b8;
 }
 
+html.dark .text-ink-400 {
+  color: #7f8da1;
+}
+
 html.dark .text-grid-200 {
   color: #cbd5e1;
+}
+
+html.dark .bg-brand-50,
+html.dark .bg-brand-100 {
+  background-color: rgba(37, 99, 235, 0.16);
+}
+
+html.dark .text-brand-500,
+html.dark .text-brand-600,
+html.dark .text-brand-700 {
+  color: #93c5fd;
+}
+
+html.dark .border-brand-100,
+html.dark .border-brand-200 {
+  border-color: rgba(96, 165, 250, 0.34);
+}
+
+html.dark .ring-brand-100 {
+  --tw-ring-color: rgba(96, 165, 250, 0.24);
 }
 
 html.dark .bg-blue-50,
@@ -243,8 +323,10 @@ html.dark .ring-slate-100 {
 }
 
 html.dark .shadow-sm,
-html.dark .shadow-soft {
-  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.26);
+html.dark .shadow-soft,
+html.dark .shadow-panel,
+html.dark .shadow-button {
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.34);
 }
 
 html.dark input,
@@ -285,4 +367,188 @@ html.dark textarea:focus-visible {
 ::selection {
   color: #ffffff;
   background: #2563eb;
+}
+
+@layer components {
+  .febgrid-app-bg {
+    background:
+      linear-gradient(rgba(15, 23, 42, 0.024) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(15, 23, 42, 0.024) 1px, transparent 1px),
+      linear-gradient(180deg, #fbfdff 0%, #f8fafc 46%, #eef2f7 100%);
+    background-size: 36px 36px, 36px 36px, auto;
+  }
+
+  html.dark .febgrid-app-bg {
+    background:
+      linear-gradient(rgba(148, 163, 184, 0.045) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(148, 163, 184, 0.035) 1px, transparent 1px),
+      linear-gradient(180deg, #0c1424 0%, #070b14 58%, #050814 100%);
+    background-size: 40px 40px, 40px 40px, auto;
+  }
+
+  .febgrid-auth-bg {
+    background:
+      linear-gradient(rgba(15, 23, 42, 0.026) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(15, 23, 42, 0.022) 1px, transparent 1px),
+      radial-gradient(circle at 15% 22%, rgba(37, 99, 235, 0.15), transparent 30rem),
+      radial-gradient(circle at 82% 78%, rgba(13, 148, 136, 0.12), transparent 32rem),
+      linear-gradient(180deg, #fbfdff 0%, #eef2f7 100%);
+    background-size: 34px 34px, 34px 34px, auto, auto, auto;
+  }
+
+  html.dark .febgrid-auth-bg {
+    background:
+      linear-gradient(rgba(148, 163, 184, 0.04) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(148, 163, 184, 0.032) 1px, transparent 1px),
+      radial-gradient(circle at 16% 20%, rgba(37, 99, 235, 0.22), transparent 34rem),
+      radial-gradient(circle at 82% 78%, rgba(20, 184, 166, 0.14), transparent 34rem),
+      linear-gradient(180deg, #0c1424 0%, #050814 100%);
+    background-size: 40px 40px, 40px 40px, auto, auto, auto;
+  }
+
+  .febgrid-surface {
+    border: 1px solid var(--febgrid-border);
+    background:
+      linear-gradient(145deg, color-mix(in srgb, var(--febgrid-surface-raised) 92%, transparent), color-mix(in srgb, var(--febgrid-surface) 76%, transparent)),
+      radial-gradient(circle at top left, rgba(37, 99, 235, 0.055), transparent 28rem);
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06), 0 22px 62px rgba(15, 23, 42, 0.09);
+    backdrop-filter: blur(16px);
+  }
+
+  .febgrid-muted-surface {
+    border: 1px solid var(--febgrid-border);
+    background:
+      linear-gradient(145deg, color-mix(in srgb, var(--febgrid-surface-muted) 74%, var(--febgrid-surface)), color-mix(in srgb, var(--febgrid-surface) 84%, transparent));
+  }
+
+  .febgrid-panel-header {
+    background:
+      linear-gradient(90deg, color-mix(in srgb, var(--febgrid-surface-panel) 92%, transparent), color-mix(in srgb, var(--febgrid-surface) 64%, transparent)),
+      radial-gradient(circle at 8% 0%, rgba(37, 99, 235, 0.08), transparent 20rem);
+  }
+
+  html.dark .febgrid-panel-header {
+    background:
+      linear-gradient(90deg, rgba(12, 19, 34, 0.94), rgba(13, 22, 38, 0.72)),
+      radial-gradient(circle at 8% 0%, rgba(96, 165, 250, 0.12), transparent 22rem);
+  }
+
+  .febgrid-filter-bar {
+    border-bottom: 1px solid var(--febgrid-border);
+    background:
+      linear-gradient(180deg, color-mix(in srgb, var(--febgrid-surface) 82%, transparent), color-mix(in srgb, var(--febgrid-surface-muted) 58%, transparent)),
+      radial-gradient(circle at 10% 0%, rgba(37, 99, 235, 0.055), transparent 22rem);
+  }
+
+  html.dark .febgrid-filter-bar {
+    background:
+      linear-gradient(180deg, rgba(12, 19, 34, 0.86), rgba(8, 13, 24, 0.74)),
+      radial-gradient(circle at 10% 0%, rgba(59, 130, 246, 0.09), transparent 22rem);
+  }
+
+  .febgrid-table-shell {
+    background: color-mix(in srgb, var(--febgrid-surface) 82%, transparent);
+  }
+
+  .febgrid-table-head {
+    background:
+      linear-gradient(180deg, color-mix(in srgb, var(--febgrid-surface-muted) 74%, var(--febgrid-surface)), color-mix(in srgb, var(--febgrid-surface) 88%, transparent));
+  }
+
+  html.dark .febgrid-table-head {
+    background:
+      linear-gradient(180deg, rgba(13, 22, 38, 0.92), rgba(9, 15, 28, 0.88));
+  }
+
+  .febgrid-table-row {
+    background: transparent;
+  }
+
+  .febgrid-table-row:hover {
+    background:
+      linear-gradient(90deg, rgba(37, 99, 235, 0.045), transparent 64%),
+      color-mix(in srgb, var(--febgrid-surface-muted) 54%, transparent);
+  }
+
+  html.dark .febgrid-table-row:hover {
+    background:
+      linear-gradient(90deg, rgba(59, 130, 246, 0.08), transparent 68%),
+      rgba(17, 27, 44, 0.72);
+  }
+
+  .febgrid-command-card {
+    border: 1px solid color-mix(in srgb, var(--febgrid-border) 78%, transparent);
+    background:
+      linear-gradient(145deg, color-mix(in srgb, var(--febgrid-surface-raised) 90%, transparent), color-mix(in srgb, var(--febgrid-surface) 72%, transparent)),
+      radial-gradient(circle at 90% 10%, rgba(13, 148, 136, 0.09), transparent 22rem);
+    box-shadow: 0 18px 54px rgba(15, 23, 42, 0.08);
+  }
+
+  .febgrid-empty-state {
+    background:
+      radial-gradient(circle at center top, rgba(37, 99, 235, 0.055), transparent 22rem),
+      linear-gradient(180deg, transparent, color-mix(in srgb, var(--febgrid-surface-muted) 42%, transparent));
+  }
+
+  html.dark .febgrid-empty-state {
+    background:
+      radial-gradient(circle at center top, rgba(59, 130, 246, 0.075), transparent 22rem),
+      linear-gradient(180deg, transparent, rgba(8, 13, 24, 0.3));
+  }
+
+  .febgrid-sidebar-glow {
+    background: linear-gradient(180deg, rgba(219, 234, 254, 0.72), transparent);
+  }
+
+  html.dark .febgrid-sidebar-glow {
+    background:
+      radial-gradient(circle at 28% 0%, rgba(37, 99, 235, 0.2), transparent 18rem),
+      linear-gradient(180deg, rgba(15, 23, 42, 0.82), transparent);
+  }
+
+  .febgrid-skeleton {
+    position: relative;
+    overflow: hidden;
+    background: color-mix(in srgb, var(--febgrid-surface-muted) 82%, var(--febgrid-surface));
+  }
+
+  .febgrid-skeleton::after {
+    position: absolute;
+    inset: 0;
+    content: "";
+    transform: translateX(-100%);
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.52), transparent);
+    animation: shimmer 1.4s ease-in-out infinite;
+  }
+
+  html.dark .febgrid-skeleton::after {
+    background: linear-gradient(90deg, transparent, rgba(148, 163, 184, 0.12), transparent);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: rgba(102, 112, 133, 0.42);
+  background-clip: padding-box;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
 }

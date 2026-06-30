@@ -256,7 +256,7 @@ export function EventsPage({ data, selectedCompany, isLoadingModules, moduleErro
           <div className="divide-y divide-grid-100">
             {groupedEvents.map(([bucket, events]) => (
               <section key={bucket}>
-                <div className="bg-grid-50 px-5 py-2">
+                <div className="febgrid-table-head px-5 py-2">
                   <p className="text-xs font-bold uppercase tracking-normal text-ink-500">{bucket}</p>
                 </div>
                 <div className="divide-y divide-grid-100">

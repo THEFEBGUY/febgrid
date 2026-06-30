@@ -2,13 +2,14 @@ import { Children, isValidElement, type ButtonHTMLAttributes, type ReactElement,
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   icon?: ReactNode;
-  variant?: "primary" | "secondary" | "ghost";
+  variant?: "primary" | "secondary" | "ghost" | "danger";
 }
 
 const variantClasses = {
-  primary: "bg-ink-950 text-white hover:bg-ink-900",
-  secondary: "border border-grid-200 bg-white text-ink-900 hover:bg-grid-50",
-  ghost: "text-ink-700 hover:bg-grid-100",
+  primary: "border border-brand-600 bg-brand-600 text-white shadow-button hover:bg-brand-700",
+  secondary: "border border-grid-200 bg-white text-ink-900 shadow-sm hover:border-grid-300 hover:bg-grid-50 hover:shadow-button",
+  ghost: "border border-transparent text-ink-700 hover:bg-grid-100 hover:text-ink-950",
+  danger: "border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100",
 };
 
 function isSrOnlyElement(child: ReactNode): child is ReactElement<{ className?: string }> {
@@ -29,13 +30,13 @@ export function Button({ children, icon, variant = "secondary", className = "", 
   const ariaLabel = typeof props["aria-label"] === "string" ? props["aria-label"] : undefined;
   const resolvedTitle = title ?? ariaLabel;
   const hasVisibleLabel = hasVisibleContent(children);
-  const layoutClasses = icon && !hasVisibleLabel ? "size-9 gap-0 p-0" : "h-10 gap-2 px-3";
+  const layoutClasses = icon && !hasVisibleLabel ? "size-10 gap-0 p-0" : "h-10 gap-2.5 px-3.5";
 
   return (
     <button
       type={type}
       title={resolvedTitle}
-      className={`inline-flex items-center justify-center rounded-md text-sm font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink-950 disabled:cursor-not-allowed disabled:opacity-60 ${layoutClasses} ${variantClasses[variant]} ${className}`}
+      className={`inline-flex items-center justify-center rounded-md text-sm font-bold transition duration-150 ease-out active:translate-y-px focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 disabled:cursor-not-allowed disabled:translate-y-0 disabled:opacity-55 disabled:shadow-none ${layoutClasses} ${variantClasses[variant]} ${className}`}
       {...props}
     >
       {icon ? (

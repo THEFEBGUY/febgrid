@@ -125,9 +125,9 @@ export function Topbar({
   }
 
   return (
-    <header className="sticky top-0 z-20 border-b border-grid-200 bg-grid-50/90 backdrop-blur">
-      <div className="flex min-h-20 flex-col gap-4 px-4 py-4 lg:flex-row lg:items-center lg:justify-between lg:px-8">
-        <div className="flex min-w-0 items-center gap-3">
+    <header className="sticky top-0 z-20 border-b border-grid-200 bg-white/80 shadow-sm backdrop-blur-xl">
+      <div className="flex min-h-20 flex-col gap-4 px-4 py-4 2xl:flex-row 2xl:items-center 2xl:justify-between lg:px-8">
+        <div className="flex min-w-0 items-center gap-3 lg:w-52 lg:shrink-0 xl:w-64">
           <Button
             aria-label="Open navigation"
             className="size-10 px-0 lg:hidden"
@@ -138,15 +138,15 @@ export function Topbar({
           </Button>
           <div className="min-w-0">
             <h1 className="truncate text-2xl font-black tracking-normal text-ink-950">{title}</h1>
-            <p className="truncate text-sm font-medium text-ink-500">{description}</p>
+            <p className="truncate text-sm font-semibold text-ink-500">{description}</p>
           </div>
         </div>
 
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-          <label className="block min-w-0 sm:w-56">
+        <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center 2xl:justify-end">
+          <label className="block min-w-0 sm:w-48 xl:w-52 2xl:w-56">
             <span className="sr-only">Active company</span>
             <select
-              className="h-10 w-full rounded-md border border-grid-200 bg-white px-3 text-sm font-bold text-ink-900 shadow-sm disabled:bg-grid-100 disabled:text-ink-500"
+              className="h-10 w-full rounded-md border border-grid-200 bg-white/90 px-3 text-sm font-bold text-ink-900 shadow-sm transition hover:border-brand-200 hover:shadow-button focus:border-brand-500 focus:outline-none focus:ring-4 focus:ring-brand-100 disabled:bg-grid-100 disabled:text-ink-500"
               disabled={companies.length === 0}
               value={selectedCompanyId ?? ""}
               onChange={(event) => onSelectCompany(event.target.value)}
@@ -160,12 +160,12 @@ export function Topbar({
             </select>
           </label>
           {canUseOperationalSearch ? (
-            <div ref={searchContainerRef} className="relative block min-w-0 sm:w-72">
+            <div ref={searchContainerRef} className="relative block min-w-0 sm:w-56 xl:w-64 2xl:w-72">
               <span className="sr-only">Search operations</span>
               <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-ink-500" aria-hidden="true" />
               <input
                 aria-label="Operational search"
-                className="h-10 w-full rounded-md border border-grid-200 bg-white pl-9 pr-3 text-sm font-medium text-ink-900 shadow-sm placeholder:text-ink-500"
+                className="h-10 w-full rounded-md border border-grid-200 bg-white/90 pl-9 pr-3 text-sm font-semibold text-ink-900 shadow-sm transition placeholder:text-ink-500 hover:border-brand-200 hover:shadow-button focus:border-brand-500 focus:outline-none focus:ring-4 focus:ring-brand-100"
                 placeholder="Operational search"
                 type="search"
                 value={searchQuery}
@@ -186,9 +186,9 @@ export function Topbar({
                 }}
               />
               {isSearchOpen ? (
-                <div className="absolute right-0 top-12 z-30 w-[min(36rem,calc(100vw-2rem))] overflow-hidden rounded-lg border border-grid-200 bg-white shadow-soft">
-                  <div className="border-b border-grid-100 px-4 py-3">
-                    <p className="text-xs font-bold uppercase tracking-normal text-ink-500">Operational Search</p>
+                <div className="febgrid-surface absolute right-0 top-12 z-30 w-[min(36rem,calc(100vw-2rem))] overflow-hidden rounded-lg">
+                  <div className="febgrid-panel-header border-b border-grid-100 px-4 py-3">
+                    <p className="text-xs font-black uppercase tracking-normal text-brand-600">Operational Search</p>
                     <p className="mt-1 text-sm font-semibold text-ink-700">Search employees, projects, work, files, events, and company activity.</p>
                   </div>
                   {trimmedSearchQuery.length < 2 ? (
@@ -211,7 +211,7 @@ export function Topbar({
                             {items.map((item) => (
                               <button
                                 key={`${item.type}-${item.id}`}
-                                className="block w-full px-4 py-2 text-left hover:bg-grid-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ink-950"
+                                className="block w-full px-4 py-2.5 text-left transition hover:bg-brand-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-brand-600"
                                 type="button"
                                 onClick={() => openSearchResult(item)}
                               >
@@ -242,7 +242,7 @@ export function Topbar({
               ) : null}
             </div>
           ) : null}
-          <div className="flex gap-2">
+          <div className="flex shrink-0 gap-2">
             <Button icon={<ShieldCheck className="size-4" aria-hidden="true" />}>Tenant safe</Button>
             <ThemeToggle theme={theme} onToggle={onToggleTheme} />
             <Button
@@ -258,7 +258,7 @@ export function Topbar({
                 </span>
               ) : null}
             </Button>
-            <div className="hidden min-w-0 rounded-md border border-grid-200 bg-white px-3 py-1.5 shadow-sm xl:block">
+            <div className="hidden min-w-0 rounded-md border border-grid-200 bg-white/90 px-3 py-1.5 shadow-sm 2xl:block">
               <p className="max-w-40 truncate text-sm font-bold text-ink-950">{currentUser?.full_name ?? "User"}</p>
               <p className="text-xs font-semibold text-ink-500">{formatLabel(currentUser?.role)}</p>
             </div>

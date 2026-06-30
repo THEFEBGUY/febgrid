@@ -19,17 +19,22 @@ interface ErrorStateProps {
 
 export function LoadingState({ label = "Loading workspace data" }: LoadingStateProps): JSX.Element {
   return (
-    <div className="flex min-h-56 flex-col items-center justify-center gap-3 px-5 py-10 text-center">
-      <Loader2 className="size-6 animate-spin text-ink-500" aria-hidden="true" />
-      <p className="text-sm font-semibold text-ink-500">{label}</p>
+    <div className="flex min-h-56 flex-col items-center justify-center gap-4 px-5 py-10 text-center">
+      <div className="flex size-14 items-center justify-center rounded-lg border border-grid-200 bg-white shadow-sm">
+        <Loader2 className="size-6 animate-spin text-brand-600" aria-hidden="true" />
+      </div>
+      <div className="w-full max-w-xs space-y-2">
+        <p className="text-sm font-bold text-ink-700">{label}</p>
+        <div className="febgrid-skeleton mx-auto h-2 w-40 rounded-full" aria-hidden="true" />
+      </div>
     </div>
   );
 }
 
 export function EmptyState({ title, description, action }: EmptyStateProps): JSX.Element {
   return (
-    <div className="flex min-h-56 flex-col items-center justify-center px-5 py-10 text-center">
-      <span className="flex size-12 items-center justify-center rounded-lg bg-grid-100 text-ink-700">
+    <div className="febgrid-empty-state flex min-h-56 flex-col items-center justify-center px-5 py-12 text-center">
+      <span className="flex size-14 items-center justify-center rounded-lg border border-grid-200 bg-grid-50 text-ink-700 shadow-sm">
         <Inbox className="size-5" aria-hidden="true" />
       </span>
       <h3 className="mt-4 text-base font-bold text-ink-950">{title}</h3>
@@ -41,8 +46,8 @@ export function EmptyState({ title, description, action }: EmptyStateProps): JSX
 
 export function ErrorState({ message, onRetry }: ErrorStateProps): JSX.Element {
   return (
-    <div className="flex min-h-56 flex-col items-center justify-center px-5 py-10 text-center">
-      <span className="flex size-12 items-center justify-center rounded-lg bg-rose-50 text-rose-700">
+    <div className="febgrid-empty-state flex min-h-56 flex-col items-center justify-center px-5 py-12 text-center">
+      <span className="flex size-14 items-center justify-center rounded-lg border border-rose-200 bg-rose-50 text-rose-700 shadow-sm">
         <AlertTriangle className="size-5" aria-hidden="true" />
       </span>
       <h3 className="mt-4 text-base font-bold text-ink-950">Unable to load data</h3>

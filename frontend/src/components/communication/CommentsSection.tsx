@@ -121,8 +121,8 @@ export function CommentsSection({
   }
 
   return (
-    <section className="rounded-lg border border-grid-200">
-      <div className="flex flex-col gap-3 border-b border-grid-200 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+    <section className="febgrid-surface overflow-hidden rounded-lg">
+      <div className="flex flex-col gap-3 border-b border-grid-200 bg-white/55 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex min-w-0 items-center gap-2">
           <MessageSquare className="size-4 shrink-0 text-ink-500" aria-hidden="true" />
           <h3 className="text-sm font-bold text-ink-950">Comments</h3>
@@ -142,8 +142,8 @@ export function CommentsSection({
         </FieldShell>
 
         {employees.length > 0 ? (
-          <div className="rounded-md border border-grid-200 bg-grid-50 p-3">
-            <p className="text-xs font-bold uppercase tracking-normal text-ink-500">Mention employees</p>
+          <div className="febgrid-muted-surface rounded-md p-3">
+            <p className="text-xs font-black uppercase tracking-normal text-brand-600">Mention employees</p>
             <p className="mt-1 text-xs font-semibold text-ink-500">Select people here or type @Full Name to notify a company member.</p>
             <div className="mt-3 grid gap-2 sm:grid-cols-2">
               {employees.slice(0, 8).map((employee) => (
@@ -178,7 +178,7 @@ export function CommentsSection({
             {comments.map((comment) => {
               const author = comment.author_employee_id ? employeeNames[comment.author_employee_id] ?? "Employee" : "Team member";
               return (
-                <article key={comment.id} className="px-4 py-3">
+                <article key={comment.id} className="px-4 py-4 transition hover:bg-grid-50/70">
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div className="min-w-0">
                       <p className="text-sm font-bold text-ink-950">{author}</p>

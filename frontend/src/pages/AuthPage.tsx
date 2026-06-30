@@ -1,6 +1,7 @@
-import { ArrowRight, Building2, LogIn, UserPlus, Zap } from "lucide-react";
+import { ArrowRight, Building2, Layers3, LogIn, ShieldCheck, Sparkles, UserPlus, Zap } from "lucide-react";
 import { type FormEvent, useState } from "react";
 
+import { MagicBentoCard, MagicBentoGrid } from "../components/premium/MagicBento";
 import { Button } from "../components/ui/Button";
 import { FieldShell, TextInput } from "../components/ui/FormControls";
 import type { LoginPayload, RegisterPayload } from "../types/api";
@@ -84,11 +85,11 @@ export function AuthPage({ error, isSubmitting, onClearError, onLogin, onRegiste
   }
 
   return (
-    <main className="min-h-screen bg-grid-50 text-ink-900">
-      <div className="mx-auto grid min-h-screen w-full max-w-6xl items-center gap-8 px-4 py-8 lg:grid-cols-[0.9fr_1.1fr] lg:px-8">
-        <section className="space-y-8">
+    <main className="febgrid-auth-bg min-h-screen text-ink-900">
+      <div className="mx-auto grid min-h-screen w-full max-w-7xl items-center gap-8 px-4 py-8 lg:grid-cols-[1.02fr_0.98fr] lg:px-8">
+        <section className="animate-fade-up space-y-7">
           <div className="flex items-center gap-3">
-            <span className="flex size-12 items-center justify-center rounded-lg bg-ink-950 text-white">
+            <span className="flex size-12 items-center justify-center rounded-lg bg-brand-600 text-white shadow-button">
               <Zap className="size-6" aria-hidden="true" />
             </span>
             <div>
@@ -98,32 +99,37 @@ export function AuthPage({ error, isSubmitting, onClearError, onLogin, onRegiste
           </div>
 
           <div className="max-w-xl">
-            <p className="text-sm font-bold uppercase tracking-normal text-blue-700">Company and user foundation</p>
-            <h1 className="mt-4 text-4xl font-black tracking-normal text-ink-950 sm:text-5xl">Enter your operating layer.</h1>
-            <p className="mt-4 text-base font-medium leading-7 text-ink-500">
-              Create a company owner account, connect it to one tenant, and start running Phase 1 operations from a protected workspace.
+            <p className="text-sm font-black uppercase tracking-normal text-brand-600">Company operating layer</p>
+            <h1 className="mt-4 text-4xl font-black tracking-normal text-ink-950 sm:text-6xl">Enter your operating layer.</h1>
+            <p className="mt-4 text-base font-semibold leading-7 text-ink-600 sm:text-lg">
+              One protected workspace for people, work, files, events, notifications, and company memory.
             </p>
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div className="rounded-lg border border-grid-200 bg-white p-4 shadow-sm">
-              <Building2 className="size-5 text-ink-700" aria-hidden="true" />
-              <p className="mt-3 text-sm font-bold text-ink-950">Tenant boundary</p>
-              <p className="mt-1 text-sm font-medium text-ink-500">Company data stays scoped to the authenticated account.</p>
-            </div>
-            <div className="rounded-lg border border-grid-200 bg-white p-4 shadow-sm">
-              <UserPlus className="size-5 text-ink-700" aria-hidden="true" />
-              <p className="mt-3 text-sm font-bold text-ink-950">Owner role</p>
-              <p className="mt-1 text-sm font-medium text-ink-500">The first signup becomes company_owner for Sprint 2.</p>
-            </div>
-          </div>
+          <MagicBentoGrid className="grid-cols-1 sm:grid-cols-2">
+            <MagicBentoCard className="p-4" tone="blue" eyebrow="Tenant safe" title="Every company stays isolated" description="Company data, roles, files, and events stay scoped to one operating tenant.">
+              <Building2 className="mt-4 size-5 text-brand-600" aria-hidden="true" />
+            </MagicBentoCard>
+            <MagicBentoCard className="p-4" tone="teal" eyebrow="Company memory" title="Events become history" description="Work, approvals, comments, uploads, and notifications all contribute to the timeline.">
+              <Layers3 className="mt-4 size-5 text-teal-700" aria-hidden="true" />
+            </MagicBentoCard>
+            <MagicBentoCard className="p-4 sm:col-span-2" tone="amber" eyebrow="Operational command" title="Built for owners, managers, and employees" description="Admin and employee views stay role-aware while preserving the same business operating system underneath.">
+              <div className="mt-5 grid gap-2 sm:grid-cols-3">
+                {["People", "Work Objects", "Timeline"].map((label) => (
+                  <span key={label} className="rounded-md border border-grid-200 bg-white/60 px-3 py-2 text-xs font-black uppercase text-ink-700">
+                    {label}
+                  </span>
+                ))}
+              </div>
+            </MagicBentoCard>
+          </MagicBentoGrid>
         </section>
 
-        <section className="rounded-lg border border-grid-200 bg-white shadow-soft">
-          <div className="flex border-b border-grid-200 p-2">
+        <MagicBentoCard className="animate-fade-up overflow-hidden p-0" tone="blue">
+          <div className="flex border-b border-grid-200 bg-white/60 p-2">
             <button
               className={`flex h-11 flex-1 items-center justify-center gap-2 rounded-md text-sm font-bold transition ${
-                mode === "login" ? "bg-ink-950 text-white" : "text-ink-600 hover:bg-grid-100"
+                mode === "login" ? "bg-brand-600 text-white shadow-button" : "text-ink-600 hover:bg-grid-100"
               }`}
               type="button"
               onClick={() => switchMode("login")}
@@ -133,7 +139,7 @@ export function AuthPage({ error, isSubmitting, onClearError, onLogin, onRegiste
             </button>
             <button
               className={`flex h-11 flex-1 items-center justify-center gap-2 rounded-md text-sm font-bold transition ${
-                mode === "signup" ? "bg-ink-950 text-white" : "text-ink-600 hover:bg-grid-100"
+                mode === "signup" ? "bg-brand-600 text-white shadow-button" : "text-ink-600 hover:bg-grid-100"
               }`}
               type="button"
               onClick={() => switchMode("signup")}
@@ -146,14 +152,18 @@ export function AuthPage({ error, isSubmitting, onClearError, onLogin, onRegiste
           {mode === "login" ? (
             <form className="space-y-4 p-5 sm:p-6" onSubmit={handleLogin}>
               <div>
+                <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-brand-200 bg-brand-50 px-3 py-1 text-xs font-black uppercase text-brand-700">
+                  <ShieldCheck className="size-3.5" aria-hidden="true" />
+                  Secure tenant session
+                </div>
                 <h2 className="text-xl font-black text-ink-950">Welcome back</h2>
                 <p className="mt-1 text-sm font-medium text-ink-500">Use your company account to open the dashboard.</p>
               </div>
               <FieldShell label="Email">
-                <TextInput required type="email" value={loginForm.email} onChange={(event) => setLoginForm((current) => ({ ...current, email: event.target.value }))} />
+                <TextInput required autoComplete="email" type="email" value={loginForm.email} onChange={(event) => setLoginForm((current) => ({ ...current, email: event.target.value }))} />
               </FieldShell>
               <FieldShell label="Password">
-                <TextInput required minLength={8} type="password" value={loginForm.password} onChange={(event) => setLoginForm((current) => ({ ...current, password: event.target.value }))} />
+                <TextInput required autoComplete="current-password" minLength={8} type="password" value={loginForm.password} onChange={(event) => setLoginForm((current) => ({ ...current, password: event.target.value }))} />
               </FieldShell>
               {formError || error ? <p className="text-sm font-semibold text-rose-700">{formError ?? error}</p> : null}
               <Button disabled={isSubmitting} type="submit" variant="primary" className="w-full" icon={<ArrowRight className="size-4" aria-hidden="true" />}>
@@ -163,6 +173,10 @@ export function AuthPage({ error, isSubmitting, onClearError, onLogin, onRegiste
           ) : (
             <form className="space-y-4 p-5 sm:p-6" onSubmit={handleSignup}>
               <div>
+                <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-brand-200 bg-brand-50 px-3 py-1 text-xs font-black uppercase text-brand-700">
+                  <Sparkles className="size-3.5" aria-hidden="true" />
+                  Create operating tenant
+                </div>
                 <h2 className="text-xl font-black text-ink-950">Create company account</h2>
                 <p className="mt-1 text-sm font-medium text-ink-500">Set up the first owner and company tenant.</p>
               </div>
@@ -171,10 +185,10 @@ export function AuthPage({ error, isSubmitting, onClearError, onLogin, onRegiste
                   <TextInput required value={signupForm.full_name} onChange={(event) => setSignupForm((current) => ({ ...current, full_name: event.target.value }))} />
                 </FieldShell>
                 <FieldShell label="Email">
-                  <TextInput required type="email" value={signupForm.email} onChange={(event) => setSignupForm((current) => ({ ...current, email: event.target.value }))} />
+                  <TextInput required autoComplete="email" type="email" value={signupForm.email} onChange={(event) => setSignupForm((current) => ({ ...current, email: event.target.value }))} />
                 </FieldShell>
                 <FieldShell label="Password">
-                  <TextInput required minLength={8} type="password" value={signupForm.password} onChange={(event) => setSignupForm((current) => ({ ...current, password: event.target.value }))} />
+                  <TextInput required autoComplete="new-password" minLength={8} type="password" value={signupForm.password} onChange={(event) => setSignupForm((current) => ({ ...current, password: event.target.value }))} />
                 </FieldShell>
                 <FieldShell label="Company name">
                   <TextInput
@@ -202,7 +216,7 @@ export function AuthPage({ error, isSubmitting, onClearError, onLogin, onRegiste
               </Button>
             </form>
           )}
-        </section>
+        </MagicBentoCard>
       </div>
     </main>
   );

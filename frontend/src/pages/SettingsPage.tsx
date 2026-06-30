@@ -1,6 +1,7 @@
 import { Archive, CreditCard, FileText, Pencil, Plus, RotateCcw, Save, Wand2 } from "lucide-react";
 import { type FormEvent, useEffect, useMemo, useState } from "react";
 
+import { MagicBentoCard } from "../components/premium/MagicBento";
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
 import { DataTable, type DataTableColumn } from "../components/ui/DataTable";
@@ -564,7 +565,7 @@ export function SettingsPage({
                 Settings are read-only for your current role.
               </div>
             ) : null}
-            {settingsMessage ? <p className="rounded-lg border border-grid-200 bg-grid-50 px-4 py-3 text-sm font-semibold text-ink-700">{settingsMessage}</p> : null}
+            {settingsMessage ? <p className="febgrid-muted-surface rounded-lg px-4 py-3 text-sm font-semibold text-ink-700">{settingsMessage}</p> : null}
 
             <form id="company-settings-form" className="grid gap-4 lg:grid-cols-3" onSubmit={handleSettingsSubmit}>
               <FieldShell label="Company display name">
@@ -618,7 +619,7 @@ export function SettingsPage({
               </div>
             </form>
 
-            <div className="rounded-lg border border-grid-200 p-4">
+            <div className="febgrid-command-card rounded-lg p-4">
               <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
                 <div>
                   <p className="text-xs font-bold uppercase tracking-normal text-ink-500">Industry template</p>
@@ -652,29 +653,29 @@ export function SettingsPage({
           {data.billingSummary ? (
             <div className="space-y-5 p-5">
               <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                <div className="rounded-lg border border-grid-200 bg-grid-50 p-4">
-                  <p className="text-xs font-bold uppercase tracking-normal text-ink-500">Current plan</p>
+                <MagicBentoCard className="p-4" tone="blue">
+                  <p className="text-xs font-black uppercase tracking-normal text-ink-500">Current plan</p>
                   <p className="mt-2 text-2xl font-black text-ink-950">{formatLabel(data.billingSummary.plan.plan_key)}</p>
                   <p className="mt-1 text-sm font-semibold text-ink-500">{formatLabel(data.billingSummary.plan.billing_status)}</p>
-                </div>
-                <div className="rounded-lg border border-grid-200 bg-grid-50 p-4">
-                  <p className="text-xs font-bold uppercase tracking-normal text-ink-500">Employees</p>
+                </MagicBentoCard>
+                <MagicBentoCard className="p-4" tone="green">
+                  <p className="text-xs font-black uppercase tracking-normal text-ink-500">Employees</p>
                   <p className="mt-2 text-2xl font-black text-ink-950">
                     {data.billingSummary.usage.active_employees}/{data.billingSummary.plan.employee_limit}
                   </p>
-                </div>
-                <div className="rounded-lg border border-grid-200 bg-grid-50 p-4">
-                  <p className="text-xs font-bold uppercase tracking-normal text-ink-500">Work objects</p>
+                </MagicBentoCard>
+                <MagicBentoCard className="p-4" tone="teal">
+                  <p className="text-xs font-black uppercase tracking-normal text-ink-500">Work objects</p>
                   <p className="mt-2 text-2xl font-black text-ink-950">
                     {data.billingSummary.usage.active_work_objects}/{data.billingSummary.plan.work_object_limit}
                   </p>
-                </div>
-                <div className="rounded-lg border border-grid-200 bg-grid-50 p-4">
-                  <p className="text-xs font-bold uppercase tracking-normal text-ink-500">Storage</p>
+                </MagicBentoCard>
+                <MagicBentoCard className="p-4" tone="amber">
+                  <p className="text-xs font-black uppercase tracking-normal text-ink-500">Storage</p>
                   <p className="mt-2 text-2xl font-black text-ink-950">
                     {data.billingSummary.usage.storage_used_mb}/{data.billingSummary.plan.storage_limit_mb} MB
                   </p>
-                </div>
+                </MagicBentoCard>
               </div>
               <div className="grid gap-3 md:grid-cols-[1fr_1.3fr]">
                 <FieldShell label="Local/dev plan">
@@ -686,7 +687,7 @@ export function SettingsPage({
                     ))}
                   </SelectInput>
                 </FieldShell>
-                <div className="rounded-lg border border-grid-200 bg-grid-50 px-4 py-3 text-sm font-semibold text-ink-600">
+                <div className="febgrid-muted-surface rounded-lg px-4 py-3 text-sm font-semibold text-ink-600">
                   {data.billingSummary.payment_provider_note} No card, bank, invoice, Stripe, or Razorpay flow exists in this foundation.
                 </div>
               </div>
@@ -699,7 +700,7 @@ export function SettingsPage({
                   ))}
                 </div>
               ) : (
-                <p className="rounded-lg border border-grid-200 bg-grid-50 px-4 py-3 text-sm font-semibold text-ink-600">Usage is within prepared plan limits.</p>
+                <p className="febgrid-muted-surface rounded-lg px-4 py-3 text-sm font-semibold text-ink-600">Usage is within prepared plan limits.</p>
               )}
             </div>
           ) : (
@@ -789,7 +790,7 @@ export function SettingsPage({
             <TextInput placeholder="invoice, receipt, proof" value={fileForm.tags} onChange={(event) => setFileForm((current) => ({ ...current, tags: event.target.value }))} />
           </FieldShell>
           {editingFile ? (
-            <div className="rounded-lg border border-grid-200 bg-grid-50 px-4 py-3 text-sm font-semibold text-ink-600">
+            <div className="febgrid-muted-surface rounded-lg px-4 py-3 text-sm font-semibold text-ink-600">
               {editingFile.original_file_name} / {formatFileSize(editingFile.file_size)} / {formatLabel(editingFile.processing_status)}
             </div>
           ) : null}
@@ -822,7 +823,7 @@ export function SettingsPage({
           <FieldShell label="Description">
             <TextArea value={typeForm.description} onChange={(event) => setTypeForm((current) => ({ ...current, description: event.target.value }))} />
           </FieldShell>
-          <label className="flex items-center gap-2 rounded-md border border-grid-200 bg-grid-50 px-3 py-2 text-sm font-semibold text-ink-700">
+          <label className="febgrid-muted-surface flex items-center gap-2 rounded-md px-3 py-2 text-sm font-semibold text-ink-700">
             <input checked={typeForm.is_default} type="checkbox" onChange={(event) => setTypeForm((current) => ({ ...current, is_default: event.target.checked }))} />
             Make default type
           </label>
@@ -867,7 +868,7 @@ export function SettingsPage({
           <FieldShell label="Help text">
             <TextArea value={fieldForm.help_text} onChange={(event) => setFieldForm((current) => ({ ...current, help_text: event.target.value }))} />
           </FieldShell>
-          <label className="flex items-center gap-2 rounded-md border border-grid-200 bg-grid-50 px-3 py-2 text-sm font-semibold text-ink-700">
+          <label className="febgrid-muted-surface flex items-center gap-2 rounded-md px-3 py-2 text-sm font-semibold text-ink-700">
             <input checked={fieldForm.required} type="checkbox" onChange={(event) => setFieldForm((current) => ({ ...current, required: event.target.checked }))} />
             Required field
           </label>

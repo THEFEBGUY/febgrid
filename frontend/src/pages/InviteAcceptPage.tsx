@@ -166,7 +166,7 @@ export function InviteAcceptPage({ token }: InviteAcceptPageProps): JSX.Element 
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-grid-50 px-4 py-10">
+      <div className="febgrid-auth-bg min-h-screen px-4 py-10">
         <LoadingState label="Loading invitation" />
       </div>
     );
@@ -174,8 +174,8 @@ export function InviteAcceptPage({ token }: InviteAcceptPageProps): JSX.Element 
 
   if (error && !preview) {
     return (
-      <div className="min-h-screen bg-grid-50 px-4 py-10">
-        <div className="mx-auto max-w-2xl rounded-lg border border-grid-200 bg-white shadow-sm">
+      <div className="febgrid-auth-bg min-h-screen px-4 py-10">
+        <div className="febgrid-surface mx-auto max-w-2xl rounded-lg">
           <ErrorState message={error} onRetry={() => window.location.reload()} />
         </div>
       </div>
@@ -184,8 +184,8 @@ export function InviteAcceptPage({ token }: InviteAcceptPageProps): JSX.Element 
 
   if (!preview) {
     return (
-      <div className="min-h-screen bg-grid-50 px-4 py-10">
-        <div className="mx-auto max-w-2xl rounded-lg border border-grid-200 bg-white p-6 shadow-sm">
+      <div className="febgrid-auth-bg min-h-screen px-4 py-10">
+        <div className="febgrid-surface mx-auto max-w-2xl rounded-lg p-6">
           <p className="text-sm font-bold text-ink-950">Invite not found.</p>
         </div>
       </div>
@@ -197,12 +197,12 @@ export function InviteAcceptPage({ token }: InviteAcceptPageProps): JSX.Element 
   const assignment = compactList([preview.department_name, preview.team_name, preview.manager_name ? `Manager: ${preview.manager_name}` : null]) || "No org assignment";
 
   return (
-    <div className="min-h-screen bg-grid-50 px-4 py-10">
+    <div className="febgrid-auth-bg min-h-screen px-4 py-10">
       <main className="mx-auto max-w-3xl space-y-4">
-        <section className="rounded-lg border border-grid-200 bg-white shadow-sm">
-          <div className="border-b border-grid-200 px-5 py-4">
+        <section className="febgrid-surface animate-fade-up overflow-hidden rounded-lg">
+          <div className="border-b border-grid-200 bg-white/60 px-5 py-4">
             <div className="flex items-start gap-3">
-              <span className="flex size-11 shrink-0 items-center justify-center rounded-lg bg-ink-950 text-white">
+              <span className="flex size-11 shrink-0 items-center justify-center rounded-lg bg-brand-600 text-white shadow-button">
                 <UserRoundCheck className="size-5" aria-hidden="true" />
               </span>
               <div className="min-w-0">
@@ -226,7 +226,7 @@ export function InviteAcceptPage({ token }: InviteAcceptPageProps): JSX.Element 
         </section>
 
         {terminalStatusMessage && !accepted ? (
-          <section className="rounded-lg border border-amber-200 bg-amber-50 p-5 text-amber-700">
+          <section className="animate-fade-up rounded-lg border border-amber-200 bg-amber-50 p-5 text-amber-700 shadow-sm">
             <div className="flex gap-3">
               <AlertTriangle className="mt-0.5 size-5 shrink-0" aria-hidden="true" />
               <div>
@@ -238,25 +238,26 @@ export function InviteAcceptPage({ token }: InviteAcceptPageProps): JSX.Element 
         ) : null}
 
         {!terminalStatusMessage && !accepted && !canCompletePendingProfile && !completionMessage ? (
-          <section className="rounded-lg border border-grid-200 bg-white shadow-sm">
-            <div className="border-b border-grid-200 px-5 py-4">
+          <section className="febgrid-surface animate-fade-up overflow-hidden rounded-lg">
+            <div className="border-b border-grid-200 bg-white/60 px-5 py-4">
               <h2 className="text-lg font-black text-ink-950">Accept invitation</h2>
               <p className="mt-1 text-sm font-medium text-ink-500">The email, company, and role are locked by the invite.</p>
             </div>
             <form className="space-y-4 p-5" onSubmit={acceptInvite}>
               <FieldShell label="Email">
-                <TextInput readOnly value={preview.invited_email} />
+                <TextInput readOnly autoComplete="email" value={preview.invited_email} />
               </FieldShell>
               <FieldShell label="Full name">
                 <TextInput value={accountForm.full_name} onChange={(event) => setAccountForm((current) => ({ ...current, full_name: event.target.value }))} />
               </FieldShell>
               <div className="grid gap-4 sm:grid-cols-2">
                 <FieldShell label="Password">
-                  <TextInput required minLength={8} type="password" value={accountForm.password} onChange={(event) => setAccountForm((current) => ({ ...current, password: event.target.value }))} />
+                  <TextInput required autoComplete="new-password" minLength={8} type="password" value={accountForm.password} onChange={(event) => setAccountForm((current) => ({ ...current, password: event.target.value }))} />
                 </FieldShell>
                 <FieldShell label="Confirm password">
                   <TextInput
                     required
+                    autoComplete="new-password"
                     minLength={8}
                     type="password"
                     value={accountForm.confirm_password}
@@ -275,8 +276,8 @@ export function InviteAcceptPage({ token }: InviteAcceptPageProps): JSX.Element 
         ) : null}
 
         {(accepted || canCompletePendingProfile) && !completionMessage ? (
-          <section className="rounded-lg border border-grid-200 bg-white shadow-sm">
-            <div className="border-b border-grid-200 px-5 py-4">
+          <section className="febgrid-surface animate-fade-up overflow-hidden rounded-lg">
+            <div className="border-b border-grid-200 bg-white/60 px-5 py-4">
               <h2 className="text-lg font-black text-ink-950">Complete profile</h2>
               <p className="mt-1 text-sm font-medium text-ink-500">Personal details only. Company-controlled fields stay locked.</p>
             </div>
@@ -315,7 +316,7 @@ export function InviteAcceptPage({ token }: InviteAcceptPageProps): JSX.Element 
         ) : null}
 
         {completionMessage ? (
-          <section className="rounded-lg border border-green-200 bg-green-50 p-5 text-green-700">
+          <section className="animate-fade-up rounded-lg border border-green-200 bg-green-50 p-5 text-green-700 shadow-sm">
             <div className="flex gap-3">
               <CheckCircle2 className="mt-0.5 size-5 shrink-0" aria-hidden="true" />
               <div>
@@ -332,7 +333,7 @@ export function InviteAcceptPage({ token }: InviteAcceptPageProps): JSX.Element 
 
 function LockedFact({ label, value }: { label: string; value: string }): JSX.Element {
   return (
-    <div className="rounded-lg border border-grid-200 bg-grid-50 p-4">
+    <div className="febgrid-muted-surface rounded-lg p-4">
       <div className="flex items-center gap-2">
         <Lock className="size-3.5 text-ink-500" aria-hidden="true" />
         <p className="text-xs font-bold uppercase tracking-normal text-ink-500">{label}</p>

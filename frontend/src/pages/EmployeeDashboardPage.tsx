@@ -1,6 +1,7 @@
 import { Bell, BriefcaseBusiness, CalendarDays, CheckCircle2, UserCircle } from "lucide-react";
 import { useMemo } from "react";
 
+import { MagicBentoCard } from "../components/premium/MagicBento";
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
 import { MetricCard } from "../components/ui/MetricCard";
@@ -87,12 +88,12 @@ export function EmployeeDashboardPage({
           onRetry={onRetry}
         >
           <div className="grid gap-4 p-5 lg:grid-cols-[1.2fr_0.8fr]">
-            <div className="rounded-lg border border-grid-200 bg-grid-50 p-5">
-              <p className="text-xs font-bold uppercase tracking-normal text-ink-500">Company</p>
+            <MagicBentoCard className="p-5" tone="blue">
+              <p className="text-xs font-black uppercase tracking-normal text-brand-600">Company</p>
               <h2 className="mt-2 text-2xl font-black text-ink-950">{selectedCompany?.name ?? "FebGrid workspace"}</h2>
               <p className="mt-2 text-sm font-medium text-ink-600">{selectedCompany?.description ?? "Your personal operating view inside the company."}</p>
-            </div>
-            <div className="rounded-lg border border-grid-200 bg-grid-50 p-5">
+            </MagicBentoCard>
+            <MagicBentoCard className="p-5" tone="teal">
               <div className="flex items-start gap-3">
                 <span className="flex size-11 shrink-0 items-center justify-center rounded-md bg-white text-ink-700 ring-1 ring-grid-200">
                   <UserCircle className="size-5" aria-hidden="true" />
@@ -106,7 +107,7 @@ export function EmployeeDashboardPage({
                   </div>
                 </div>
               </div>
-            </div>
+            </MagicBentoCard>
           </div>
         </ModuleBoundary>
       </SectionPanel>

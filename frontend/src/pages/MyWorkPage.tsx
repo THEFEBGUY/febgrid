@@ -204,7 +204,7 @@ export function MyWorkPage({
               <DetailItem label="Dates" value={compactList([formatDate(detailWorkObject.start_date), `Due ${formatDate(detailWorkObject.due_date)}`])} />
             </div>
 
-            {detailWorkObject.description ? <p className="rounded-lg border border-grid-200 bg-grid-50 p-4 text-sm font-medium text-ink-600">{detailWorkObject.description}</p> : null}
+            {detailWorkObject.description ? <p className="febgrid-muted-surface rounded-lg p-4 text-sm font-medium text-ink-600">{detailWorkObject.description}</p> : null}
 
             <CommentsSection
               companyId={selectedCompanyId}
@@ -215,8 +215,8 @@ export function MyWorkPage({
               onChanged={() => void loadDetail(detailWorkObject.id)}
             />
 
-            <section className="rounded-lg border border-grid-200">
-              <div className="border-b border-grid-200 px-4 py-3">
+            <section className="febgrid-surface overflow-hidden rounded-lg">
+              <div className="border-b border-grid-200 bg-white/55 px-4 py-3">
                 <h3 className="text-sm font-bold text-ink-950">Files</h3>
               </div>
               <form className="grid gap-3 border-b border-grid-100 p-4 lg:grid-cols-[1fr_1fr_auto]" onSubmit={handleUploadAttachment}>
@@ -271,8 +271,8 @@ export function MyWorkPage({
             {isDetailLoading ? <LoadingState label="Loading work details" /> : null}
             {detailError ? <ErrorState message={detailError} onRetry={() => loadDetail(detailWorkObject.id)} /> : null}
             {!isDetailLoading && !detailError ? (
-              <section className="rounded-lg border border-grid-200">
-                <div className="border-b border-grid-200 px-4 py-3">
+              <section className="febgrid-surface overflow-hidden rounded-lg">
+                <div className="border-b border-grid-200 bg-white/55 px-4 py-3">
                   <h3 className="text-sm font-bold text-ink-950">Recent activity</h3>
                 </div>
                 {detailEvents.length === 0 ? (
@@ -298,8 +298,8 @@ export function MyWorkPage({
 
 function DetailItem({ label, value, tone }: { label: string; value: string; tone?: "blue" | "green" | "amber" | "red" | "teal" | "slate" }): JSX.Element {
   return (
-    <div className="rounded-lg border border-grid-200 bg-grid-50 p-4">
-      <p className="text-xs font-bold uppercase tracking-normal text-ink-500">{label}</p>
+    <div className="febgrid-muted-surface rounded-lg p-4">
+      <p className="text-xs font-black uppercase tracking-normal text-ink-500">{label}</p>
       <div className="mt-2">{tone ? <Badge label={value} tone={tone} /> : <p className="text-sm font-bold text-ink-950">{value}</p>}</div>
     </div>
   );

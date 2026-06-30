@@ -7,8 +7,8 @@ export function ProgressBar({ value }: ProgressBarProps): JSX.Element {
 
   return (
     <div className="flex min-w-40 items-center gap-3">
-      <div className="h-2 w-full overflow-hidden rounded-full bg-grid-100">
-        <div className="h-full rounded-full bg-ink-950" style={{ width: `${normalizedValue}%` }} />
+      <div className="h-2 w-full overflow-hidden rounded-full border border-grid-200 bg-grid-100">
+        <div className="h-full rounded-full bg-brand-600 shadow-sm transition-all duration-300" style={{ width: `${normalizedValue}%` }} />
       </div>
       <span className="w-10 text-right text-xs font-bold text-ink-500">{normalizedValue}%</span>
     </div>

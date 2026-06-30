@@ -16,7 +16,7 @@ interface FilterFieldProps {
 
 export function FilterBar({ children, isResetDisabled = false, onReset }: FilterBarProps): JSX.Element {
   return (
-    <div className="border-b border-grid-100 bg-grid-50/60 px-5 py-4">
+    <div className="febgrid-filter-bar px-5 py-4">
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
         {children}
         <div className="flex items-end">
@@ -37,7 +37,7 @@ export function FilterBar({ children, isResetDisabled = false, onReset }: Filter
 export function FilterField({ label, children }: FilterFieldProps): JSX.Element {
   return (
     <label className="block min-w-0">
-      <span className="mb-2 block text-xs font-bold uppercase tracking-normal text-ink-500">{label}</span>
+      <span className="mb-2 block text-xs font-black uppercase tracking-normal text-ink-500">{label}</span>
       {children}
     </label>
   );

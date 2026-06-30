@@ -15,14 +15,14 @@ interface DataTableProps<T> {
 
 export function DataTable<T>({ columns, rows, getRowKey }: DataTableProps<T>): JSX.Element {
   return (
-    <div className="overflow-x-auto">
+    <div className="febgrid-table-shell overflow-x-auto">
       <table className="min-w-full border-separate border-spacing-0 text-left">
-        <thead>
+        <thead className="febgrid-table-head">
           <tr>
             {columns.map((column) => (
               <th
                 key={column.key}
-                className={`border-b border-grid-200 px-4 py-3 text-xs font-bold uppercase tracking-normal text-ink-500 ${column.className ?? ""}`}
+                className={`border-b border-grid-200 px-4 py-3.5 text-xs font-black uppercase tracking-normal text-ink-500 ${column.className ?? ""}`}
               >
                 {column.label}
               </th>
@@ -31,11 +31,11 @@ export function DataTable<T>({ columns, rows, getRowKey }: DataTableProps<T>): J
         </thead>
         <tbody>
           {rows.map((row) => (
-            <tr key={getRowKey(row)} className="group">
+            <tr key={getRowKey(row)} className="febgrid-table-row group transition-colors">
               {columns.map((column) => (
                 <td
                   key={column.key}
-                  className={`border-b border-grid-100 px-4 py-3 text-sm text-ink-700 group-last:border-b-0 ${column.className ?? ""}`}
+                  className={`border-b border-grid-100 px-4 py-4 text-sm font-medium text-ink-700 group-last:border-b-0 ${column.className ?? ""}`}
                 >
                   {column.render(row)}
                 </td>

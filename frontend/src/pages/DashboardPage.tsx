@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { useMemo } from "react";
 
+import { MagicBentoCard } from "../components/premium/MagicBento";
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
 import { MetricCard } from "../components/ui/MetricCard";
@@ -114,14 +115,16 @@ export function DashboardPage({ data, selectedCompany, isLoadingCompanies, isLoa
 
   return (
     <div className="space-y-6">
-      <section className="rounded-lg border border-grid-200 bg-white p-5 shadow-sm">
+      <MagicBentoCard className="animate-fade-up p-5" tone="blue">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div className="min-w-0">
-            <p className="text-xs font-bold uppercase tracking-normal text-ink-500">Live operational overview</p>
+            <p className="text-xs font-black uppercase tracking-normal text-brand-600">Live operational overview</p>
             <h2 className="mt-1 truncate text-2xl font-black text-ink-950">{summary.company_overview.company_name}</h2>
-            <p className="mt-2 text-sm font-medium text-ink-500">Last updated {formatTime(summary.company_overview.generated_at)}</p>
+            <p className="mt-2 max-w-2xl text-sm font-semibold text-ink-500">
+              Live command center for people, work, leaves, projects, notifications, files, and timeline activity. Last updated {formatTime(summary.company_overview.generated_at)}.
+            </p>
           </div>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap gap-2 lg:justify-end">
             <Button title="Refresh dashboard" aria-label="Refresh dashboard" icon={<RefreshCw className="size-4" aria-hidden="true" />} onClick={() => void onRetry()}>
               Refresh
             </Button>
@@ -130,7 +133,7 @@ export function DashboardPage({ data, selectedCompany, isLoadingCompanies, isLoa
             </Button>
           </div>
         </div>
-      </section>
+      </MagicBentoCard>
 
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         {metrics.map((metric, index) => (
@@ -153,7 +156,7 @@ export function DashboardPage({ data, selectedCompany, isLoadingCompanies, isLoa
               <StatusTile label="Blocked" value={summary.work_summary.blocked} tone={summary.work_summary.blocked > 0 ? "red" : "green"} />
               <StatusTile label="High/Critical" value={summary.work_summary.high_or_critical_priority} tone="red" />
             </div>
-            <div className="rounded-lg border border-grid-200 bg-grid-50 p-4">
+            <div className="febgrid-muted-surface rounded-lg p-4">
               <div className="flex flex-wrap gap-2">
                 <Badge label={`${summary.work_summary.due_today} due today`} tone={summary.work_summary.due_today > 0 ? "amber" : "green"} />
                 <Badge label={`${summary.work_summary.overdue} overdue`} tone={summary.work_summary.overdue > 0 ? "red" : "green"} />
@@ -332,12 +335,12 @@ export function DashboardPage({ data, selectedCompany, isLoadingCompanies, isLoa
 
 function StatusTile({ label, value, tone }: { label: string; value: number; tone: "blue" | "green" | "amber" | "red" | "teal" | "slate" }): JSX.Element {
   return (
-    <div className="rounded-lg border border-grid-200 bg-grid-50 p-4">
-      <p className="text-xs font-bold uppercase tracking-normal text-ink-500">{label}</p>
+    <MagicBentoCard className="p-4" tone={tone}>
+      <p className="text-xs font-black uppercase tracking-normal text-ink-500">{label}</p>
       <div className="mt-2 flex items-end justify-between gap-3">
         <p className="text-2xl font-black text-ink-950">{value}</p>
         <Badge label={value === 1 ? "item" : "items"} tone={tone} />
       </div>
-    </div>
+    </MagicBentoCard>
   );
 }

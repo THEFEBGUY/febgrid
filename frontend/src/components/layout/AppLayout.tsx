@@ -46,7 +46,7 @@ export function AppLayout({
   const activeNavigation = navigationItems.find((item) => item.key === activePage) ?? navigationItems[0];
 
   return (
-    <div className="min-h-screen bg-grid-50 text-ink-900">
+    <div className="febgrid-app-bg min-h-screen text-ink-900">
       <div className="hidden lg:fixed lg:inset-y-0 lg:left-0 lg:block lg:w-72">
         <Sidebar activePage={activePage} items={navigationItems} onNavigate={onNavigate} />
       </div>
@@ -85,7 +85,7 @@ export function AppLayout({
           onToggleTheme={onToggleTheme}
           onLogout={onLogout}
         />
-        <main className="mx-auto w-full max-w-7xl px-4 py-6 lg:px-8">{children}</main>
+        <main className="mx-auto w-full max-w-7xl px-4 py-7 lg:px-8">{children}</main>
       </div>
     </div>
   );

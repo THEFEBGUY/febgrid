@@ -17,11 +17,11 @@ export function ThemeToggle({ theme, onToggle }: ThemeToggleProps): JSX.Element 
       aria-label={label}
       aria-pressed={isDark}
       title={label}
-      className="relative inline-flex h-10 w-[4.25rem] shrink-0 items-center rounded-full border border-grid-200 bg-white p-1 text-ink-700 shadow-sm transition hover:bg-grid-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink-950"
+      className="relative inline-flex h-10 w-[4.25rem] shrink-0 items-center rounded-full border border-grid-200 bg-white p-1 text-ink-700 shadow-sm transition hover:border-grid-300 hover:bg-grid-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600"
       onClick={onToggle}
     >
       <span
-        className={`absolute left-1 top-1 flex size-8 items-center justify-center rounded-full bg-ink-950 text-white shadow-sm transition-transform ${
+        className={`absolute left-1 top-1 flex size-8 items-center justify-center rounded-full bg-brand-600 text-white shadow-button transition-transform ${
           isDark ? "translate-x-7" : "translate-x-0"
         }`}
         aria-hidden="true"

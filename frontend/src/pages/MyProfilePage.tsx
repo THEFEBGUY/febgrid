@@ -107,7 +107,7 @@ export function MyProfilePage({ selectedCompany, onProfileSaved }: MyProfilePage
       {profile && form ? (
         <div className="grid gap-6 p-5 xl:grid-cols-[0.85fr_1.15fr]">
           <aside className="space-y-4">
-            <div className="rounded-lg border border-grid-200 bg-grid-50 p-5">
+            <div className="febgrid-muted-surface rounded-lg p-5">
               <div className="flex items-start gap-3">
                 <span className="flex size-12 shrink-0 items-center justify-center rounded-lg bg-white text-ink-700 ring-1 ring-grid-200">
                   <UserCircle className="size-6" aria-hidden="true" />
@@ -132,7 +132,7 @@ export function MyProfilePage({ selectedCompany, onProfileSaved }: MyProfilePage
             <ReadOnlyItem label="Current status" value={formatLabel(profile.current_status)} />
           </aside>
 
-          <form className="space-y-4 rounded-lg border border-grid-200 bg-white p-5" onSubmit={handleSubmit}>
+          <form className="febgrid-surface space-y-4 rounded-lg p-5" onSubmit={handleSubmit}>
             <div>
               <p className="text-sm font-black text-ink-950">Personal details</p>
               <p className="mt-1 text-sm font-medium text-ink-500">You can update safe personal fields. Company, role, department, team, and manager stay controlled by admins.</p>
@@ -170,8 +170,8 @@ export function MyProfilePage({ selectedCompany, onProfileSaved }: MyProfilePage
 
 function ReadOnlyItem({ label, value }: { label: string; value: string }): JSX.Element {
   return (
-    <div className="rounded-lg border border-grid-200 bg-white p-4">
-      <p className="text-xs font-bold uppercase tracking-normal text-ink-500">{label}</p>
+    <div className="febgrid-muted-surface rounded-lg p-4">
+      <p className="text-xs font-black uppercase tracking-normal text-ink-500">{label}</p>
       <p className="mt-2 text-sm font-bold text-ink-950">{value}</p>
     </div>
   );

@@ -15,9 +15,9 @@ export function Modal({ title, description, isOpen, onClose, children }: ModalPr
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-ink-950/45 px-3 py-4 sm:items-center" role="dialog" aria-modal="true">
-      <div className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-lg bg-white shadow-soft">
-        <div className="flex items-start justify-between gap-4 border-b border-grid-200 px-5 py-4">
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-ink-950/45 px-3 py-4 backdrop-blur-sm sm:items-center" role="dialog" aria-modal="true">
+      <div className="febgrid-surface max-h-[92vh] w-full max-w-2xl animate-fade-up overflow-y-auto rounded-lg">
+        <div className="flex items-start justify-between gap-4 border-b border-grid-200 bg-white/65 px-5 py-4">
           <div className="min-w-0">
             <h2 className="truncate text-lg font-black text-ink-950">{title}</h2>
             <p className="mt-1 text-sm font-medium text-ink-500">{description}</p>

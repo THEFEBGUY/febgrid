@@ -825,7 +825,7 @@ export function EmployeesPage({
                 <option value="intern">Intern</option>
               </SelectInput>
             </FieldShell>
-            <label className="flex min-h-10 items-center gap-3 rounded-md border border-grid-200 bg-grid-50 px-3 py-2 text-sm font-bold text-ink-900">
+            <label className="febgrid-muted-surface flex min-h-10 items-center gap-3 rounded-md px-3 py-2 text-sm font-bold text-ink-900">
               <input
                 type="checkbox"
                 checked={inviteForm.approval_required}
@@ -854,7 +854,7 @@ export function EmployeesPage({
         onClose={() => setIsConfirmInviteOpen(false)}
       >
         <div className="space-y-4 p-5">
-          <div className="rounded-lg border border-grid-200 bg-grid-50 p-4">
+          <div className="febgrid-muted-surface rounded-lg p-4">
             <p className="text-sm font-bold text-ink-950">{inviteForm.invited_email}</p>
             <p className="mt-1 text-sm font-medium text-ink-500">
               {inviteForm.approval_required
@@ -929,7 +929,7 @@ export function EmployeesPage({
 
 function ProfileItem({ label, value, badgeTone }: { label: string; value: string; badgeTone?: BadgeTone }): JSX.Element {
   return (
-    <div className="rounded-lg border border-grid-200 bg-grid-50 p-4">
+    <div className="febgrid-muted-surface rounded-lg p-4">
       <p className="text-xs font-bold uppercase tracking-normal text-ink-500">{label}</p>
       <div className="mt-2">{badgeTone ? <Badge label={value} tone={badgeTone} /> : <p className="text-sm font-bold text-ink-950">{value}</p>}</div>
     </div>
