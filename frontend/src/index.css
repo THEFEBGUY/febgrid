@@ -85,6 +85,62 @@ button:disabled .febgrid-button-icon {
   opacity: 0.72;
 }
 
+.febgrid-sidebar-item--idle {
+  color: #344054;
+}
+
+.febgrid-sidebar-item--idle:hover {
+  color: #0f172a;
+  background: rgba(248, 250, 252, 0.96);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
+}
+
+.febgrid-sidebar-item--idle .febgrid-sidebar-icon {
+  color: #475467;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.febgrid-sidebar-item--idle:hover .febgrid-sidebar-icon {
+  color: #0f172a;
+  background: #ffffff;
+}
+
+.febgrid-sidebar-item--idle .febgrid-sidebar-description {
+  color: #667085;
+}
+
+.febgrid-sidebar-item--idle:hover .febgrid-sidebar-description {
+  color: #475467;
+}
+
+html.dark .febgrid-sidebar-item--idle {
+  color: #cbd5e1;
+}
+
+html.dark .febgrid-sidebar-item--idle:hover {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.06);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.04) inset;
+}
+
+html.dark .febgrid-sidebar-item--idle .febgrid-sidebar-icon {
+  color: #cbd5e1;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+html.dark .febgrid-sidebar-item--idle:hover .febgrid-sidebar-icon {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+html.dark .febgrid-sidebar-item--idle .febgrid-sidebar-description {
+  color: #94a3b8;
+}
+
+html.dark .febgrid-sidebar-item--idle:hover .febgrid-sidebar-description {
+  color: #cbd5e1;
+}
+
 html.dark .bg-white {
   background-color: #101827;
 }
