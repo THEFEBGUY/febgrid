@@ -32,18 +32,24 @@ export function Sidebar({ activePage, items, onNavigate }: SidebarProps): JSX.El
               key={item.key}
               type="button"
               onClick={() => onNavigate(item.key)}
-              className={`flex min-h-14 w-full items-center gap-3 rounded-md px-3 text-left transition ${
+              className={`febgrid-sidebar-item group flex min-h-14 w-full items-center gap-3 rounded-md px-3 text-left transition ${
                 isActive
-                  ? "bg-gradient-to-r from-brand-600 to-brand-500 text-white shadow-button"
-                  : "text-ink-700 hover:bg-white/80 hover:text-ink-950 hover:shadow-sm"
+                  ? "febgrid-sidebar-item--active bg-gradient-to-r from-brand-600 to-brand-500 text-white shadow-button"
+                  : "febgrid-sidebar-item--idle"
               }`}
             >
-              <span className={`flex size-8 shrink-0 items-center justify-center rounded-md ${isActive ? "bg-white/15" : "bg-white/70 text-ink-600 ring-1 ring-grid-200"}`}>
+              <span
+                className={`febgrid-sidebar-icon flex size-8 shrink-0 items-center justify-center rounded-md transition ${
+                  isActive ? "bg-white/15" : "ring-1 ring-grid-200"
+                }`}
+              >
                 <Icon className="size-4 shrink-0" aria-hidden="true" />
               </span>
               <span className="min-w-0">
                 <span className="block truncate text-sm font-bold">{item.label}</span>
-                <span className={`block truncate text-xs font-semibold ${isActive ? "text-blue-100" : "text-ink-500"}`}>{item.description}</span>
+                <span className={`febgrid-sidebar-description block truncate text-xs font-semibold transition ${isActive ? "text-blue-100" : ""}`}>
+                  {item.description}
+                </span>
               </span>
             </button>
           );
