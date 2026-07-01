@@ -2,6 +2,7 @@ import { Archive, CheckCircle2, Download, Eye, FileText, Pencil, Plus, Trash2, U
 import { type FormEvent, useCallback, useMemo, useState } from "react";
 
 import { CommentsSection } from "../components/communication/CommentsSection";
+import { AISummaryPanel } from "../components/ai/AISummaryPanel";
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
 import { DataTable, type DataTableColumn } from "../components/ui/DataTable";
@@ -13,7 +14,7 @@ import { SectionPanel } from "../components/ui/SectionPanel";
 import { EmptyState, ErrorState, LoadingState } from "../components/ui/States";
 import { priorityTone, statusTone } from "../components/ui/tone";
 import { api } from "../services/api";
-import type { Attachment, CustomFieldDefinition, Event as FebGridEvent, WorkObject, WorkObjectCreatePayload, WorkObjectUpdatePayload } from "../types/api";
+import type { AIJob, Attachment, CustomFieldDefinition, Event as FebGridEvent, WorkObject, WorkObjectCreatePayload, WorkObjectUpdatePayload } from "../types/api";
 import type { ModulePageProps } from "../types/page";
 import { compactList, formatDate, formatLabel, formatTime } from "../utils/format";
 
@@ -181,6 +182,10 @@ export function WorkObjectsPage({
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [isAttachmentLoading, setIsAttachmentLoading] = useState(false);
   const [attachmentError, setAttachmentError] = useState<string | null>(null);
+  const [aiSummary, setAISummary] = useState<AIJob | null>(null);
+  const [isAISummaryLoading, setIsAISummaryLoading] = useState(false);
+  const [isAISummaryGenerating, setIsAISummaryGenerating] = useState(false);
+  const [aiSummaryError, setAISummaryError] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [uploadDescription, setUploadDescription] = useState("");
   const [isUploading, setIsUploading] = useState(false);
@@ -255,21 +260,26 @@ export function WorkObjectsPage({
       if (!selectedCompanyId) return;
       setIsDetailLoading(true);
       setIsAttachmentLoading(true);
+      setIsAISummaryLoading(true);
       setDetailError(null);
       setAttachmentError(null);
+      setAISummaryError(null);
       try {
-        const [events, nextAttachments] = await Promise.all([
+        const [eventsResult, attachmentsResult, summaryResult] = await Promise.allSettled([
           api.workObjectTimeline(workObjectId, selectedCompanyId),
           api.workObjectAttachments(workObjectId, selectedCompanyId),
+          api.latestWorkObjectAISummary(workObjectId, selectedCompanyId),
         ]);
-        setDetailEvents(events);
-        setAttachments(nextAttachments);
-      } catch {
-        setDetailError("Unable to load work object detail.");
-        setAttachmentError("Unable to load attachments.");
+        if (eventsResult.status === "fulfilled") setDetailEvents(eventsResult.value);
+        else setDetailError("Unable to load work object timeline.");
+        if (attachmentsResult.status === "fulfilled") setAttachments(attachmentsResult.value);
+        else setAttachmentError("Unable to load attachments.");
+        if (summaryResult.status === "fulfilled") setAISummary(summaryResult.value);
+        else setAISummaryError("Unable to load the latest AI summary.");
       } finally {
         setIsDetailLoading(false);
         setIsAttachmentLoading(false);
+        setIsAISummaryLoading(false);
       }
     },
     [selectedCompanyId],
@@ -421,6 +431,8 @@ export function WorkObjectsPage({
     setAttachments([]);
     setDetailError(null);
     setAttachmentError(null);
+    setAISummary(null);
+    setAISummaryError(null);
     setSelectedFile(null);
     setUploadDescription("");
     setEditingAttachmentId(null);
@@ -466,6 +478,21 @@ export function WorkObjectsPage({
       setIsFormOpen(false);
     } catch {
       setFormError("Work object could not be saved. Check the details and try again.");
+    }
+  }
+
+  async function handleGenerateAISummary(): Promise<void> {
+    if (!detailWorkObject || !selectedCompanyId) return;
+    setIsAISummaryGenerating(true);
+    setAISummaryError(null);
+    try {
+      const job = await api.generateWorkObjectAISummary(detailWorkObject.id, selectedCompanyId);
+      setAISummary(job);
+      void loadWorkObjectDetail(detailWorkObject.id);
+    } catch (caughtError) {
+      setAISummaryError(caughtError instanceof Error ? caughtError.message : "AI summary could not be generated.");
+    } finally {
+      setIsAISummaryGenerating(false);
     }
   }
 
@@ -778,6 +805,16 @@ export function WorkObjectsPage({
             {detailWorkObject.description ? <p className="rounded-lg border border-grid-200 bg-grid-50 p-4 text-sm font-medium text-ink-600">{detailWorkObject.description}</p> : null}
             {typeof detailWorkObject.metadata.notes === "string" ? <p className="rounded-lg border border-grid-200 bg-grid-50 p-4 text-sm font-medium text-ink-600">{detailWorkObject.metadata.notes}</p> : null}
             <CustomFieldsDetail fields={data.customFields} workObject={detailWorkObject} />
+
+            <AISummaryPanel
+              error={aiSummaryError}
+              generateLabel="Generate AI Summary"
+              isGenerating={isAISummaryGenerating}
+              isLoading={isAISummaryLoading}
+              job={aiSummary}
+              kind="work_object"
+              onGenerate={() => void handleGenerateAISummary()}
+            />
 
             <div className="flex flex-wrap gap-2">
               <Button icon={<Pencil className="size-4" aria-hidden="true" />} onClick={() => openEdit(detailWorkObject)}>Edit</Button>

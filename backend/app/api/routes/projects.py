@@ -16,6 +16,7 @@ from app.models.project import Project, ProjectMember
 from app.models.team import Team
 from app.models.user import User
 from app.models.work_object import WorkObject
+from app.schemas.ai_job import AIJobRead
 from app.schemas.event import EventRead
 from app.schemas.project import (
     ProjectCreate,
@@ -28,6 +29,7 @@ from app.schemas.project import (
     ProjectUpdate,
 )
 from app.schemas.work_object import WorkObjectRead
+from app.services.ai_service import ai_service
 from app.services.event_service import EventService
 from app.services.notification_service import NotificationService
 
@@ -745,6 +747,45 @@ def remove_project_member(
         )
     db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post("/{project_id}/ai-summary", response_model=AIJobRead)
+def generate_project_ai_summary(
+    project_id: UUID,
+    company_id: UUID,
+    db: Session = Depends(db_session),
+    current_user: User = Depends(get_current_user),
+) -> AIJobRead:
+    project = get_project_for_user(db, current_user, project_id, company_id)
+    job = ai_service.generate_summary(
+        db,
+        company_id=company_id,
+        job_type="project_summary_safe",
+        input_entity_type="project",
+        input_entity_id=project.id,
+        current_user=current_user,
+    )
+    db.commit()
+    db.refresh(job)
+    return job
+
+
+@router.get("/{project_id}/ai-summary/latest", response_model=AIJobRead | None)
+def get_latest_project_ai_summary(
+    project_id: UUID,
+    company_id: UUID,
+    db: Session = Depends(db_session),
+    current_user: User = Depends(get_current_user),
+) -> AIJobRead | None:
+    project = get_project_for_user(db, current_user, project_id, company_id)
+    return ai_service.latest_summary_job(
+        db,
+        company_id=company_id,
+        job_type="project_summary_safe",
+        input_entity_type="project",
+        input_entity_id=project.id,
+        current_user=current_user,
+    )
 
 
 @router.get("/{project_id}/timeline", response_model=list[EventRead])

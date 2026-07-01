@@ -13,8 +13,10 @@ from app.models.ai_job import AIJob
 from app.models.attachment import Attachment
 from app.models.common import utc_now
 from app.models.company import Company
+from app.models.department import Department
 from app.models.employee import Employee
-from app.models.project import Project
+from app.models.project import Project, ProjectMember
+from app.models.team import Team
 from app.models.user import User
 from app.models.work_object import WorkObject
 from app.schemas.ai_job import (
@@ -29,6 +31,7 @@ from app.schemas.ai_job import (
     AISafetySettingsRead,
     AISafetySettingsUpdate,
 )
+from app.services.ai_prompt_templates import build_summary_messages
 from app.services.ai_providers import AIProviderError, AIProviderRequest, build_ai_provider
 from app.services.event_service import EventService
 from app.services.notification_service import NotificationService
@@ -75,12 +78,6 @@ CAPABILITY_DEFINITIONS = [
         description="Run a small text-only project summary through the configured provider.",
         mock_only=False,
     ),
-    AICapability(
-        job_type="company_brief_safe",
-        label="Safe company brief",
-        description="Run a small count-based company brief through the configured provider.",
-        mock_only=False,
-    ),
 ]
 
 
@@ -116,6 +113,31 @@ def safe_text(value: Any, max_chars: int = 1200) -> str | None:
     if not text:
         return None
     return text[:max_chars]
+
+
+def safe_json_value(value: Any, *, max_chars: int = 500, depth: int = 0) -> Any:
+    if depth > 2:
+        return None
+    if value is None or isinstance(value, (bool, int, float)):
+        return value
+    if isinstance(value, str):
+        return safe_text(value, max_chars)
+    if isinstance(value, list):
+        return [safe_json_value(item, max_chars=max_chars, depth=depth + 1) for item in value[:10]]
+    if isinstance(value, dict):
+        cleaned: dict[str, Any] = {}
+        for key, nested in list(value.items())[:20]:
+            text_key = safe_text(key, 80)
+            if text_key and text_key.lower() not in RESERVED_AI_KEYS:
+                cleaned[text_key] = safe_json_value(nested, max_chars=max_chars, depth=depth + 1)
+        return cleaned
+    return safe_text(value, max_chars)
+
+
+def display_name(employee: Employee | None) -> str | None:
+    if employee is None:
+        return None
+    return safe_text(employee.full_name, 160)
 
 
 def contains_reserved_key(value: Any) -> bool:
@@ -224,7 +246,6 @@ class AIService:
         expected = {
             "work_object_summary_safe": "work_object",
             "project_summary_safe": "project",
-            "company_brief_safe": "company",
         }
         if job_type in expected and input_entity_type != expected[job_type]:
             raise HTTPException(
@@ -304,6 +325,128 @@ class AIService:
         return job
 
     @classmethod
+    def create_summary_job(
+        cls,
+        db: Session,
+        *,
+        company_id: UUID,
+        job_type: str,
+        input_entity_type: str,
+        input_entity_id: UUID,
+        current_user: User,
+    ) -> AIJob:
+        ensure_company_access(current_user, company_id)
+        if job_type not in {"work_object_summary_safe", "project_summary_safe"}:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Unsupported AI summary type")
+        company = get_or_404(db, Company, company_id, label="Company")
+        cls.ensure_job_type(job_type)
+        cls.validate_job_entity_pair(job_type, input_entity_type)
+        cls.validate_entity_access(
+            db,
+            company_id=company_id,
+            input_entity_type=input_entity_type,
+            input_entity_id=input_entity_id,
+        )
+
+        company_settings = cls.company_ai_settings(company)
+        if job_type not in company_settings["allowed_ai_job_types"]:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="AI job type is not allowed for this company")
+
+        provider_mode = cls.resolved_provider_mode(job_type, company_settings)
+        requester_employee = linked_employee(db, current_user)
+        job = AIJob(
+            company_id=company_id,
+            requested_by_user_id=current_user.id,
+            requested_by_employee_id=requester_employee.id if requester_employee else None,
+            job_type=job_type,
+            status="queued",
+            priority="normal",
+            input_entity_type=input_entity_type,
+            input_entity_id=input_entity_id,
+            input_payload={
+                "source": "entity_ai_summary",
+                "safe_fields_only": True,
+                "frontend_prompt_allowed": False,
+            },
+            output_payload={},
+            provider_key=cls.provider_key_for_mode(provider_mode),
+            provider_mode=provider_mode,
+            max_attempts=1,
+            metadata_json={
+                "provider_mode_requested": provider_mode,
+                "external_processing_used": False,
+                "safety_status": "queued",
+                "summary_feature": True,
+                "input_entity_type": input_entity_type,
+                "input_entity_id": str(input_entity_id),
+            },
+            related_entity_type=input_entity_type,
+            related_entity_id=input_entity_id,
+        )
+        db.add(job)
+        db.flush()
+        cls.record_job_event(
+            db,
+            job=job,
+            current_user=current_user,
+            event_type="ai_job.created",
+            title=f"AI summary queued: {job.job_type}",
+            description="A tenant-safe AI summary job was created.",
+        )
+        cls.record_summary_event(db, job=job, current_user=current_user, phase="requested")
+        return job
+
+    @classmethod
+    def generate_summary(
+        cls,
+        db: Session,
+        *,
+        company_id: UUID,
+        job_type: str,
+        input_entity_type: str,
+        input_entity_id: UUID,
+        current_user: User,
+    ) -> AIJob:
+        job = cls.create_summary_job(
+            db,
+            company_id=company_id,
+            job_type=job_type,
+            input_entity_type=input_entity_type,
+            input_entity_id=input_entity_id,
+            current_user=current_user,
+        )
+        job = cls.run_job(db, job=job, current_user=current_user)
+        cls.record_summary_event(db, job=job, current_user=current_user, phase="succeeded" if job.status == "succeeded" else "failed")
+        return job
+
+    @classmethod
+    def latest_summary_job(
+        cls,
+        db: Session,
+        *,
+        company_id: UUID,
+        job_type: str,
+        input_entity_type: str,
+        input_entity_id: UUID,
+        current_user: User,
+    ) -> AIJob | None:
+        ensure_company_access(current_user, company_id)
+        cls.ensure_job_type(job_type)
+        cls.validate_job_entity_pair(job_type, input_entity_type)
+        return db.scalar(
+            select(AIJob)
+            .where(
+                AIJob.company_id == company_id,
+                AIJob.job_type == job_type,
+                AIJob.input_entity_type == input_entity_type,
+                AIJob.input_entity_id == input_entity_id,
+                AIJob.status == "succeeded",
+            )
+            .order_by(AIJob.completed_at.desc(), AIJob.created_at.desc())
+            .limit(1)
+        )
+
+    @classmethod
     def visible_statement(cls, company_id: UUID, current_user: User):
         ensure_company_access(current_user, company_id)
         statement = select(AIJob).where(AIJob.company_id == company_id)
@@ -334,6 +477,25 @@ class AIService:
         if job.input_entity_type == "work_object" and job.input_entity_id:
             work_object = get_or_404(db, WorkObject, job.input_entity_id, label="Work object")
             ensure_company(work_object, job.company_id, label="Work object")
+            project_name = None
+            department_name = None
+            team_name = None
+            assignee_name = None
+            creator_name = None
+            if work_object.project_id:
+                project_name = db.scalar(select(Project.name).where(Project.id == work_object.project_id, Project.company_id == job.company_id))
+            if work_object.department_id:
+                department_name = db.scalar(select(Department.name).where(Department.id == work_object.department_id, Department.company_id == job.company_id))
+            if work_object.team_id:
+                team_name = db.scalar(select(Team.name).where(Team.id == work_object.team_id, Team.company_id == job.company_id))
+            if work_object.assignee_employee_id:
+                assignee_name = display_name(
+                    db.scalar(select(Employee).where(Employee.id == work_object.assignee_employee_id, Employee.company_id == job.company_id))
+                )
+            if work_object.creator_employee_id:
+                creator_name = display_name(
+                    db.scalar(select(Employee).where(Employee.id == work_object.creator_employee_id, Employee.company_id == job.company_id))
+                )
             return {
                 "type": "work_object",
                 "title": safe_text(work_object.title),
@@ -341,11 +503,66 @@ class AIService:
                 "status": safe_text(work_object.status),
                 "priority": safe_text(work_object.priority),
                 "object_type": safe_text(work_object.object_type),
+                "project_name": safe_text(project_name),
+                "department_name": safe_text(department_name),
+                "team_name": safe_text(team_name),
+                "assignee_display_name": assignee_name,
+                "creator_display_name": creator_name,
+                "start_date": work_object.start_date.isoformat() if work_object.start_date else None,
                 "due_date": work_object.due_date.isoformat() if work_object.due_date else None,
+                "completed_at": work_object.completed_at.isoformat() if work_object.completed_at else None,
+                "tags": [safe_text(tag, 80) for tag in metadata_dict({"tags": work_object.tags}).get("tags", [])[:10] if safe_text(tag, 80)],
+                "custom_fields": safe_json_value(work_object.custom_fields),
             }
         if job.input_entity_type == "project" and job.input_entity_id:
             project = get_or_404(db, Project, job.input_entity_id, label="Project")
             ensure_company(project, job.company_id, label="Project")
+            owner_name = None
+            department_name = None
+            team_name = None
+            if project.owner_employee_id:
+                owner_name = display_name(db.scalar(select(Employee).where(Employee.id == project.owner_employee_id, Employee.company_id == job.company_id)))
+            if project.department_id:
+                department_name = db.scalar(select(Department.name).where(Department.id == project.department_id, Department.company_id == job.company_id))
+            if project.team_id:
+                team_name = db.scalar(select(Team.name).where(Team.id == project.team_id, Team.company_id == job.company_id))
+            work_objects = list(
+                db.scalars(
+                    select(WorkObject)
+                    .where(WorkObject.company_id == job.company_id, WorkObject.project_id == project.id, WorkObject.is_active.is_(True))
+                    .order_by(WorkObject.updated_at.desc())
+                    .limit(100)
+                ).all()
+            )
+            status_counts: dict[str, int] = {}
+            priority_counts: dict[str, int] = {}
+            overdue_count = 0
+            upcoming_due_count = 0
+            now = utc_now()
+            open_statuses = {"assigned", "in_progress", "under_review", "blocked"}
+            for work_object in work_objects:
+                status_key = work_object.status or "unknown"
+                priority_key = work_object.priority or "unknown"
+                status_counts[status_key] = status_counts.get(status_key, 0) + 1
+                priority_counts[priority_key] = priority_counts.get(priority_key, 0) + 1
+                if work_object.status in open_statuses and work_object.due_date:
+                    due_at = work_object.due_date
+                    if due_at.tzinfo is None:
+                        due_at = due_at.replace(tzinfo=now.tzinfo)
+                    if due_at < now:
+                        overdue_count += 1
+                    elif (due_at - now).days <= 7:
+                        upcoming_due_count += 1
+            top_open_work_objects = [
+                {
+                    "title": safe_text(work_object.title, 220),
+                    "status": safe_text(work_object.status),
+                    "priority": safe_text(work_object.priority),
+                    "due_date": work_object.due_date.isoformat() if work_object.due_date else None,
+                }
+                for work_object in work_objects
+                if work_object.status in open_statuses
+            ][:5]
             return {
                 "type": "project",
                 "name": safe_text(project.name),
@@ -354,7 +571,16 @@ class AIService:
                 "priority": safe_text(project.priority),
                 "progress_percent": project.progress_percent,
                 "risk_level": safe_text(project.risk_level),
+                "owner_display_name": owner_name,
+                "department_name": safe_text(department_name),
+                "team_name": safe_text(team_name),
+                "start_date": project.start_date.isoformat() if project.start_date else None,
                 "due_date": project.due_date.isoformat() if project.due_date else None,
+                "work_object_counts_by_status": status_counts,
+                "work_object_counts_by_priority": priority_counts,
+                "overdue_work_count": overdue_count,
+                "upcoming_due_work_count": upcoming_due_count,
+                "top_open_work_objects": top_open_work_objects,
             }
         if job.input_entity_type == "company":
             company = get_or_404(db, Company, job.company_id, label="Company")
@@ -374,30 +600,12 @@ class AIService:
 
     @staticmethod
     def build_messages(job: AIJob, entity_context: dict[str, Any], max_input_chars: int) -> list[dict[str, str]]:
-        user_payload = {
-            "job_type": job.job_type,
-            "entity_context": entity_context,
-            "input_payload": metadata_dict(job.input_payload),
-            "output_contract": {
-                "summary": "short plain-language operational summary",
-                "key_points": ["up to 5 concise bullets"],
-                "risks": ["up to 3 concise risks"],
-                "next_actions": ["up to 3 practical next steps"],
-                "confidence": None,
-            },
-        }
-        serialized = json.dumps(user_payload, default=str)[:max_input_chars]
-        return [
-            {
-                "role": "system",
-                "content": (
-                    "You are FebGrid's safety-constrained business operating system assistant. "
-                    "Use only the provided structured context. Do not infer secrets. Do not request or reveal tokens, "
-                    "passwords, API keys, file paths, or credentials. Return compact JSON only."
-                ),
-            },
-            {"role": "user", "content": serialized},
-        ]
+        return build_summary_messages(
+            job_type=job.job_type,
+            entity_context=entity_context,
+            input_payload=metadata_dict(job.input_payload),
+            max_input_chars=max_input_chars,
+        )
 
     @classmethod
     def run_job(cls, db: Session, *, job: AIJob, current_user: User) -> AIJob:
@@ -452,7 +660,13 @@ class AIService:
                     max_input_chars=runtime.groq_max_input_chars,
                 )
             )
-            job.output_payload = metadata_dict(result.output_payload)
+            output_payload = metadata_dict(result.output_payload)
+            output_payload.setdefault("provider_key", result.provider_key)
+            output_payload.setdefault("provider_mode", result.provider_mode)
+            output_payload.setdefault("model_name", result.model_name)
+            output_payload.setdefault("generated_at", utc_now().isoformat())
+            output_payload.setdefault("is_mock", not result.external_processing_used)
+            job.output_payload = output_payload
             job.provider_key = result.provider_key
             job.provider_mode = result.provider_mode
             job.status = "succeeded"
@@ -591,6 +805,42 @@ class AIService:
                 "attempts": job.attempts,
                 "input_entity_type": job.input_entity_type,
                 "input_entity_id": str(job.input_entity_id) if job.input_entity_id else None,
+            },
+        )
+
+    @classmethod
+    def record_summary_event(cls, db: Session, *, job: AIJob, current_user: User, phase: str):
+        if job.input_entity_type not in {"work_object", "project"} or job.input_entity_id is None:
+            return None
+        entity_label = "work object" if job.input_entity_type == "work_object" else "project"
+        event_type = f"ai_summary.{job.input_entity_type}.{phase}"
+        title = f"AI {entity_label} summary {phase}"
+        description = f"A tenant-safe AI {entity_label} summary was {phase}."
+        metadata = metadata_dict(job.metadata_json)
+        return EventService.record_event(
+            db,
+            company_id=job.company_id,
+            actor_user_id=current_user.id,
+            actor_employee_id=cls.actor_employee_id(db, current_user),
+            event_type=event_type,
+            title=title,
+            description=description,
+            target_entity_type=job.input_entity_type,
+            target_entity_id=job.input_entity_id,
+            related_entity_type="ai_job",
+            related_entity_id=job.id,
+            metadata={
+                "ai_job_id": str(job.id),
+                "entity_type": job.input_entity_type,
+                "entity_id": str(job.input_entity_id),
+                "job_type": job.job_type,
+                "status": job.status,
+                "provider_key": job.provider_key,
+                "provider_mode": job.provider_mode,
+                "model_name": metadata.get("model_name"),
+                "safety_status": metadata.get("safety_status"),
+                "external_processing_used": bool(metadata.get("external_processing_used", False)),
+                "error_code": metadata.get("error_code"),
             },
         )
 

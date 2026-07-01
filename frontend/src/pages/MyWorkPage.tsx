@@ -1,6 +1,7 @@
 import { CheckCircle2, Download, Eye, Upload } from "lucide-react";
 import { type FormEvent, useCallback, useMemo, useState } from "react";
 
+import { AISummaryPanel } from "../components/ai/AISummaryPanel";
 import { CommentsSection } from "../components/communication/CommentsSection";
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
@@ -12,7 +13,7 @@ import { SectionPanel } from "../components/ui/SectionPanel";
 import { EmptyState, ErrorState, LoadingState } from "../components/ui/States";
 import { priorityTone, statusTone } from "../components/ui/tone";
 import { api } from "../services/api";
-import type { Attachment, Event as FebGridEvent, WorkObject } from "../types/api";
+import type { AIJob, Attachment, Event as FebGridEvent, WorkObject } from "../types/api";
 import type { ModulePageProps } from "../types/page";
 import { compactList, formatDate, formatLabel, formatTime } from "../utils/format";
 
@@ -46,6 +47,10 @@ export function MyWorkPage({
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [isDetailLoading, setIsDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
+  const [aiSummary, setAISummary] = useState<AIJob | null>(null);
+  const [isAISummaryLoading, setIsAISummaryLoading] = useState(false);
+  const [isAISummaryGenerating, setIsAISummaryGenerating] = useState(false);
+  const [aiSummaryError, setAISummaryError] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [fileDescription, setFileDescription] = useState("");
   const [fileInputKey, setFileInputKey] = useState(0);
@@ -64,18 +69,24 @@ export function MyWorkPage({
     async (workObjectId: string): Promise<void> => {
       if (!selectedCompanyId) return;
       setIsDetailLoading(true);
+      setIsAISummaryLoading(true);
       setDetailError(null);
+      setAISummaryError(null);
       try {
-        const [events, nextAttachments] = await Promise.all([
+        const [eventsResult, attachmentsResult, summaryResult] = await Promise.allSettled([
           api.workObjectTimeline(workObjectId, selectedCompanyId),
           api.workObjectAttachments(workObjectId, selectedCompanyId),
+          api.latestWorkObjectAISummary(workObjectId, selectedCompanyId),
         ]);
-        setDetailEvents(events);
-        setAttachments(nextAttachments);
-      } catch {
-        setDetailError("Unable to load this work object.");
+        if (eventsResult.status === "fulfilled") setDetailEvents(eventsResult.value);
+        else setDetailError("Unable to load this work object's timeline.");
+        if (attachmentsResult.status === "fulfilled") setAttachments(attachmentsResult.value);
+        else setDetailError("Unable to load this work object's files.");
+        if (summaryResult.status === "fulfilled") setAISummary(summaryResult.value);
+        else setAISummaryError("Unable to load the latest AI summary.");
       } finally {
         setIsDetailLoading(false);
+        setIsAISummaryLoading(false);
       }
     },
     [selectedCompanyId],
@@ -86,11 +97,28 @@ export function MyWorkPage({
     setDetailEvents([]);
     setAttachments([]);
     setDetailError(null);
+    setAISummary(null);
+    setAISummaryError(null);
     setSelectedFile(null);
     setFileDescription("");
     setUploadError(null);
     setFileInputKey((current) => current + 1);
     void loadDetail(workObject.id);
+  }
+
+  async function handleGenerateAISummary(): Promise<void> {
+    if (!detailWorkObject || !selectedCompanyId) return;
+    setIsAISummaryGenerating(true);
+    setAISummaryError(null);
+    try {
+      const job = await api.generateWorkObjectAISummary(detailWorkObject.id, selectedCompanyId);
+      setAISummary(job);
+      void loadDetail(detailWorkObject.id);
+    } catch (caughtError) {
+      setAISummaryError(caughtError instanceof Error ? caughtError.message : "AI summary could not be generated.");
+    } finally {
+      setIsAISummaryGenerating(false);
+    }
   }
 
   async function handleUploadAttachment(event: FormEvent<HTMLFormElement>): Promise<void> {
@@ -205,6 +233,16 @@ export function MyWorkPage({
             </div>
 
             {detailWorkObject.description ? <p className="febgrid-muted-surface rounded-lg p-4 text-sm font-medium text-ink-600">{detailWorkObject.description}</p> : null}
+
+            <AISummaryPanel
+              error={aiSummaryError}
+              generateLabel="Generate AI Summary"
+              isGenerating={isAISummaryGenerating}
+              isLoading={isAISummaryLoading}
+              job={aiSummary}
+              kind="work_object"
+              onGenerate={() => void handleGenerateAISummary()}
+            />
 
             <CommentsSection
               companyId={selectedCompanyId}

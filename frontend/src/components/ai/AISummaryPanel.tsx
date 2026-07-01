@@ -1,0 +1,159 @@
+import { Sparkles } from "lucide-react";
+
+import type { AIJob } from "../../types/api";
+import { formatLabel, formatTime } from "../../utils/format";
+import { Badge } from "../ui/Badge";
+import { Button } from "../ui/Button";
+import { LoadingState } from "../ui/States";
+
+type SummaryKind = "work_object" | "project";
+
+interface AISummaryPanelProps {
+  error: string | null;
+  generateLabel: string;
+  isGenerating: boolean;
+  isLoading: boolean;
+  job: AIJob | null;
+  kind: SummaryKind;
+  onGenerate: () => void;
+}
+
+function text(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+function list(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.map((item) => String(item).trim()).filter(Boolean).slice(0, 6);
+}
+
+function providerLabel(job: AIJob | null): string {
+  if (!job) return "AI summary";
+  return job.provider_mode === "groq" ? "Groq" : formatLabel(job.provider_mode || "mock");
+}
+
+function statusTone(status: string): "blue" | "green" | "amber" | "red" | "slate" {
+  if (status === "succeeded") return "green";
+  if (status === "failed") return "red";
+  if (status === "running") return "blue";
+  if (status === "queued") return "amber";
+  return "slate";
+}
+
+export function AISummaryPanel({
+  error,
+  generateLabel,
+  isGenerating,
+  isLoading,
+  job,
+  kind,
+  onGenerate,
+}: AISummaryPanelProps): JSX.Element {
+  const output = job?.output_payload ?? {};
+  const summary = text(output.summary);
+  const generatedAt = text(output.generated_at) ?? job?.completed_at ?? job?.created_at ?? null;
+  const isMock = output.is_mock === true || output.mock === true || job?.provider_mode === "mock";
+  const modelName = text(output.model_name) ?? text(output.model) ?? text(job?.metadata.model_name);
+  const primaryPoints = kind === "project" ? list(output.risks_or_blockers) : list(output.key_points);
+  const blockers = kind === "project" ? list(output.risks_or_blockers) : list(output.blockers_or_risks);
+  const nextSteps = list(output.suggested_next_steps);
+  const currentStatus = kind === "project" ? text(output.status_explanation) : text(output.current_status_explanation);
+
+  return (
+    <section className="febgrid-surface overflow-hidden rounded-lg">
+      <div className="flex flex-col gap-3 border-b border-grid-200 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <Sparkles className="size-4 text-brand-600" aria-hidden="true" />
+            <h3 className="text-sm font-black text-ink-950">{kind === "project" ? "AI project summary" : "AI work summary"}</h3>
+            {job ? <Badge label={providerLabel(job)} tone={job.provider_mode === "groq" ? "teal" : "blue"} /> : null}
+            {job ? <Badge label={formatLabel(job.status)} tone={statusTone(job.status)} /> : null}
+            {isMock && job ? <Badge label="Mock output" tone="slate" /> : null}
+          </div>
+          <p className="mt-1 text-xs font-semibold text-ink-500">
+            Server-owned prompt, safe entity context, no raw files, no secrets.
+          </p>
+        </div>
+        <Button
+          aria-label={generateLabel}
+          disabled={isGenerating}
+          icon={<Sparkles className="size-4" aria-hidden="true" />}
+          title={generateLabel}
+          variant="primary"
+          onClick={onGenerate}
+        >
+          {isGenerating ? "Generating..." : generateLabel}
+        </Button>
+      </div>
+
+      {isLoading ? <LoadingState label="Loading latest AI summary" /> : null}
+      {error ? <p className="m-4 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-bold text-rose-700">{error}</p> : null}
+
+      {!isLoading && !job && !error ? (
+        <div className="px-4 py-5">
+          <p className="text-sm font-bold text-ink-950">No summary generated yet.</p>
+          <p className="mt-1 text-sm font-semibold text-ink-500">
+            Generate one when you want a concise operational readout for this {kind === "project" ? "project" : "work object"}.
+          </p>
+        </div>
+      ) : null}
+
+      {!isLoading && job ? (
+        <div className="space-y-4 p-4">
+          {job.status === "failed" ? (
+            <p className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-bold text-rose-700">
+              {job.error_message ?? "AI summary failed safely."}
+            </p>
+          ) : null}
+          {summary ? (
+            <div className="rounded-lg border border-grid-200 bg-grid-50 p-4">
+              <p className="text-xs font-black uppercase tracking-normal text-ink-500">Summary</p>
+              <p className="mt-2 text-sm font-semibold leading-6 text-ink-700">{summary}</p>
+            </div>
+          ) : null}
+          {kind === "project" ? (
+            <div className="grid gap-3 md:grid-cols-3">
+              <SummaryStat label="Health" value={text(output.project_health) ?? "Unknown"} />
+              <SummaryStat label="Progress" value={text(output.progress_overview) ?? "Not enough data yet"} />
+              <SummaryStat label="Open work" value={text(output.open_work_overview) ?? "Not enough data yet"} />
+            </div>
+          ) : currentStatus ? (
+            <SummaryBlock items={[currentStatus]} title="Status explanation" />
+          ) : null}
+          {kind === "project" && currentStatus ? <SummaryBlock items={[currentStatus]} title="Status explanation" /> : null}
+          {kind === "work_object" && primaryPoints.length > 0 ? <SummaryBlock items={primaryPoints} title="Key points" /> : null}
+          {blockers.length > 0 ? <SummaryBlock items={blockers} title="Blockers or risks" /> : null}
+          {nextSteps.length > 0 ? <SummaryBlock items={nextSteps} title="Suggested next steps" /> : null}
+          <p className="text-xs font-semibold text-ink-500">
+            {generatedAt ? `Generated ${formatTime(generatedAt)}` : "Generated time unavailable"}
+            {modelName ? ` / ${modelName}` : ""}
+          </p>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+function SummaryBlock({ items, title }: { items: string[]; title: string }): JSX.Element {
+  return (
+    <div className="rounded-lg border border-grid-200 bg-grid-50 p-4">
+      <p className="text-xs font-black uppercase tracking-normal text-ink-500">{title}</p>
+      <ul className="mt-2 space-y-2 text-sm font-semibold leading-6 text-ink-700">
+        {items.map((item) => (
+          <li key={item}>{item}</li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function SummaryStat({ label, value }: { label: string; value: string }): JSX.Element {
+  return (
+    <div className="rounded-lg border border-grid-200 bg-grid-50 p-4">
+      <p className="text-xs font-black uppercase tracking-normal text-ink-500">{label}</p>
+      <p className="mt-2 text-sm font-bold leading-6 text-ink-950">{value}</p>
+    </div>
+  );
+}

@@ -1,4 +1,4 @@
-import { Archive, Bot, CreditCard, FileText, Pencil, Play, Plus, RotateCcw, Save, ShieldAlert, XCircle, Wand2 } from "lucide-react";
+import { Archive, Bot, CreditCard, FileText, Pencil, Play, Plus, RotateCcw, Save, ShieldAlert, Wand2, XCircle } from "lucide-react";
 import { type FormEvent, useEffect, useMemo, useState } from "react";
 
 import { MagicBentoCard } from "../components/premium/MagicBento";
@@ -631,24 +631,6 @@ export function SettingsPage({
     }
   }
 
-  async function handleCreateSafeGroqJob(): Promise<void> {
-    if (!canManage || !selectedCompany) return;
-    setSettingsMessage(null);
-    try {
-      await onCreateAIJob({
-        job_type: "company_brief_safe",
-        priority: "normal",
-        input_entity_type: "company",
-        input_entity_id: selectedCompany.id,
-        input_payload: { source: "settings_groq_safe_test" },
-        metadata: { safe_text_only: true },
-      });
-      setSettingsMessage("Safe Groq-ready AI job queued. Run it from the AI jobs table.");
-    } catch {
-      setSettingsMessage("Safe Groq-ready AI job could not be queued.");
-    }
-  }
-
   async function handleToggleAIEnabled(nextValue: boolean): Promise<void> {
     if (!canManage) return;
     setSettingsMessage(null);
@@ -687,10 +669,8 @@ export function SettingsPage({
   const aiSafetySettings = data.aiSafetySettings;
   const displayedProviderMode = aiProviderStatus?.provider_mode ?? data.aiCapabilities?.provider_mode ?? "mock";
   const displayedModelName = aiProviderStatus?.model_name ?? (displayedProviderMode === "mock" ? "mock-deterministic" : "Not configured");
-  const groqConfigured = displayedProviderMode === "groq" && Boolean(aiProviderStatus?.configured);
   const externalProcessingAllowed = Boolean(aiSafetySettings?.external_ai_processing_allowed ?? aiProviderStatus?.external_processing_allowed);
   const aiEnabled = Boolean(aiSafetySettings?.ai_enabled ?? aiProviderStatus?.ai_enabled ?? true);
-  const canCreateSafeGroqJob = Boolean(canManage && selectedCompany && aiEnabled && displayedProviderMode === "groq" && groqConfigured && externalProcessingAllowed);
 
   return (
     <>
@@ -897,14 +877,6 @@ export function SettingsPage({
             <Button disabled={!canManage || !selectedCompany || isMutating} icon={<Bot className="size-4" aria-hidden="true" />} onClick={() => void handleCreateMockAIJob()}>
               Create mock job
             </Button>
-            <Button
-              disabled={!canCreateSafeGroqJob || isMutating}
-              icon={<Wand2 className="size-4" aria-hidden="true" />}
-              title={canCreateSafeGroqJob ? "Create safe Groq test job" : "Enable Groq configuration and external processing first"}
-              onClick={() => void handleCreateSafeGroqJob()}
-            >
-              Create Groq test
-            </Button>
           </div>
         }
       >
@@ -980,7 +952,7 @@ export function SettingsPage({
             </div>
           </div>
           {data.aiJobs.length === 0 ? (
-            <EmptyState description="Create a mock or safe Groq-ready job to verify tenant-safe AI job storage, events, and notifications." title="No AI jobs yet" />
+            <EmptyState description="Create a mock foundation job or generate work/project summaries to verify tenant-safe AI job storage, events, and notifications." title="No AI jobs yet" />
           ) : (
             <DataTable columns={aiJobColumns} rows={data.aiJobs} getRowKey={(job) => job.id} />
           )}

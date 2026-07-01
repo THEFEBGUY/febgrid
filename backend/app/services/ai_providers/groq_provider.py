@@ -3,6 +3,7 @@ import socket
 import time
 import urllib.error
 import urllib.request
+from datetime import UTC, datetime
 from typing import Any
 
 from app.core.ai_config import AIProviderConfig
@@ -70,10 +71,14 @@ class GroqAIProvider(BaseAIProvider):
         output.update(
             {
                 "provider": self.provider_key,
+                "provider_key": self.provider_key,
                 "provider_mode": self.provider_mode,
                 "model": self.config.groq_model,
+                "model_name": self.config.groq_model,
+                "generated_at": datetime.now(UTC).isoformat(),
                 "generated": True,
                 "mock": False,
+                "is_mock": False,
                 "job_type": request.job_type,
                 "input_entity_type": request.input_entity_type,
                 "input_entity_id": request.input_entity_id,
@@ -110,20 +115,41 @@ class GroqAIProvider(BaseAIProvider):
         try:
             parsed = json.loads(text)
             if isinstance(parsed, dict):
-                return {
-                    "summary": str(parsed.get("summary") or "").strip()[:4000],
-                    "key_points": parsed.get("key_points") if isinstance(parsed.get("key_points"), list) else [],
-                    "risks": parsed.get("risks") if isinstance(parsed.get("risks"), list) else [],
-                    "next_actions": parsed.get("next_actions") if isinstance(parsed.get("next_actions"), list) else [],
-                    "confidence": parsed.get("confidence"),
-                }
+                output: dict[str, Any] = {}
+                text_keys = [
+                    "summary",
+                    "current_status_explanation",
+                    "project_health",
+                    "status_explanation",
+                    "progress_overview",
+                    "open_work_overview",
+                ]
+                list_keys = ["key_points", "blockers_or_risks", "risks_or_blockers", "suggested_next_steps", "risks", "next_actions"]
+                for key in text_keys:
+                    if key in parsed and parsed.get(key) is not None:
+                        output[key] = str(parsed.get(key)).strip()[:4000]
+                for key in list_keys:
+                    value = parsed.get(key)
+                    if isinstance(value, list):
+                        output[key] = [str(item).strip()[:800] for item in value[:8] if str(item).strip()]
+                if "suggested_next_steps" not in output and isinstance(output.get("next_actions"), list):
+                    output["suggested_next_steps"] = output["next_actions"]
+                if "blockers_or_risks" not in output and isinstance(output.get("risks"), list):
+                    output["blockers_or_risks"] = output["risks"]
+                if "risks_or_blockers" not in output and isinstance(output.get("risks"), list):
+                    output["risks_or_blockers"] = output["risks"]
+                output["confidence"] = parsed.get("confidence")
+                if "summary" not in output:
+                    output["summary"] = ""
+                return output
         except json.JSONDecodeError:
             pass
         return {
             "summary": text[:4000],
             "key_points": [],
-            "risks": [],
-            "next_actions": [],
+            "blockers_or_risks": [],
+            "risks_or_blockers": [],
+            "suggested_next_steps": [],
             "confidence": None,
         }
 

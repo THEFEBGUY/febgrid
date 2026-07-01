@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Respon
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
-from app.api.deps import db_session, get_optional_current_user
+from app.api.deps import db_session, get_current_user, get_optional_current_user
 from app.api.serializers import serialize_events
 from app.api.utils import ensure_company, get_or_404
 from app.core.permissions import MANAGER_ROLES, ensure_company_access, ensure_role
@@ -21,6 +21,7 @@ from app.models.team import Team
 from app.models.user import User
 from app.models.work_object import WorkObject
 from app.schemas.attachment import AttachmentCreate, AttachmentRead
+from app.schemas.ai_job import AIJobRead
 from app.schemas.event import EventRead
 from app.schemas.work_object import (
     WorkObjectAssigneeUpdate,
@@ -38,6 +39,7 @@ from app.services.event_service import EventService
 from app.services.file_service import FileService
 from app.services.notification_service import NotificationService
 from app.services.configuration_service import validate_custom_field_values, validate_work_object_type_key
+from app.services.ai_service import ai_service
 
 router = APIRouter(prefix="/work-objects", tags=["work-objects"])
 
@@ -946,6 +948,45 @@ def complete_work_object(
     db.commit()
     db.refresh(work_object)
     return work_object
+
+
+@router.post("/{work_object_id}/ai-summary", response_model=AIJobRead)
+def generate_work_object_ai_summary(
+    work_object_id: UUID,
+    company_id: UUID,
+    db: Session = Depends(db_session),
+    current_user: User = Depends(get_current_user),
+) -> AIJobRead:
+    work_object = get_work_object_for_user(db, current_user, work_object_id=work_object_id, company_id=company_id)
+    job = ai_service.generate_summary(
+        db,
+        company_id=company_id,
+        job_type="work_object_summary_safe",
+        input_entity_type="work_object",
+        input_entity_id=work_object.id,
+        current_user=current_user,
+    )
+    db.commit()
+    db.refresh(job)
+    return job
+
+
+@router.get("/{work_object_id}/ai-summary/latest", response_model=AIJobRead | None)
+def get_latest_work_object_ai_summary(
+    work_object_id: UUID,
+    company_id: UUID,
+    db: Session = Depends(db_session),
+    current_user: User = Depends(get_current_user),
+) -> AIJobRead | None:
+    work_object = get_work_object_for_user(db, current_user, work_object_id=work_object_id, company_id=company_id)
+    return ai_service.latest_summary_job(
+        db,
+        company_id=company_id,
+        job_type="work_object_summary_safe",
+        input_entity_type="work_object",
+        input_entity_id=work_object.id,
+        current_user=current_user,
+    )
 
 
 @router.get("/{work_object_id}/timeline", response_model=list[EventRead])

@@ -278,6 +278,14 @@ export const api = {
     });
     return request<AIJob[]>(`/ai/jobs?${searchParams.toString()}`);
   },
+  generateWorkObjectAISummary: (workObjectId: string, companyId: string) =>
+    request<AIJob>(companyPath(`/work-objects/${workObjectId}/ai-summary`, companyId), jsonInit("POST", {})),
+  latestWorkObjectAISummary: (workObjectId: string, companyId: string) =>
+    request<AIJob | null>(companyPath(`/work-objects/${workObjectId}/ai-summary/latest`, companyId)),
+  generateProjectAISummary: (projectId: string, companyId: string) =>
+    request<AIJob>(companyPath(`/projects/${projectId}/ai-summary`, companyId), jsonInit("POST", {})),
+  latestProjectAISummary: (projectId: string, companyId: string) =>
+    request<AIJob | null>(companyPath(`/projects/${projectId}/ai-summary/latest`, companyId)),
   createAIJob: (payload: AIJobCreatePayload) => request<AIJob>("/ai/jobs", jsonInit("POST", payload)),
   runAIJob: (jobId: string, companyId: string) => request<AIJob>(companyPath(`/ai/jobs/${jobId}/run`, companyId), jsonInit("POST", {})),
   cancelAIJob: (jobId: string, companyId: string) => request<AIJob>(companyPath(`/ai/jobs/${jobId}/cancel`, companyId), jsonInit("POST", {})),

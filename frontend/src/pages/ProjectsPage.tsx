@@ -1,6 +1,7 @@
 import { Archive, Eye, Pencil, Plus, UserPlus } from "lucide-react";
 import { type FormEvent, useCallback, useMemo, useState } from "react";
 
+import { AISummaryPanel } from "../components/ai/AISummaryPanel";
 import { CommentsSection } from "../components/communication/CommentsSection";
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
@@ -15,6 +16,7 @@ import { EmptyState, ErrorState, LoadingState } from "../components/ui/States";
 import { priorityTone, statusTone } from "../components/ui/tone";
 import { api } from "../services/api";
 import type {
+  AIJob,
   Event as FebGridEvent,
   Project,
   ProjectCreatePayload,
@@ -118,6 +120,10 @@ export function ProjectsPage({
   const [detailWorkObjects, setDetailWorkObjects] = useState<WorkObject[]>([]);
   const [isDetailLoading, setIsDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
+  const [aiSummary, setAISummary] = useState<AIJob | null>(null);
+  const [isAISummaryLoading, setIsAISummaryLoading] = useState(false);
+  const [isAISummaryGenerating, setIsAISummaryGenerating] = useState(false);
+  const [aiSummaryError, setAISummaryError] = useState<string | null>(null);
   const [memberForm, setMemberForm] = useState(initialMemberForm);
   const [memberError, setMemberError] = useState<string | null>(null);
   const [searchFilter, setSearchFilter] = useState("");
@@ -161,20 +167,27 @@ export function ProjectsPage({
     async (projectId: string): Promise<void> => {
       if (!selectedCompanyId) return;
       setIsDetailLoading(true);
+      setIsAISummaryLoading(true);
       setDetailError(null);
+      setAISummaryError(null);
       try {
-        const [members, events, workObjects] = await Promise.all([
+        const [membersResult, eventsResult, workObjectsResult, summaryResult] = await Promise.allSettled([
           api.projectMembers(projectId, selectedCompanyId),
           api.projectTimeline(projectId, selectedCompanyId),
           api.projectWorkObjects(projectId, selectedCompanyId),
+          api.latestProjectAISummary(projectId, selectedCompanyId),
         ]);
-        setDetailMembers(members);
-        setDetailEvents(events);
-        setDetailWorkObjects(workObjects);
-      } catch {
-        setDetailError("Unable to load project details.");
+        if (membersResult.status === "fulfilled") setDetailMembers(membersResult.value);
+        else setDetailError("Unable to load project members.");
+        if (eventsResult.status === "fulfilled") setDetailEvents(eventsResult.value);
+        else setDetailError("Unable to load project timeline.");
+        if (workObjectsResult.status === "fulfilled") setDetailWorkObjects(workObjectsResult.value);
+        else setDetailError("Unable to load linked work objects.");
+        if (summaryResult.status === "fulfilled") setAISummary(summaryResult.value);
+        else setAISummaryError("Unable to load the latest AI project summary.");
       } finally {
         setIsDetailLoading(false);
+        setIsAISummaryLoading(false);
       }
     },
     [selectedCompanyId],
@@ -278,6 +291,11 @@ export function ProjectsPage({
 
   function openDetail(project: Project): void {
     setDetailProject(project);
+    setDetailMembers([]);
+    setDetailEvents([]);
+    setDetailWorkObjects([]);
+    setAISummary(null);
+    setAISummaryError(null);
     setMemberForm(initialMemberForm);
     setMemberError(null);
     void loadProjectDetail(project.id);
@@ -354,6 +372,21 @@ export function ProjectsPage({
       await loadProjectDetail(detailProject.id);
     } catch {
       setMemberError("Member could not be removed.");
+    }
+  }
+
+  async function handleGenerateAISummary(): Promise<void> {
+    if (!detailProject || !selectedCompanyId) return;
+    setIsAISummaryGenerating(true);
+    setAISummaryError(null);
+    try {
+      const job = await api.generateProjectAISummary(detailProject.id, selectedCompanyId);
+      setAISummary(job);
+      void loadProjectDetail(detailProject.id);
+    } catch (caughtError) {
+      setAISummaryError(caughtError instanceof Error ? caughtError.message : "AI project summary could not be generated.");
+    } finally {
+      setIsAISummaryGenerating(false);
     }
   }
 
@@ -534,6 +567,16 @@ export function ProjectsPage({
             </div>
 
             {detailProject.description ? <p className="rounded-lg border border-grid-200 bg-grid-50 p-4 text-sm font-medium text-ink-600">{detailProject.description}</p> : null}
+
+            <AISummaryPanel
+              error={aiSummaryError}
+              generateLabel="Generate AI Project Summary"
+              isGenerating={isAISummaryGenerating}
+              isLoading={isAISummaryLoading}
+              job={aiSummary}
+              kind="project"
+              onGenerate={() => void handleGenerateAISummary()}
+            />
 
             {isDetailLoading ? <LoadingState label="Loading project detail" /> : null}
             {detailError ? <ErrorState message={detailError} onRetry={() => loadProjectDetail(detailProject.id)} /> : null}
