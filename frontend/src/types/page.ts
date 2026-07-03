@@ -1,4 +1,4 @@
-import type { Company, FebGridData } from "./api";
+import type { Company, FebGridData, UserRole } from "./api";
 
 export interface ModulePageProps {
   data: FebGridData;
@@ -7,5 +7,6 @@ export interface ModulePageProps {
   isLoadingModules: boolean;
   isMutating: boolean;
   moduleError: string | null;
+  currentUserRole?: UserRole | null;
   onRetry: () => Promise<void>;
 }

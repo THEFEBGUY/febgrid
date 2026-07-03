@@ -9,6 +9,19 @@ def metadata_dict(value: Any) -> dict[str, Any]:
 
 
 def output_contract_for_job(job_type: str) -> dict[str, Any]:
+    if job_type == "company_brief_safe":
+        return {
+            "executive_summary": "concise owner/admin operational brief grounded only in provided aggregated company data",
+            "operational_highlights": ["up to 5 recent highlights or positive signals with evidence"],
+            "work_overview": "brief summary of work status, priority, overdue, and completed work signals",
+            "project_overview": "brief summary of project health, priority, risk, and progress signals",
+            "people_overview": "brief summary of employee availability and staffing signals using counts only",
+            "leave_overview": "brief summary of leave attention and upcoming approved leave signals",
+            "risks_or_blockers": ["up to 5 risks or blockers, only when evidence exists"],
+            "suggested_next_actions": ["up to 5 practical owner/admin next actions based only on provided fields"],
+            "attention_items": ["up to 5 items needing attention now"],
+            "confidence": None,
+        }
     if job_type == "project_summary_safe":
         return {
             "summary": "short operational summary of the project",
@@ -53,7 +66,9 @@ def build_summary_messages(
                 "If information is missing, mention uncertainty briefly. Do not provide legal, financial, "
                 "medical, or compliance advice. Do not request, infer, or reveal secrets, passwords, tokens, "
                 "API keys, invite links, local file paths, or credentials. This is operational assistance only. "
-                "Return valid compact JSON matching the requested output contract."
+                "For company briefs, answer what changed recently, what needs attention, what is going well, "
+                "what is blocked or risky, and what owner/admin should do next. Return valid compact JSON "
+                "matching the requested output contract."
             ),
         },
         {"role": "user", "content": serialized},

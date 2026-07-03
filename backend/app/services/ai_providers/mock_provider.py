@@ -41,6 +41,18 @@ class MockAIProvider(BaseAIProvider):
         )
 
     def _summary_payload(self, request: AIProviderRequest, entity: str) -> dict[str, object]:
+        if request.job_type == "company_brief_safe":
+            return {
+                "executive_summary": "Mock AI company brief. Real provider not connected.",
+                "operational_highlights": ["Mock mode reviewed aggregated company signals without making an external AI call."],
+                "work_overview": "Work overview is mock-only until Groq is configured and explicitly enabled.",
+                "project_overview": "Project overview is mock-only and uses sanitized company aggregates.",
+                "people_overview": "People overview is mock-only and uses counts, not private employee profile data.",
+                "leave_overview": "Leave overview is mock-only and uses safe leave counts.",
+                "risks_or_blockers": ["Mock output only; no real executive risk analysis was generated."],
+                "suggested_next_actions": ["Enable Groq with explicit external processing consent to generate a real company brief."],
+                "attention_items": ["Mock company brief placeholder for owner/admin validation."],
+            }
         if request.job_type == "project_summary_safe":
             return {
                 "summary": "Mock AI project summary. Real provider not connected.",

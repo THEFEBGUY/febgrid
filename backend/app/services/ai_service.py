@@ -11,10 +11,14 @@ from app.core.ai_config import REAL_AI_PROVIDER_MODES, get_ai_provider_config, n
 from app.core.permissions import MANAGER_ROLES, OWNER_ADMIN_ROLES, ensure_company_access, ensure_role
 from app.models.ai_job import AIJob
 from app.models.attachment import Attachment
+from app.models.communication import Announcement
 from app.models.common import utc_now
 from app.models.company import Company
 from app.models.department import Department
 from app.models.employee import Employee
+from app.models.event import Event
+from app.models.leave_request import LeaveRequest
+from app.models.notification import Notification
 from app.models.project import Project, ProjectMember
 from app.models.team import Team
 from app.models.user import User
@@ -76,6 +80,12 @@ CAPABILITY_DEFINITIONS = [
         job_type="project_summary_safe",
         label="Safe project summary",
         description="Run a small text-only project summary through the configured provider.",
+        mock_only=False,
+    ),
+    AICapability(
+        job_type="company_brief_safe",
+        label="Safe company brief",
+        description="Run an owner/admin executive brief from aggregated company signals through the configured provider.",
         mock_only=False,
     ),
 ]
@@ -246,6 +256,7 @@ class AIService:
         expected = {
             "work_object_summary_safe": "work_object",
             "project_summary_safe": "project",
+            "company_brief_safe": "company",
         }
         if job_type in expected and input_entity_type != expected[job_type]:
             raise HTTPException(
@@ -271,6 +282,8 @@ class AIService:
     def create_job(cls, db: Session, *, payload: AIJobCreate, current_user: User) -> AIJob:
         ensure_company_access(current_user, payload.company_id)
         ensure_role(current_user, MANAGER_ROLES)
+        if payload.job_type == "company_brief_safe":
+            ensure_role(current_user, OWNER_ADMIN_ROLES)
         company = get_or_404(db, Company, payload.company_id, label="Company")
         cls.ensure_job_type(payload.job_type)
         cls.ensure_payload_safe(payload.input_payload)
@@ -336,8 +349,10 @@ class AIService:
         current_user: User,
     ) -> AIJob:
         ensure_company_access(current_user, company_id)
-        if job_type not in {"work_object_summary_safe", "project_summary_safe"}:
+        if job_type not in {"work_object_summary_safe", "project_summary_safe", "company_brief_safe"}:
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Unsupported AI summary type")
+        if job_type == "company_brief_safe":
+            ensure_role(current_user, OWNER_ADMIN_ROLES)
         company = get_or_404(db, Company, company_id, label="Company")
         cls.ensure_job_type(job_type)
         cls.validate_job_entity_pair(job_type, input_entity_type)
@@ -431,6 +446,8 @@ class AIService:
         current_user: User,
     ) -> AIJob | None:
         ensure_company_access(current_user, company_id)
+        if job_type == "company_brief_safe":
+            ensure_role(current_user, OWNER_ADMIN_ROLES)
         cls.ensure_job_type(job_type)
         cls.validate_job_entity_pair(job_type, input_entity_type)
         return db.scalar(
@@ -450,6 +467,8 @@ class AIService:
     def visible_statement(cls, company_id: UUID, current_user: User):
         ensure_company_access(current_user, company_id)
         statement = select(AIJob).where(AIJob.company_id == company_id)
+        if current_user.role not in OWNER_ADMIN_ROLES:
+            statement = statement.where(AIJob.job_type != "company_brief_safe")
         if current_user.role not in MANAGER_ROLES:
             statement = statement.where(AIJob.requested_by_user_id == current_user.id)
         return statement
@@ -459,6 +478,8 @@ class AIService:
         job = db.get(AIJob, job_id)
         if job is None or job.company_id != company_id:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="AI job not found")
+        if job.job_type == "company_brief_safe" and current_user.role not in OWNER_ADMIN_ROLES:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="AI job not found")
         if current_user.role not in MANAGER_ROLES and job.requested_by_user_id != current_user.id:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="AI job not found")
         return job
@@ -466,6 +487,9 @@ class AIService:
     @classmethod
     def ensure_manage_job(cls, current_user: User, job: AIJob) -> None:
         ensure_company_access(current_user, job.company_id)
+        if job.job_type == "company_brief_safe":
+            ensure_role(current_user, OWNER_ADMIN_ROLES)
+            return
         if current_user.role in MANAGER_ROLES:
             return
         if job.requested_by_user_id == current_user.id and job.input_entity_type != "company":
@@ -584,17 +608,234 @@ class AIService:
             }
         if job.input_entity_type == "company":
             company = get_or_404(db, Company, job.company_id, label="Company")
+            now = utc_now()
+            today = now.date()
+
+            def counts_by(column, *filters) -> dict[str, int]:
+                rows = db.execute(select(column, func.count()).where(*filters).group_by(column)).all()
+                return {(safe_text(key, 80) or "unknown").lower().replace(" ", "_"): int(count or 0) for key, count in rows}
+
+            employee_status_counts = counts_by(
+                Employee.status,
+                Employee.company_id == job.company_id,
+                Employee.is_active.is_(True),
+            )
+            active_employee_count = db.scalar(
+                select(func.count(Employee.id)).where(Employee.company_id == job.company_id, Employee.is_active.is_(True))
+            ) or 0
+            inactive_employee_count = db.scalar(
+                select(func.count(Employee.id)).where(Employee.company_id == job.company_id, Employee.is_active.is_(False))
+            ) or 0
+            project_status_counts = counts_by(Project.status, Project.company_id == job.company_id, Project.is_active.is_(True))
+            project_priority_counts = counts_by(Project.priority, Project.company_id == job.company_id, Project.is_active.is_(True))
+            project_risk_counts = counts_by(Project.risk_level, Project.company_id == job.company_id, Project.is_active.is_(True))
+            work_status_counts = counts_by(WorkObject.status, WorkObject.company_id == job.company_id, WorkObject.is_active.is_(True))
+            work_priority_counts = counts_by(WorkObject.priority, WorkObject.company_id == job.company_id, WorkObject.is_active.is_(True))
+            leave_status_counts = counts_by(LeaveRequest.status, LeaveRequest.company_id == job.company_id, LeaveRequest.is_active.is_(True))
+
+            open_statuses = {"assigned", "in_progress", "under_review", "blocked"}
+            important_priorities = {"high", "critical"}
+            active_project_statuses = {"active", "on_hold", "delayed"}
+            overdue_work_count = db.scalar(
+                select(func.count(WorkObject.id)).where(
+                    WorkObject.company_id == job.company_id,
+                    WorkObject.is_active.is_(True),
+                    WorkObject.status.in_(open_statuses),
+                    WorkObject.due_date.is_not(None),
+                    WorkObject.due_date < now,
+                )
+            ) or 0
+            # Keep the upcoming count explicit to avoid timezone/date math surprises in SQL dialects.
+            upcoming_due_work_count = sum(
+                1
+                for due_date, status_value in db.execute(
+                    select(WorkObject.due_date, WorkObject.status).where(
+                        WorkObject.company_id == job.company_id,
+                        WorkObject.is_active.is_(True),
+                        WorkObject.status.in_(open_statuses),
+                        WorkObject.due_date.is_not(None),
+                    )
+                ).all()
+                if due_date
+                and ((due_date if due_date.tzinfo else due_date.replace(tzinfo=now.tzinfo)) >= now)
+                and (((due_date if due_date.tzinfo else due_date.replace(tzinfo=now.tzinfo)) - now).days <= 7)
+                and status_value in open_statuses
+            )
+            recently_completed_work_count = db.scalar(
+                select(func.count(WorkObject.id)).where(
+                    WorkObject.company_id == job.company_id,
+                    WorkObject.is_active.is_(True),
+                    WorkObject.completed_at.is_not(None),
+                    WorkObject.completed_at >= now.replace(hour=0, minute=0, second=0, microsecond=0),
+                )
+            ) or 0
+
+            top_projects = list(
+                db.scalars(
+                    select(Project)
+                    .where(Project.company_id == job.company_id, Project.is_active.is_(True), Project.status.in_(active_project_statuses))
+                    .order_by(Project.priority.desc(), Project.updated_at.desc())
+                    .limit(5)
+                ).all()
+            )
+            top_work = list(
+                db.scalars(
+                    select(WorkObject)
+                    .where(
+                        WorkObject.company_id == job.company_id,
+                        WorkObject.is_active.is_(True),
+                        WorkObject.status.in_(open_statuses),
+                    )
+                    .order_by(WorkObject.priority.desc(), WorkObject.due_date.asc().nulls_last(), WorkObject.updated_at.desc())
+                    .limit(5)
+                ).all()
+            )
+            pending_leave_count = leave_status_counts.get("pending", 0)
+            approved_leave_count = leave_status_counts.get("approved", 0)
+            rejected_leave_count = leave_status_counts.get("rejected", 0)
+            upcoming_leave_count = db.scalar(
+                select(func.count(LeaveRequest.id)).where(
+                    LeaveRequest.company_id == job.company_id,
+                    LeaveRequest.is_active.is_(True),
+                    LeaveRequest.status == "approved",
+                    LeaveRequest.start_date >= today,
+                )
+            ) or 0
+            unread_notifications = db.scalar(
+                select(func.count(Notification.id)).where(
+                    Notification.company_id == job.company_id,
+                    Notification.is_read.is_(False),
+                    Notification.is_dismissed.is_(False),
+                )
+            ) or 0
+            important_notifications = db.scalar(
+                select(func.count(Notification.id)).where(
+                    Notification.company_id == job.company_id,
+                    Notification.priority.in_(("high", "urgent")),
+                    Notification.is_dismissed.is_(False),
+                )
+            ) or 0
+            recent_announcements = list(
+                db.scalars(
+                    select(Announcement)
+                    .where(
+                        Announcement.company_id == job.company_id,
+                        Announcement.is_published.is_(True),
+                        Announcement.is_archived.is_(False),
+                    )
+                    .order_by(Announcement.published_at.desc().nulls_last(), Announcement.created_at.desc())
+                    .limit(5)
+                ).all()
+            )
+            file_count = db.scalar(
+                select(func.count(Attachment.id)).where(
+                    Attachment.company_id == job.company_id,
+                    Attachment.is_active.is_(True),
+                    Attachment.is_deleted.is_(False),
+                )
+            ) or 0
+            storage_size = db.scalar(
+                select(func.coalesce(func.sum(Attachment.file_size), 0)).where(
+                    Attachment.company_id == job.company_id,
+                    Attachment.is_active.is_(True),
+                    Attachment.is_deleted.is_(False),
+                )
+            ) or 0
+            latest_events = list(
+                db.scalars(
+                    select(Event)
+                    .where(Event.company_id == job.company_id)
+                    .order_by(Event.created_at.desc())
+                    .limit(10)
+                ).all()
+            )
+            event_type_counts = counts_by(Event.event_type, Event.company_id == job.company_id)
             return {
                 "type": "company",
                 "name": safe_text(company.name),
                 "industry": safe_text(company.industry),
                 "size": safe_text(company.size),
-                "employees": db.scalar(select(func.count(Employee.id)).where(Employee.company_id == job.company_id, Employee.is_active.is_(True))) or 0,
-                "projects": db.scalar(select(func.count(Project.id)).where(Project.company_id == job.company_id, Project.is_active.is_(True))) or 0,
-                "work_objects": db.scalar(
-                    select(func.count(WorkObject.id)).where(WorkObject.company_id == job.company_id, WorkObject.is_active.is_(True))
-                )
-                or 0,
+                "generated_at": now.isoformat(),
+                "employee_counts": {
+                    "total_active": active_employee_count,
+                    "inactive": inactive_employee_count,
+                    "available": employee_status_counts.get("available", 0),
+                    "busy": employee_status_counts.get("busy", 0),
+                    "on_leave": employee_status_counts.get("on_leave", 0),
+                    "by_status": employee_status_counts,
+                },
+                "project_counts": {
+                    "total_active": sum(project_status_counts.values()),
+                    "by_status": project_status_counts,
+                    "by_priority": project_priority_counts,
+                    "by_risk": project_risk_counts,
+                },
+                "top_active_projects": [
+                    {
+                        "name": safe_text(project.name, 220),
+                        "status": safe_text(project.status),
+                        "priority": safe_text(project.priority),
+                        "progress_percent": project.progress_percent,
+                        "risk_level": safe_text(project.risk_level),
+                        "due_date": project.due_date.isoformat() if project.due_date else None,
+                    }
+                    for project in top_projects
+                ],
+                "work_object_counts": {
+                    "total_active": sum(work_status_counts.values()),
+                    "by_status": work_status_counts,
+                    "by_priority": work_priority_counts,
+                    "overdue": overdue_work_count,
+                    "upcoming_due_next_7_days": upcoming_due_work_count,
+                    "recently_completed_today": recently_completed_work_count,
+                },
+                "top_important_open_work": [
+                    {
+                        "title": safe_text(work_object.title, 220),
+                        "status": safe_text(work_object.status),
+                        "priority": safe_text(work_object.priority),
+                        "due_date": work_object.due_date.isoformat() if work_object.due_date else None,
+                    }
+                    for work_object in top_work
+                    if (work_object.priority in important_priorities or work_object.status == "blocked" or work_object.due_date)
+                ][:5],
+                "leave_counts": {
+                    "pending": pending_leave_count,
+                    "approved": approved_leave_count,
+                    "rejected": rejected_leave_count,
+                    "cancelled": leave_status_counts.get("cancelled", 0),
+                    "upcoming_approved": upcoming_leave_count,
+                },
+                "notification_counts": {
+                    "unread": unread_notifications,
+                    "important": important_notifications,
+                },
+                "announcement_counts": {
+                    "active": len(recent_announcements),
+                    "urgent_recent": len([item for item in recent_announcements if item.priority == "urgent"]),
+                },
+                "recent_announcement_titles": [
+                    {
+                        "title": safe_text(announcement.title, 180),
+                        "priority": safe_text(announcement.priority),
+                        "published_at": announcement.published_at.isoformat() if announcement.published_at else None,
+                    }
+                    for announcement in recent_announcements
+                ],
+                "file_metadata_counts": {
+                    "active_files": file_count,
+                    "storage_bytes": int(storage_size),
+                },
+                "event_counts_by_type": event_type_counts,
+                "latest_safe_event_summaries": [
+                    {
+                        "event_type": safe_text(event.event_type, 120),
+                        "title": safe_text(event.title, 220),
+                        "target_entity_type": safe_text(event.target_entity_type, 80),
+                        "created_at": event.created_at.isoformat() if event.created_at else None,
+                    }
+                    for event in latest_events
+                ],
             }
         return {"type": job.input_entity_type or "company"}
 
@@ -810,12 +1051,18 @@ class AIService:
 
     @classmethod
     def record_summary_event(cls, db: Session, *, job: AIJob, current_user: User, phase: str):
-        if job.input_entity_type not in {"work_object", "project"} or job.input_entity_id is None:
+        if job.input_entity_type not in {"work_object", "project", "company"} or job.input_entity_id is None:
             return None
-        entity_label = "work object" if job.input_entity_type == "work_object" else "project"
-        event_type = f"ai_summary.{job.input_entity_type}.{phase}"
-        title = f"AI {entity_label} summary {phase}"
-        description = f"A tenant-safe AI {entity_label} summary was {phase}."
+        if job.input_entity_type == "company":
+            entity_label = "company brief"
+            event_type = f"ai_brief.company.{phase}"
+            title = f"AI company brief {phase}"
+            description = f"A tenant-safe AI company brief was {phase}."
+        else:
+            entity_label = "work object" if job.input_entity_type == "work_object" else "project"
+            event_type = f"ai_summary.{job.input_entity_type}.{phase}"
+            title = f"AI {entity_label} summary {phase}"
+            description = f"A tenant-safe AI {entity_label} summary was {phase}."
         metadata = metadata_dict(job.metadata_json)
         return EventService.record_event(
             db,

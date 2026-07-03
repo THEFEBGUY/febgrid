@@ -11,8 +11,9 @@ import {
   RefreshCw,
   Users,
 } from "lucide-react";
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 
+import { AISummaryPanel } from "../components/ai/AISummaryPanel";
 import { MagicBentoCard } from "../components/premium/MagicBento";
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
@@ -21,6 +22,8 @@ import { ProgressBar } from "../components/ui/ProgressBar";
 import { SectionPanel } from "../components/ui/SectionPanel";
 import { EmptyState, ErrorState, LoadingState } from "../components/ui/States";
 import { priorityTone, statusTone } from "../components/ui/tone";
+import { api } from "../services/api";
+import type { AIJob } from "../types/api";
 import type { Metric } from "../types/domain";
 import type { ModulePageProps } from "../types/page";
 import { compactList, formatDate, formatLabel, formatTime } from "../utils/format";
@@ -31,12 +34,69 @@ function navigateTo(page: string): void {
   window.location.hash = `/${page}`;
 }
 
-export function DashboardPage({ data, selectedCompany, isLoadingCompanies, isLoadingModules, moduleError, onRetry }: ModulePageProps): JSX.Element {
+export function DashboardPage({
+  currentUserRole,
+  data,
+  selectedCompany,
+  isLoadingCompanies,
+  isLoadingModules,
+  moduleError,
+  onRetry,
+}: ModulePageProps): JSX.Element {
   const summary = data.dashboardSummary;
+  const canUseCompanyBrief = currentUserRole === "company_owner" || currentUserRole === "admin";
+  const [companyBrief, setCompanyBrief] = useState<AIJob | null>(null);
+  const [briefError, setBriefError] = useState<string | null>(null);
+  const [isBriefLoading, setIsBriefLoading] = useState(false);
+  const [isBriefGenerating, setIsBriefGenerating] = useState(false);
   const employeeNames = useMemo(
     () => Object.fromEntries(data.employees.map((employee) => [employee.id, employee.full_name])),
     [data.employees],
   );
+
+  useEffect(() => {
+    const companyId = selectedCompany?.id;
+    if (!companyId || !canUseCompanyBrief) {
+      setCompanyBrief(null);
+      setBriefError(null);
+      setIsBriefLoading(false);
+      return;
+    }
+
+    let isCurrent = true;
+    setIsBriefLoading(true);
+    setBriefError(null);
+    api
+      .latestCompanyAIBrief(companyId)
+      .then((job) => {
+        if (isCurrent) setCompanyBrief(job);
+      })
+      .catch((error: unknown) => {
+        if (isCurrent) setBriefError(error instanceof Error ? error.message : "Unable to load the latest company brief.");
+      })
+      .finally(() => {
+        if (isCurrent) setIsBriefLoading(false);
+      });
+
+    return () => {
+      isCurrent = false;
+    };
+  }, [canUseCompanyBrief, selectedCompany?.id]);
+
+  async function handleGenerateCompanyBrief(): Promise<void> {
+    const companyId = selectedCompany?.id;
+    if (!companyId || !canUseCompanyBrief || isBriefGenerating) return;
+    setIsBriefGenerating(true);
+    setBriefError(null);
+    try {
+      const job = await api.generateCompanyAIBrief(companyId);
+      setCompanyBrief(job);
+    } catch (error) {
+      setBriefError(error instanceof Error ? error.message : "Unable to generate the company brief.");
+    } finally {
+      setIsBriefGenerating(false);
+    }
+  }
 
   const metrics = useMemo<Metric[]>(() => {
     if (!summary) return [];
@@ -140,6 +200,18 @@ export function DashboardPage({ data, selectedCompany, isLoadingCompanies, isLoa
           <MetricCard key={metric.label} metric={metric} icon={metricIcons[index]} />
         ))}
       </section>
+
+      {canUseCompanyBrief ? (
+        <AISummaryPanel
+          error={briefError}
+          generateLabel="Generate Company Brief"
+          isGenerating={isBriefGenerating}
+          isLoading={isBriefLoading}
+          job={companyBrief}
+          kind="company"
+          onGenerate={() => void handleGenerateCompanyBrief()}
+        />
+      ) : null}
 
       <section className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
         <SectionPanel

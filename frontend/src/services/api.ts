@@ -286,6 +286,10 @@ export const api = {
     request<AIJob>(companyPath(`/projects/${projectId}/ai-summary`, companyId), jsonInit("POST", {})),
   latestProjectAISummary: (projectId: string, companyId: string) =>
     request<AIJob | null>(companyPath(`/projects/${projectId}/ai-summary/latest`, companyId)),
+  generateCompanyAIBrief: (companyId: string) =>
+    request<AIJob>(companyPath(`/companies/${companyId}/ai-brief`, companyId), jsonInit("POST", {})),
+  latestCompanyAIBrief: (companyId: string) =>
+    request<AIJob | null>(companyPath(`/companies/${companyId}/ai-brief/latest`, companyId)),
   createAIJob: (payload: AIJobCreatePayload) => request<AIJob>("/ai/jobs", jsonInit("POST", payload)),
   runAIJob: (jobId: string, companyId: string) => request<AIJob>(companyPath(`/ai/jobs/${jobId}/run`, companyId), jsonInit("POST", {})),
   cancelAIJob: (jobId: string, companyId: string) => request<AIJob>(companyPath(`/ai/jobs/${jobId}/cancel`, companyId), jsonInit("POST", {})),

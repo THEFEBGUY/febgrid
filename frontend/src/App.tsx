@@ -101,6 +101,7 @@ export function App(): JSX.Element {
       isLoadingCompanies: febGrid.isLoadingCompanies,
       isLoadingModules: febGrid.isLoadingModules,
       isMutating: febGrid.isMutating,
+      currentUserRole,
       onRetry: febGrid.refreshModules,
     };
 

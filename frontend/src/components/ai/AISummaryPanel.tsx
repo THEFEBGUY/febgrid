@@ -6,7 +6,7 @@ import { Badge } from "../ui/Badge";
 import { Button } from "../ui/Button";
 import { LoadingState } from "../ui/States";
 
-type SummaryKind = "work_object" | "project";
+type SummaryKind = "work_object" | "project" | "company";
 
 interface AISummaryPanelProps {
   error: string | null;
@@ -34,6 +34,18 @@ function providerLabel(job: AIJob | null): string {
   return job.provider_mode === "groq" ? "Groq" : formatLabel(job.provider_mode || "mock");
 }
 
+function summaryTitle(kind: SummaryKind): string {
+  if (kind === "company") return "AI executive brief";
+  if (kind === "project") return "AI project summary";
+  return "AI work summary";
+}
+
+function entityLabel(kind: SummaryKind): string {
+  if (kind === "company") return "company";
+  if (kind === "project") return "project";
+  return "work object";
+}
+
 function statusTone(status: string): "blue" | "green" | "amber" | "red" | "slate" {
   if (status === "succeeded") return "green";
   if (status === "failed") return "red";
@@ -52,14 +64,16 @@ export function AISummaryPanel({
   onGenerate,
 }: AISummaryPanelProps): JSX.Element {
   const output = job?.output_payload ?? {};
-  const summary = text(output.summary);
+  const summary = kind === "company" ? text(output.executive_summary) ?? text(output.summary) : text(output.summary);
   const generatedAt = text(output.generated_at) ?? job?.completed_at ?? job?.created_at ?? null;
   const isMock = output.is_mock === true || output.mock === true || job?.provider_mode === "mock";
   const modelName = text(output.model_name) ?? text(output.model) ?? text(job?.metadata.model_name);
-  const primaryPoints = kind === "project" ? list(output.risks_or_blockers) : list(output.key_points);
-  const blockers = kind === "project" ? list(output.risks_or_blockers) : list(output.blockers_or_risks);
-  const nextSteps = list(output.suggested_next_steps);
+  const primaryPoints =
+    kind === "company" ? list(output.operational_highlights) : kind === "project" ? list(output.risks_or_blockers) : list(output.key_points);
+  const blockers = kind === "project" || kind === "company" ? list(output.risks_or_blockers) : list(output.blockers_or_risks);
+  const nextSteps = kind === "company" ? list(output.suggested_next_actions) : list(output.suggested_next_steps);
   const currentStatus = kind === "project" ? text(output.status_explanation) : text(output.current_status_explanation);
+  const attentionItems = list(output.attention_items);
 
   return (
     <section className="febgrid-surface overflow-hidden rounded-lg">
@@ -67,13 +81,13 @@ export function AISummaryPanel({
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <Sparkles className="size-4 text-brand-600" aria-hidden="true" />
-            <h3 className="text-sm font-black text-ink-950">{kind === "project" ? "AI project summary" : "AI work summary"}</h3>
+            <h3 className="text-sm font-black text-ink-950">{summaryTitle(kind)}</h3>
             {job ? <Badge label={providerLabel(job)} tone={job.provider_mode === "groq" ? "teal" : "blue"} /> : null}
             {job ? <Badge label={formatLabel(job.status)} tone={statusTone(job.status)} /> : null}
             {isMock && job ? <Badge label="Mock output" tone="slate" /> : null}
           </div>
           <p className="mt-1 text-xs font-semibold text-ink-500">
-            Server-owned prompt, safe entity context, no raw files, no secrets.
+            Server-owned prompt, safe {kind === "company" ? "aggregated company" : "entity"} context, no raw files, no secrets.
           </p>
         </div>
         <Button
@@ -95,7 +109,7 @@ export function AISummaryPanel({
         <div className="px-4 py-5">
           <p className="text-sm font-bold text-ink-950">No summary generated yet.</p>
           <p className="mt-1 text-sm font-semibold text-ink-500">
-            Generate one when you want a concise operational readout for this {kind === "project" ? "project" : "work object"}.
+            Generate one when you want a concise operational readout for this {entityLabel(kind)}.
           </p>
         </div>
       ) : null}
@@ -109,8 +123,18 @@ export function AISummaryPanel({
           ) : null}
           {summary ? (
             <div className="rounded-lg border border-grid-200 bg-grid-50 p-4">
-              <p className="text-xs font-black uppercase tracking-normal text-ink-500">Summary</p>
+              <p className="text-xs font-black uppercase tracking-normal text-ink-500">
+                {kind === "company" ? "Executive summary" : "Summary"}
+              </p>
               <p className="mt-2 text-sm font-semibold leading-6 text-ink-700">{summary}</p>
+            </div>
+          ) : null}
+          {kind === "company" ? (
+            <div className="grid gap-3 md:grid-cols-2">
+              <SummaryStat label="Work overview" value={text(output.work_overview) ?? "Not enough data yet"} />
+              <SummaryStat label="Project overview" value={text(output.project_overview) ?? "Not enough data yet"} />
+              <SummaryStat label="People overview" value={text(output.people_overview) ?? "Not enough data yet"} />
+              <SummaryStat label="Leave overview" value={text(output.leave_overview) ?? "Not enough data yet"} />
             </div>
           ) : null}
           {kind === "project" ? (
@@ -124,6 +148,8 @@ export function AISummaryPanel({
           ) : null}
           {kind === "project" && currentStatus ? <SummaryBlock items={[currentStatus]} title="Status explanation" /> : null}
           {kind === "work_object" && primaryPoints.length > 0 ? <SummaryBlock items={primaryPoints} title="Key points" /> : null}
+          {kind === "company" && primaryPoints.length > 0 ? <SummaryBlock items={primaryPoints} title="Operational highlights" /> : null}
+          {kind === "company" && attentionItems.length > 0 ? <SummaryBlock items={attentionItems} title="Attention items" /> : null}
           {blockers.length > 0 ? <SummaryBlock items={blockers} title="Blockers or risks" /> : null}
           {nextSteps.length > 0 ? <SummaryBlock items={nextSteps} title="Suggested next steps" /> : null}
           <p className="text-xs font-semibold text-ink-500">

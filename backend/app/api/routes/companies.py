@@ -4,12 +4,15 @@ from fastapi import APIRouter, Depends, Query, Response, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.api.deps import db_session, get_optional_current_user
+from app.api.deps import db_session, get_current_user, get_optional_current_user
 from app.api.utils import get_or_404, update_model
 from app.core.permissions import OWNER_ADMIN_ROLES, ensure_company_access, ensure_role
+from app.models.ai_job import AIJob
 from app.models.company import Company
 from app.models.user import User
+from app.schemas.ai_job import AIJobRead
 from app.schemas.company import CompanyCreate, CompanyRead, CompanyUpdate
+from app.services.ai_service import ai_service
 from app.services.event_service import EventService
 
 router = APIRouter(prefix="/companies", tags=["companies"])
@@ -96,6 +99,47 @@ def update_company(
     db.commit()
     db.refresh(company)
     return company
+
+
+@router.post("/{company_id}/ai-brief", response_model=AIJobRead)
+def generate_company_ai_brief(
+    company_id: UUID,
+    db: Session = Depends(db_session),
+    current_user: User = Depends(get_current_user),
+) -> AIJob:
+    ensure_company_access(current_user, company_id)
+    ensure_role(current_user, OWNER_ADMIN_ROLES)
+    get_or_404(db, Company, company_id, label="Company")
+    job = ai_service.generate_summary(
+        db,
+        company_id=company_id,
+        job_type="company_brief_safe",
+        input_entity_type="company",
+        input_entity_id=company_id,
+        current_user=current_user,
+    )
+    db.commit()
+    db.refresh(job)
+    return job
+
+
+@router.get("/{company_id}/ai-brief/latest", response_model=AIJobRead | None)
+def get_latest_company_ai_brief(
+    company_id: UUID,
+    db: Session = Depends(db_session),
+    current_user: User = Depends(get_current_user),
+) -> AIJob | None:
+    ensure_company_access(current_user, company_id)
+    ensure_role(current_user, OWNER_ADMIN_ROLES)
+    get_or_404(db, Company, company_id, label="Company")
+    return ai_service.latest_summary_job(
+        db,
+        company_id=company_id,
+        job_type="company_brief_safe",
+        input_entity_type="company",
+        input_entity_id=company_id,
+        current_user=current_user,
+    )
 
 
 @router.delete("/{company_id}", status_code=status.HTTP_204_NO_CONTENT)
