@@ -1,4 +1,4 @@
-import { Archive, CheckCircle2, Download, Eye, FileText, Pencil, Plus, Trash2, Upload } from "lucide-react";
+import { Archive, CheckCircle2, Download, Eye, FileText, Pencil, Plus, Sparkles, Trash2, Upload } from "lucide-react";
 import { type FormEvent, useCallback, useMemo, useState } from "react";
 
 import { CommentsSection } from "../components/communication/CommentsSection";
@@ -32,7 +32,7 @@ const fallbackObjectTypeOptions = ["task", "approval_request", "issue", "site_vi
 const statusOptions = ["assigned", "in_progress", "under_review", "blocked", "completed", "cancelled"];
 const priorityOptions = ["low", "medium", "high", "critical"];
 const maxUploadBytes = 10 * 1024 * 1024;
-const allowedAttachmentExtensions = [".png", ".jpg", ".jpeg", ".webp", ".pdf", ".csv", ".doc", ".docx", ".xls", ".xlsx"];
+const allowedAttachmentExtensions = [".png", ".jpg", ".jpeg", ".webp", ".pdf", ".csv", ".txt", ".md", ".json", ".log", ".doc", ".docx", ".xls", ".xlsx"];
 
 interface WorkObjectForm {
   title: string;
@@ -186,6 +186,11 @@ export function WorkObjectsPage({
   const [isAISummaryLoading, setIsAISummaryLoading] = useState(false);
   const [isAISummaryGenerating, setIsAISummaryGenerating] = useState(false);
   const [aiSummaryError, setAISummaryError] = useState<string | null>(null);
+  const [fileSummaryAttachment, setFileSummaryAttachment] = useState<Attachment | null>(null);
+  const [fileAISummary, setFileAISummary] = useState<AIJob | null>(null);
+  const [isFileAISummaryLoading, setIsFileAISummaryLoading] = useState(false);
+  const [isFileAISummaryGenerating, setIsFileAISummaryGenerating] = useState(false);
+  const [fileAISummaryError, setFileAISummaryError] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [uploadDescription, setUploadDescription] = useState("");
   const [isUploading, setIsUploading] = useState(false);
@@ -433,6 +438,9 @@ export function WorkObjectsPage({
     setAttachmentError(null);
     setAISummary(null);
     setAISummaryError(null);
+    setFileSummaryAttachment(null);
+    setFileAISummary(null);
+    setFileAISummaryError(null);
     setSelectedFile(null);
     setUploadDescription("");
     setEditingAttachmentId(null);
@@ -493,6 +501,36 @@ export function WorkObjectsPage({
       setAISummaryError(caughtError instanceof Error ? caughtError.message : "AI summary could not be generated.");
     } finally {
       setIsAISummaryGenerating(false);
+    }
+  }
+
+  async function loadFileAISummary(attachment: Attachment): Promise<void> {
+    if (!selectedCompanyId) return;
+    setFileSummaryAttachment(attachment);
+    setIsFileAISummaryLoading(true);
+    setFileAISummaryError(null);
+    try {
+      const job = await api.latestFileAISummary(attachment.id, selectedCompanyId);
+      setFileAISummary(job);
+    } catch (caughtError) {
+      setFileAISummaryError(caughtError instanceof Error ? caughtError.message : "Unable to load the latest file summary.");
+    } finally {
+      setIsFileAISummaryLoading(false);
+    }
+  }
+
+  async function handleGenerateFileAISummary(): Promise<void> {
+    if (!fileSummaryAttachment || !selectedCompanyId) return;
+    setIsFileAISummaryGenerating(true);
+    setFileAISummaryError(null);
+    try {
+      const job = await api.generateFileAISummary(fileSummaryAttachment.id, selectedCompanyId);
+      setFileAISummary(job);
+      if (detailWorkObject) void loadWorkObjectDetail(detailWorkObject.id);
+    } catch (caughtError) {
+      setFileAISummaryError(caughtError instanceof Error ? caughtError.message : "AI file summary could not be generated.");
+    } finally {
+      setIsFileAISummaryGenerating(false);
     }
   }
 
@@ -561,6 +599,10 @@ export function WorkObjectsPage({
     setAttachmentError(null);
     try {
       await api.deleteAttachment(attachment.id, selectedCompanyId);
+      if (fileSummaryAttachment?.id === attachment.id) {
+        setFileSummaryAttachment(null);
+        setFileAISummary(null);
+      }
       await loadWorkObjectDetail(detailWorkObject.id);
     } catch {
       setAttachmentError("Attachment could not be removed.");
@@ -833,7 +875,7 @@ export function WorkObjectsPage({
                 <FieldShell label="File">
                   <TextInput
                     key={selectedFile?.name ?? "empty-file"}
-                    accept=".png,.jpg,.jpeg,.webp,.pdf,.csv,.doc,.docx,.xls,.xlsx"
+                    accept=".png,.jpg,.jpeg,.webp,.pdf,.csv,.txt,.md,.json,.log,.doc,.docx,.xls,.xlsx"
                     type="file"
                     onChange={(event) => setSelectedFile(event.target.files?.[0] ?? null)}
                   />
@@ -897,6 +939,15 @@ export function WorkObjectsPage({
                           </button>
                         )}
                         <div className="flex justify-end gap-2">
+                          <Button
+                            className="size-9 px-0"
+                            aria-label={`Generate AI summary for ${attachment.original_file_name}`}
+                            icon={<Sparkles className="size-4" aria-hidden="true" />}
+                            title={`Generate AI summary for ${attachment.original_file_name}`}
+                            onClick={() => void loadFileAISummary(attachment)}
+                          >
+                            <span className="sr-only">Summarize file</span>
+                          </Button>
                           <Button className="size-9 px-0" aria-label="Download attachment" icon={<Download className="size-4" aria-hidden="true" />} onClick={() => void handleDownloadAttachment(attachment)}>
                             <span className="sr-only">Download</span>
                           </Button>
@@ -908,6 +959,22 @@ export function WorkObjectsPage({
                     ))}
                   </div>
                 )
+              ) : null}
+              {fileSummaryAttachment ? (
+                <div className="border-t border-grid-200 p-4">
+                  <p className="mb-3 text-xs font-black uppercase tracking-normal text-ink-500">
+                    File summary / {fileSummaryAttachment.original_file_name}
+                  </p>
+                  <AISummaryPanel
+                    error={fileAISummaryError}
+                    generateLabel="Generate AI File Summary"
+                    isGenerating={isFileAISummaryGenerating}
+                    isLoading={isFileAISummaryLoading}
+                    job={fileAISummary}
+                    kind="file"
+                    onGenerate={() => void handleGenerateFileAISummary()}
+                  />
+                </div>
               ) : null}
             </section>
 

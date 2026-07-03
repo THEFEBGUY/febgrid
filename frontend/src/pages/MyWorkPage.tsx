@@ -1,4 +1,4 @@
-import { CheckCircle2, Download, Eye, Upload } from "lucide-react";
+import { CheckCircle2, Download, Eye, Sparkles, Upload } from "lucide-react";
 import { type FormEvent, useCallback, useMemo, useState } from "react";
 
 import { AISummaryPanel } from "../components/ai/AISummaryPanel";
@@ -51,6 +51,11 @@ export function MyWorkPage({
   const [isAISummaryLoading, setIsAISummaryLoading] = useState(false);
   const [isAISummaryGenerating, setIsAISummaryGenerating] = useState(false);
   const [aiSummaryError, setAISummaryError] = useState<string | null>(null);
+  const [fileSummaryAttachment, setFileSummaryAttachment] = useState<Attachment | null>(null);
+  const [fileAISummary, setFileAISummary] = useState<AIJob | null>(null);
+  const [isFileAISummaryLoading, setIsFileAISummaryLoading] = useState(false);
+  const [isFileAISummaryGenerating, setIsFileAISummaryGenerating] = useState(false);
+  const [fileAISummaryError, setFileAISummaryError] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [fileDescription, setFileDescription] = useState("");
   const [fileInputKey, setFileInputKey] = useState(0);
@@ -99,6 +104,9 @@ export function MyWorkPage({
     setDetailError(null);
     setAISummary(null);
     setAISummaryError(null);
+    setFileSummaryAttachment(null);
+    setFileAISummary(null);
+    setFileAISummaryError(null);
     setSelectedFile(null);
     setFileDescription("");
     setUploadError(null);
@@ -118,6 +126,36 @@ export function MyWorkPage({
       setAISummaryError(caughtError instanceof Error ? caughtError.message : "AI summary could not be generated.");
     } finally {
       setIsAISummaryGenerating(false);
+    }
+  }
+
+  async function loadFileAISummary(attachment: Attachment): Promise<void> {
+    if (!selectedCompanyId) return;
+    setFileSummaryAttachment(attachment);
+    setIsFileAISummaryLoading(true);
+    setFileAISummaryError(null);
+    try {
+      const job = await api.latestFileAISummary(attachment.id, selectedCompanyId);
+      setFileAISummary(job);
+    } catch (caughtError) {
+      setFileAISummaryError(caughtError instanceof Error ? caughtError.message : "Unable to load the latest file summary.");
+    } finally {
+      setIsFileAISummaryLoading(false);
+    }
+  }
+
+  async function handleGenerateFileAISummary(): Promise<void> {
+    if (!fileSummaryAttachment || !selectedCompanyId) return;
+    setIsFileAISummaryGenerating(true);
+    setFileAISummaryError(null);
+    try {
+      const job = await api.generateFileAISummary(fileSummaryAttachment.id, selectedCompanyId);
+      setFileAISummary(job);
+      if (detailWorkObject) void loadDetail(detailWorkObject.id);
+    } catch (caughtError) {
+      setFileAISummaryError(caughtError instanceof Error ? caughtError.message : "AI file summary could not be generated.");
+    } finally {
+      setIsFileAISummaryGenerating(false);
     }
   }
 
@@ -261,7 +299,7 @@ export function MyWorkPage({
                 <FieldShell label="Attach file">
                   <input
                     key={fileInputKey}
-                    accept=".png,.jpg,.jpeg,.webp,.pdf,.csv,.txt,.doc,.docx,.xls,.xlsx"
+                    accept=".png,.jpg,.jpeg,.webp,.pdf,.csv,.txt,.md,.json,.log,.doc,.docx,.xls,.xlsx"
                     className="w-full rounded-lg border border-grid-200 bg-white px-3 py-2 text-sm font-semibold text-ink-700 file:mr-3 file:rounded-md file:border-0 file:bg-grid-100 file:px-3 file:py-1.5 file:text-xs file:font-bold file:text-ink-700 focus:border-brand-500 focus:outline-none focus:ring-4 focus:ring-brand-100"
                     type="file"
                     onChange={(event) => setSelectedFile(event.target.files?.[0] ?? null)}
@@ -297,13 +335,40 @@ export function MyWorkPage({
                         <p className="truncate text-sm font-bold text-ink-950">{attachment.original_file_name}</p>
                         <p className="mt-1 text-xs font-semibold text-ink-500">{compactList([attachment.content_type ?? "Unknown type", formatBytes(attachment.file_size), formatDate(attachment.created_at)])}</p>
                       </div>
-                      <Button className="size-9 px-0" aria-label="Download file" icon={<Download className="size-4" aria-hidden="true" />} title="Download file" onClick={() => void handleDownloadAttachment(attachment)}>
-                        <span className="sr-only">Download file</span>
-                      </Button>
+                      <div className="flex justify-end gap-2">
+                        <Button
+                          className="size-9 px-0"
+                          aria-label={`Generate AI summary for ${attachment.original_file_name}`}
+                          icon={<Sparkles className="size-4" aria-hidden="true" />}
+                          title={`Generate AI summary for ${attachment.original_file_name}`}
+                          onClick={() => void loadFileAISummary(attachment)}
+                        >
+                          <span className="sr-only">Summarize file</span>
+                        </Button>
+                        <Button className="size-9 px-0" aria-label="Download file" icon={<Download className="size-4" aria-hidden="true" />} title="Download file" onClick={() => void handleDownloadAttachment(attachment)}>
+                          <span className="sr-only">Download file</span>
+                        </Button>
+                      </div>
                     </article>
                   ))}
                 </div>
               )}
+              {fileSummaryAttachment ? (
+                <div className="border-t border-grid-200 p-4">
+                  <p className="mb-3 text-xs font-black uppercase tracking-normal text-ink-500">
+                    File summary / {fileSummaryAttachment.original_file_name}
+                  </p>
+                  <AISummaryPanel
+                    error={fileAISummaryError}
+                    generateLabel="Generate AI File Summary"
+                    isGenerating={isFileAISummaryGenerating}
+                    isLoading={isFileAISummaryLoading}
+                    job={fileAISummary}
+                    kind="file"
+                    onGenerate={() => void handleGenerateFileAISummary()}
+                  />
+                </div>
+              ) : null}
             </section>
 
             {isDetailLoading ? <LoadingState label="Loading work details" /> : null}

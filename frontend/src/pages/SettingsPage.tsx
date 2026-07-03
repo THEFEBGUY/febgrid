@@ -1,6 +1,7 @@
 import { Archive, Bot, CreditCard, FileText, Pencil, Play, Plus, RotateCcw, Save, ShieldAlert, Wand2, XCircle } from "lucide-react";
 import { type FormEvent, useEffect, useMemo, useState } from "react";
 
+import { AISummaryPanel } from "../components/ai/AISummaryPanel";
 import { MagicBentoCard } from "../components/premium/MagicBento";
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
@@ -10,6 +11,7 @@ import { Modal } from "../components/ui/Modal";
 import { ModuleBoundary } from "../components/ui/ModuleBoundary";
 import { SectionPanel } from "../components/ui/SectionPanel";
 import { EmptyState } from "../components/ui/States";
+import { api } from "../services/api";
 import type {
   Attachment,
   AttachmentUpdatePayload,
@@ -181,6 +183,10 @@ export function SettingsPage({
   const [fileTypeFilter, setFileTypeFilter] = useState("");
   const [editingFile, setEditingFile] = useState<Attachment | null>(null);
   const [fileForm, setFileForm] = useState(emptyFileForm);
+  const [fileAISummary, setFileAISummary] = useState<AIJob | null>(null);
+  const [isFileAISummaryLoading, setIsFileAISummaryLoading] = useState(false);
+  const [isFileAISummaryGenerating, setIsFileAISummaryGenerating] = useState(false);
+  const [fileAISummaryError, setFileAISummaryError] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [isExternalAIWarningOpen, setIsExternalAIWarningOpen] = useState(false);
 
@@ -484,10 +490,47 @@ export function SettingsPage({
   function openFileModal(file: Attachment): void {
     setEditingFile(file);
     setFormError(null);
+    setFileAISummary(null);
+    setFileAISummaryError(null);
     setFileForm({
       description: file.description ?? "",
       tags: file.tags.join(", "),
     });
+    void loadFileAISummary(file);
+  }
+
+  function closeFileModal(): void {
+    setEditingFile(null);
+    setFileAISummary(null);
+    setFileAISummaryError(null);
+  }
+
+  async function loadFileAISummary(file: Attachment): Promise<void> {
+    if (!selectedCompany) return;
+    setIsFileAISummaryLoading(true);
+    setFileAISummaryError(null);
+    try {
+      const job = await api.latestFileAISummary(file.id, selectedCompany.id);
+      setFileAISummary(job);
+    } catch (caughtError) {
+      setFileAISummaryError(caughtError instanceof Error ? caughtError.message : "Unable to load the latest file summary.");
+    } finally {
+      setIsFileAISummaryLoading(false);
+    }
+  }
+
+  async function handleGenerateFileAISummary(): Promise<void> {
+    if (!editingFile || !selectedCompany) return;
+    setIsFileAISummaryGenerating(true);
+    setFileAISummaryError(null);
+    try {
+      const job = await api.generateFileAISummary(editingFile.id, selectedCompany.id);
+      setFileAISummary(job);
+    } catch (caughtError) {
+      setFileAISummaryError(caughtError instanceof Error ? caughtError.message : "AI file summary could not be generated.");
+    } finally {
+      setIsFileAISummaryGenerating(false);
+    }
   }
 
   async function handlePlanChange(planKey: string): Promise<void> {
@@ -607,7 +650,7 @@ export function SettingsPage({
         description: fileForm.description.trim() || null,
         tags: parseOptions(fileForm.tags),
       });
-      setEditingFile(null);
+      closeFileModal();
     } catch {
       setFormError("File metadata could not be saved.");
     }
@@ -1026,7 +1069,7 @@ export function SettingsPage({
         </div>
       </Modal>
 
-      <Modal description="Update searchable file metadata. Storage and scan providers are intentionally not configurable here." isOpen={Boolean(editingFile)} title="Edit file metadata" onClose={() => setEditingFile(null)}>
+      <Modal description="Update searchable file metadata. Storage and scan providers are intentionally not configurable here." isOpen={Boolean(editingFile)} title="Edit file metadata" onClose={closeFileModal}>
         <form className="space-y-4 p-5" onSubmit={handleFileSubmit}>
           <FieldShell label="Description">
             <TextArea value={fileForm.description} onChange={(event) => setFileForm((current) => ({ ...current, description: event.target.value }))} />
@@ -1039,9 +1082,20 @@ export function SettingsPage({
               {editingFile.original_file_name} / {formatFileSize(editingFile.file_size)} / {formatLabel(editingFile.processing_status)}
             </div>
           ) : null}
+          {editingFile ? (
+            <AISummaryPanel
+              error={fileAISummaryError}
+              generateLabel="Generate AI File Summary"
+              isGenerating={isFileAISummaryGenerating}
+              isLoading={isFileAISummaryLoading}
+              job={fileAISummary}
+              kind="file"
+              onGenerate={() => void handleGenerateFileAISummary()}
+            />
+          ) : null}
           {formError ? <p className="text-sm font-semibold text-rose-700">{formError}</p> : null}
           <div className="flex justify-end gap-2 border-t border-grid-200 pt-4">
-            <Button onClick={() => setEditingFile(null)}>Cancel</Button>
+            <Button onClick={closeFileModal}>Cancel</Button>
             <Button disabled={isMutating} type="submit" variant="primary">
               {isMutating ? "Saving..." : "Save file"}
             </Button>

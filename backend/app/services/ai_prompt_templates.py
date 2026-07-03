@@ -33,6 +33,19 @@ def output_contract_for_job(job_type: str) -> dict[str, Any]:
             "suggested_next_steps": ["up to 4 practical next steps based only on provided fields"],
             "confidence": None,
         }
+    if job_type == "file_summary_safe":
+        return {
+            "summary": "short operational summary of the supported text document",
+            "document_type_guess": "plain-language guess from filename, content type, and text, or unknown",
+            "key_points": ["up to 6 concise points grounded only in the provided text"],
+            "important_dates_or_numbers": ["dates, amounts, IDs, or counts that appear important, only if present"],
+            "risks_or_concerns": ["up to 4 concerns, inconsistencies, or operational risks, only when evidence exists"],
+            "suggested_next_steps": ["up to 4 practical next steps based only on provided fields"],
+            "limitations": ["mention unsupported sections, truncation, uncertainty, or missing context"],
+            "truncated": False,
+            "unsupported_reason": None,
+            "confidence": None,
+        }
     return {
         "summary": "short operational summary of the work object",
         "current_status_explanation": "plain-language explanation grounded only in provided data",
@@ -68,7 +81,8 @@ def build_summary_messages(
                 "API keys, invite links, local file paths, or credentials. This is operational assistance only. "
                 "For company briefs, answer what changed recently, what needs attention, what is going well, "
                 "what is blocked or risky, and what owner/admin should do next. Return valid compact JSON "
-                "matching the requested output contract."
+                "matching the requested output contract. For file summaries, summarize only the provided text, "
+                "mention when content was truncated, and avoid restating any secret-like values."
             ),
         },
         {"role": "user", "content": serialized},

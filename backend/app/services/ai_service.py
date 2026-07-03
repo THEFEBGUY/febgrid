@@ -1,4 +1,6 @@
 import json
+import re
+from pathlib import Path
 from typing import Any
 from uuid import UUID
 
@@ -38,11 +40,22 @@ from app.schemas.ai_job import (
 from app.services.ai_prompt_templates import build_summary_messages
 from app.services.ai_providers import AIProviderError, AIProviderRequest, build_ai_provider
 from app.services.event_service import EventService
+from app.services.file_service import FileService
 from app.services.notification_service import NotificationService
 
 AI_INPUT_MAX_BYTES = 20_000
 COMPANY_AI_SETTINGS_KEY = "ai"
 RESERVED_AI_KEYS = {"system_prompt", "raw_prompt", "provider_api_key", "api_key", "secret", "password", "token"}
+FILE_SUMMARY_MAX_BYTES = 1 * 1024 * 1024
+FILE_SUMMARY_EXTENSIONS = {".txt", ".md", ".csv", ".json", ".log"}
+SECRET_FILE_EXTENSIONS = {".env", ".pem", ".key"}
+SECRET_FILE_NAMES = {".env", "id_rsa", "id_dsa", "id_ecdsa", "id_ed25519"}
+SECRET_VALUE_PATTERN = re.compile(
+    r"(?im)\b(api[_-]?key|secret|password|passwd|token|bearer|access[_-]?token|private[_-]?key)\b\s*[:=]\s*([^\s\"']{6,})"
+)
+BEARER_PATTERN = re.compile(r"(?i)\bAuthorization\s*:\s*Bearer\s+[A-Za-z0-9._~+/\-=]+")
+PRIVATE_KEY_PATTERN = re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----")
+LONG_SECRET_PATTERN = re.compile(r"\b[A-Za-z0-9_\-]{40,}\b")
 
 CAPABILITY_DEFINITIONS = [
     AICapability(
@@ -86,6 +99,12 @@ CAPABILITY_DEFINITIONS = [
         job_type="company_brief_safe",
         label="Safe company brief",
         description="Run an owner/admin executive brief from aggregated company signals through the configured provider.",
+        mock_only=False,
+    ),
+    AICapability(
+        job_type="file_summary_safe",
+        label="Safe file summary",
+        description="Run a supported text-file summary through the configured provider after file safety checks.",
         mock_only=False,
     ),
 ]
@@ -160,6 +179,39 @@ def contains_reserved_key(value: Any) -> bool:
     if isinstance(value, list):
         return any(contains_reserved_key(item) for item in value)
     return False
+
+
+def file_extension(attachment: Attachment) -> str:
+    extension = (attachment.extension or Path(attachment.original_file_name).suffix or "").lower()
+    return extension.strip()
+
+
+def is_secret_like_filename(filename: str) -> bool:
+    lowered = Path(filename).name.lower()
+    extension = Path(lowered).suffix
+    return lowered in SECRET_FILE_NAMES or extension in SECRET_FILE_EXTENSIONS or any(
+        marker in lowered for marker in ("credential", "credentials", "private_key", "secret")
+    )
+
+
+def redact_secret_like_text(text: str) -> tuple[str, bool]:
+    was_redacted = False
+
+    def mark_redacted(_: re.Match[str]) -> str:
+        nonlocal was_redacted
+        was_redacted = True
+        return "[REDACTED_SECRET]"
+
+    redacted = PRIVATE_KEY_PATTERN.sub(mark_redacted, text)
+    redacted = BEARER_PATTERN.sub(mark_redacted, redacted)
+    redacted = SECRET_VALUE_PATTERN.sub(lambda match: f"{match.group(1)}=[REDACTED_SECRET]", redacted)
+    if redacted != text:
+        was_redacted = True
+    return redacted, was_redacted
+
+
+def secret_signal_count(text: str) -> int:
+    return len(SECRET_VALUE_PATTERN.findall(text)) + len(BEARER_PATTERN.findall(text)) + len(PRIVATE_KEY_PATTERN.findall(text))
 
 
 class AIService:
@@ -257,12 +309,69 @@ class AIService:
             "work_object_summary_safe": "work_object",
             "project_summary_safe": "project",
             "company_brief_safe": "company",
+            "file_summary_safe": "attachment",
         }
+        if job_type == "file_summary_safe" and input_entity_type in {"attachment", "file"}:
+            return
         if job_type in expected and input_entity_type != expected[job_type]:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail=f"{job_type} requires input_entity_type={expected[job_type]}",
             )
+
+    @classmethod
+    def ensure_file_summary_access(cls, db: Session, *, attachment: Attachment, current_user: User) -> None:
+        ensure_company_access(current_user, attachment.company_id)
+        if current_user.role in MANAGER_ROLES:
+            return
+        if attachment.uploaded_by_user_id == current_user.id:
+            return
+
+        employee = linked_employee(db, current_user)
+        if employee is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found")
+        if attachment.uploaded_by_employee_id == employee.id:
+            return
+        if attachment.work_object_id is not None:
+            work_object = get_or_404(db, WorkObject, attachment.work_object_id, label="Work object")
+            ensure_company(work_object, attachment.company_id, label="Work object")
+            if work_object.assignee_employee_id == employee.id or work_object.creator_employee_id == employee.id:
+                return
+        if attachment.project_id is not None:
+            project = get_or_404(db, Project, attachment.project_id, label="Project")
+            ensure_company(project, attachment.company_id, label="Project")
+            if project.owner_employee_id == employee.id:
+                return
+            membership = db.scalar(
+                select(ProjectMember.id).where(
+                    ProjectMember.company_id == attachment.company_id,
+                    ProjectMember.project_id == project.id,
+                    ProjectMember.employee_id == employee.id,
+                    ProjectMember.is_active.is_(True),
+                )
+            )
+            if membership is not None:
+                return
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found")
+
+    @classmethod
+    def ensure_summary_entity_permission(
+        cls,
+        db: Session,
+        *,
+        company_id: UUID,
+        job_type: str,
+        input_entity_type: str,
+        input_entity_id: UUID,
+        current_user: User,
+    ) -> None:
+        if job_type != "file_summary_safe":
+            return
+        attachment = get_or_404(db, Attachment, input_entity_id, label="File")
+        ensure_company(attachment, company_id, label="File")
+        if attachment.is_deleted or not attachment.is_active:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found")
+        cls.ensure_file_summary_access(db, attachment=attachment, current_user=current_user)
 
     @classmethod
     def resolved_provider_mode(cls, job_type: str, company_settings: dict[str, Any]) -> str:
@@ -295,6 +404,15 @@ class AIService:
             input_entity_type=payload.input_entity_type,
             input_entity_id=payload.input_entity_id,
         )
+        if payload.input_entity_type is not None and payload.input_entity_id is not None:
+            cls.ensure_summary_entity_permission(
+                db,
+                company_id=payload.company_id,
+                job_type=payload.job_type,
+                input_entity_type=payload.input_entity_type,
+                input_entity_id=payload.input_entity_id,
+                current_user=current_user,
+            )
 
         company_settings = cls.company_ai_settings(company)
         if payload.job_type not in company_settings["allowed_ai_job_types"]:
@@ -349,7 +467,7 @@ class AIService:
         current_user: User,
     ) -> AIJob:
         ensure_company_access(current_user, company_id)
-        if job_type not in {"work_object_summary_safe", "project_summary_safe", "company_brief_safe"}:
+        if job_type not in {"work_object_summary_safe", "project_summary_safe", "company_brief_safe", "file_summary_safe"}:
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Unsupported AI summary type")
         if job_type == "company_brief_safe":
             ensure_role(current_user, OWNER_ADMIN_ROLES)
@@ -361,6 +479,14 @@ class AIService:
             company_id=company_id,
             input_entity_type=input_entity_type,
             input_entity_id=input_entity_id,
+        )
+        cls.ensure_summary_entity_permission(
+            db,
+            company_id=company_id,
+            job_type=job_type,
+            input_entity_type=input_entity_type,
+            input_entity_id=input_entity_id,
+            current_user=current_user,
         )
 
         company_settings = cls.company_ai_settings(company)
@@ -450,6 +576,20 @@ class AIService:
             ensure_role(current_user, OWNER_ADMIN_ROLES)
         cls.ensure_job_type(job_type)
         cls.validate_job_entity_pair(job_type, input_entity_type)
+        cls.validate_entity_access(
+            db,
+            company_id=company_id,
+            input_entity_type=input_entity_type,
+            input_entity_id=input_entity_id,
+        )
+        cls.ensure_summary_entity_permission(
+            db,
+            company_id=company_id,
+            job_type=job_type,
+            input_entity_type=input_entity_type,
+            input_entity_id=input_entity_id,
+            current_user=current_user,
+        )
         return db.scalar(
             select(AIJob)
             .where(
@@ -495,6 +635,77 @@ class AIService:
         if job.requested_by_user_id == current_user.id and job.input_entity_type != "company":
             return
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission for this action")
+
+    @classmethod
+    def build_file_summary_context(cls, db: Session, *, attachment: Attachment, max_input_chars: int) -> dict[str, Any]:
+        extension = file_extension(attachment)
+        if is_secret_like_filename(attachment.original_file_name):
+            raise AIProviderError("file_contains_secrets", "This file appears to contain secrets and cannot be summarized.")
+        if extension not in FILE_SUMMARY_EXTENSIONS:
+            raise AIProviderError(
+                "unsupported_file_type",
+                "This file type is not supported for AI summary yet.",
+                {"unsupported_reason": "unsupported_file_type", "extension": extension},
+            )
+        if attachment.storage_provider != FileService.STORAGE_PROVIDER:
+            raise AIProviderError("unsupported_storage_provider", "This file storage provider is not supported for AI summary yet.")
+        if attachment.file_size is not None and attachment.file_size > FILE_SUMMARY_MAX_BYTES:
+            raise AIProviderError("file_too_large", "This file is too large for AI summary v1.", {"file_size": attachment.file_size})
+
+        path = FileService.resolve_storage_path(attachment.storage_path)
+        if not path.exists() or not path.is_file():
+            raise AIProviderError("file_not_available", "File content is not available for AI summary.")
+        actual_size = path.stat().st_size
+        if actual_size > FILE_SUMMARY_MAX_BYTES:
+            raise AIProviderError("file_too_large", "This file is too large for AI summary v1.", {"file_size": actual_size})
+
+        raw_text = path.read_bytes().decode("utf-8", errors="replace")
+        if PRIVATE_KEY_PATTERN.search(raw_text) or secret_signal_count(raw_text) >= 3:
+            raise AIProviderError("file_contains_secrets", "This file appears to contain secrets and cannot be summarized.")
+        redacted_text, was_redacted = redact_secret_like_text(raw_text)
+        if LONG_SECRET_PATTERN.search(redacted_text) and secret_signal_count(raw_text) > 0:
+            raise AIProviderError("file_contains_secrets", "This file appears to contain secrets and cannot be summarized.")
+
+        max_text_chars = max(1000, min(max_input_chars - 2500, max_input_chars))
+        sanitized_text = redacted_text.strip()
+        truncated = len(sanitized_text) > max_text_chars
+        if truncated:
+            sanitized_text = sanitized_text[:max_text_chars]
+
+        uploader_name = None
+        if attachment.uploaded_by_employee_id:
+            uploader_name = display_name(
+                db.scalar(select(Employee).where(Employee.id == attachment.uploaded_by_employee_id, Employee.company_id == attachment.company_id))
+            )
+        linked_work_title = None
+        linked_project_name = None
+        if attachment.work_object_id:
+            linked_work_title = db.scalar(
+                select(WorkObject.title).where(WorkObject.id == attachment.work_object_id, WorkObject.company_id == attachment.company_id)
+            )
+        if attachment.project_id:
+            linked_project_name = db.scalar(select(Project.name).where(Project.id == attachment.project_id, Project.company_id == attachment.company_id))
+
+        return {
+            "type": "file",
+            "file_id": str(attachment.id),
+            "original_file_name": safe_text(attachment.original_file_name, 255),
+            "content_type": safe_text(attachment.content_type, 120),
+            "extension": extension,
+            "file_size": attachment.file_size,
+            "upload_date": attachment.created_at.isoformat() if attachment.created_at else None,
+            "uploader_display_name": uploader_name,
+            "linked_entity_type": safe_text(attachment.linked_entity_type, 80),
+            "linked_entity_id": str(attachment.linked_entity_id) if attachment.linked_entity_id else None,
+            "linked_work_object_title": safe_text(linked_work_title, 220),
+            "linked_project_name": safe_text(linked_project_name, 220),
+            "description": safe_text(attachment.description, 600),
+            "tags": [safe_text(tag, 80) for tag in attachment.tags[:10] if safe_text(tag, 80)],
+            "text": sanitized_text,
+            "truncated": truncated,
+            "redacted_secret_like_values": was_redacted,
+            "extraction_mode": "utf8_text_only",
+        }
 
     @classmethod
     def build_safe_context(cls, db: Session, job: AIJob) -> dict[str, Any]:
@@ -606,6 +817,13 @@ class AIService:
                 "upcoming_due_work_count": upcoming_due_count,
                 "top_open_work_objects": top_open_work_objects,
             }
+        if job.input_entity_type in {"attachment", "file"} and job.input_entity_id:
+            attachment = get_or_404(db, Attachment, job.input_entity_id, label="File")
+            ensure_company(attachment, job.company_id, label="File")
+            if attachment.is_deleted or not attachment.is_active:
+                raise AIProviderError("file_not_available", "File content is not available for AI summary.")
+            runtime = get_ai_provider_config()
+            return cls.build_file_summary_context(db, attachment=attachment, max_input_chars=runtime.groq_max_input_chars)
         if job.input_entity_type == "company":
             company = get_or_404(db, Company, job.company_id, label="Company")
             now = utc_now()
@@ -961,6 +1179,26 @@ class AIService:
         error_message: str,
         metadata: dict[str, Any],
     ) -> None:
+        if job.job_type == "file_summary_safe":
+            output_payload = metadata_dict(job.output_payload)
+            output_payload.update(
+                {
+                    "summary": "",
+                    "document_type_guess": "unknown",
+                    "key_points": [],
+                    "important_dates_or_numbers": [],
+                    "risks_or_concerns": [],
+                    "suggested_next_steps": [],
+                    "limitations": [error_message[:500]],
+                    "truncated": bool(metadata.get("truncated", False)),
+                    "unsupported_reason": metadata.get("unsupported_reason") or error_code,
+                    "provider_key": job.provider_key,
+                    "provider_mode": job.provider_mode,
+                    "is_mock": job.provider_mode == "mock",
+                    "generated_at": utc_now().isoformat(),
+                }
+            )
+            job.output_payload = output_payload
         job.status = "failed"
         job.failed_at = utc_now()
         job.error_message = error_message[:1000]
@@ -1021,6 +1259,7 @@ class AIService:
         description: str,
     ):
         metadata = metadata_dict(job.metadata_json)
+        output_payload = metadata_dict(job.output_payload)
         return EventService.record_event(
             db,
             company_id=job.company_id,
@@ -1051,18 +1290,26 @@ class AIService:
 
     @classmethod
     def record_summary_event(cls, db: Session, *, job: AIJob, current_user: User, phase: str):
-        if job.input_entity_type not in {"work_object", "project", "company"} or job.input_entity_id is None:
+        if job.input_entity_type not in {"work_object", "project", "company", "attachment", "file"} or job.input_entity_id is None:
             return None
         if job.input_entity_type == "company":
             entity_label = "company brief"
             event_type = f"ai_brief.company.{phase}"
             title = f"AI company brief {phase}"
             description = f"A tenant-safe AI company brief was {phase}."
+            target_entity_type = "company"
+        elif job.input_entity_type in {"attachment", "file"}:
+            entity_label = "file"
+            event_type = f"ai_summary.file.{phase}"
+            title = f"AI file summary {phase}"
+            description = f"A tenant-safe AI file summary was {phase}."
+            target_entity_type = "attachment"
         else:
             entity_label = "work object" if job.input_entity_type == "work_object" else "project"
             event_type = f"ai_summary.{job.input_entity_type}.{phase}"
             title = f"AI {entity_label} summary {phase}"
             description = f"A tenant-safe AI {entity_label} summary was {phase}."
+            target_entity_type = job.input_entity_type
         metadata = metadata_dict(job.metadata_json)
         return EventService.record_event(
             db,
@@ -1072,13 +1319,13 @@ class AIService:
             event_type=event_type,
             title=title,
             description=description,
-            target_entity_type=job.input_entity_type,
+            target_entity_type=target_entity_type,
             target_entity_id=job.input_entity_id,
             related_entity_type="ai_job",
             related_entity_id=job.id,
             metadata={
                 "ai_job_id": str(job.id),
-                "entity_type": job.input_entity_type,
+                "entity_type": "file" if job.input_entity_type in {"attachment", "file"} else job.input_entity_type,
                 "entity_id": str(job.input_entity_id),
                 "job_type": job.job_type,
                 "status": job.status,
@@ -1088,6 +1335,8 @@ class AIService:
                 "safety_status": metadata.get("safety_status"),
                 "external_processing_used": bool(metadata.get("external_processing_used", False)),
                 "error_code": metadata.get("error_code"),
+                "truncated": bool(output_payload.get("truncated", False)) if job.job_type == "file_summary_safe" else None,
+                "unsupported_reason": output_payload.get("unsupported_reason") if job.job_type == "file_summary_safe" else None,
             },
         )
 

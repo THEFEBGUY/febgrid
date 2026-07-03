@@ -120,6 +120,7 @@ class GroqAIProvider(BaseAIProvider):
                     "summary",
                     "executive_summary",
                     "current_status_explanation",
+                    "document_type_guess",
                     "project_health",
                     "status_explanation",
                     "progress_overview",
@@ -133,10 +134,13 @@ class GroqAIProvider(BaseAIProvider):
                     "key_points",
                     "blockers_or_risks",
                     "risks_or_blockers",
+                    "risks_or_concerns",
                     "suggested_next_steps",
                     "suggested_next_actions",
                     "operational_highlights",
+                    "important_dates_or_numbers",
                     "attention_items",
+                    "limitations",
                     "risks",
                     "next_actions",
                 ]
@@ -155,6 +159,9 @@ class GroqAIProvider(BaseAIProvider):
                     output["blockers_or_risks"] = output["risks"]
                 if "risks_or_blockers" not in output and isinstance(output.get("risks"), list):
                     output["risks_or_blockers"] = output["risks"]
+                output["truncated"] = bool(parsed.get("truncated", False))
+                unsupported_reason = parsed.get("unsupported_reason")
+                output["unsupported_reason"] = str(unsupported_reason).strip()[:500] if unsupported_reason else None
                 output["confidence"] = parsed.get("confidence")
                 if "summary" not in output and "executive_summary" not in output:
                     output["summary"] = ""
@@ -167,10 +174,15 @@ class GroqAIProvider(BaseAIProvider):
             "key_points": [],
             "blockers_or_risks": [],
             "risks_or_blockers": [],
+            "risks_or_concerns": [],
             "suggested_next_steps": [],
             "suggested_next_actions": [],
             "operational_highlights": [],
+            "important_dates_or_numbers": [],
             "attention_items": [],
+            "limitations": ["Provider returned non-JSON text, so FebGrid wrapped the response safely."],
+            "truncated": False,
+            "unsupported_reason": None,
             "confidence": None,
         }
 

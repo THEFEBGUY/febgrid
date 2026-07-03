@@ -28,18 +28,26 @@ class FileService:
     MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024
     STORAGE_PROVIDER = "local"
     STORAGE_ROOT = Path(__file__).resolve().parents[2] / "storage" / "uploads"
-    ALLOWED_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".pdf", ".csv", ".doc", ".docx", ".xls", ".xlsx"}
+    SAFE_TEXT_EXTENSIONS = {".txt", ".md", ".csv", ".json", ".log"}
+    ALLOWED_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".pdf", ".doc", ".docx", ".xls", ".xlsx"} | SAFE_TEXT_EXTENSIONS
+    SAFE_TEXT_CONTENT_TYPES = {
+        "text/plain",
+        "text/markdown",
+        "text/csv",
+        "application/csv",
+        "application/json",
+        "application/octet-stream",
+    }
     ALLOWED_CONTENT_TYPES = {
         "image/png",
         "image/jpeg",
         "image/webp",
         "application/pdf",
-        "text/csv",
         "application/msword",
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         "application/vnd.ms-excel",
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    }
+    } | (SAFE_TEXT_CONTENT_TYPES - {"application/octet-stream"})
 
     @staticmethod
     def sanitize_original_filename(filename: str | None) -> str:
@@ -51,6 +59,8 @@ class FileService:
     def validate_file_type(cls, original_file_name: str, content_type: str | None) -> str:
         extension = Path(original_file_name).suffix.lower()
         detected_type = content_type or mimetypes.guess_type(original_file_name)[0] or "application/octet-stream"
+        if extension in cls.SAFE_TEXT_EXTENSIONS and detected_type in cls.SAFE_TEXT_CONTENT_TYPES:
+            return detected_type
         if extension not in cls.ALLOWED_EXTENSIONS or detected_type not in cls.ALLOWED_CONTENT_TYPES:
             raise HTTPException(
                 status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,

@@ -6,7 +6,7 @@ import { Badge } from "../ui/Badge";
 import { Button } from "../ui/Button";
 import { LoadingState } from "../ui/States";
 
-type SummaryKind = "work_object" | "project" | "company";
+type SummaryKind = "work_object" | "project" | "company" | "file";
 
 interface AISummaryPanelProps {
   error: string | null;
@@ -37,12 +37,14 @@ function providerLabel(job: AIJob | null): string {
 function summaryTitle(kind: SummaryKind): string {
   if (kind === "company") return "AI executive brief";
   if (kind === "project") return "AI project summary";
+  if (kind === "file") return "AI file summary";
   return "AI work summary";
 }
 
 function entityLabel(kind: SummaryKind): string {
   if (kind === "company") return "company";
   if (kind === "project") return "project";
+  if (kind === "file") return "file";
   return "work object";
 }
 
@@ -71,9 +73,14 @@ export function AISummaryPanel({
   const primaryPoints =
     kind === "company" ? list(output.operational_highlights) : kind === "project" ? list(output.risks_or_blockers) : list(output.key_points);
   const blockers = kind === "project" || kind === "company" ? list(output.risks_or_blockers) : list(output.blockers_or_risks);
+  const fileRisks = list(output.risks_or_concerns);
+  const importantFileSignals = list(output.important_dates_or_numbers);
+  const limitations = list(output.limitations);
   const nextSteps = kind === "company" ? list(output.suggested_next_actions) : list(output.suggested_next_steps);
   const currentStatus = kind === "project" ? text(output.status_explanation) : text(output.current_status_explanation);
   const attentionItems = list(output.attention_items);
+  const isTruncated = output.truncated === true;
+  const unsupportedReason = text(output.unsupported_reason);
 
   return (
     <section className="febgrid-surface overflow-hidden rounded-lg">
@@ -87,7 +94,7 @@ export function AISummaryPanel({
             {isMock && job ? <Badge label="Mock output" tone="slate" /> : null}
           </div>
           <p className="mt-1 text-xs font-semibold text-ink-500">
-            Server-owned prompt, safe {kind === "company" ? "aggregated company" : "entity"} context, no raw files, no secrets.
+            Server-owned prompt, safe {kind === "company" ? "aggregated company" : kind === "file" ? "supported text-file" : "entity"} context, no raw paths, no secrets.
           </p>
         </div>
         <Button
@@ -121,6 +128,8 @@ export function AISummaryPanel({
               {job.error_message ?? "AI summary failed safely."}
             </p>
           ) : null}
+          {kind === "file" && isTruncated ? <Badge label="Content truncated" tone="amber" /> : null}
+          {kind === "file" && unsupportedReason ? <Badge label={formatLabel(unsupportedReason)} tone="red" /> : null}
           {summary ? (
             <div className="rounded-lg border border-grid-200 bg-grid-50 p-4">
               <p className="text-xs font-black uppercase tracking-normal text-ink-500">
@@ -143,15 +152,24 @@ export function AISummaryPanel({
               <SummaryStat label="Progress" value={text(output.progress_overview) ?? "Not enough data yet"} />
               <SummaryStat label="Open work" value={text(output.open_work_overview) ?? "Not enough data yet"} />
             </div>
+          ) : kind === "file" ? (
+            <div className="grid gap-3 md:grid-cols-2">
+              <SummaryStat label="Document type" value={text(output.document_type_guess) ?? "Unknown"} />
+              <SummaryStat label="Extraction" value={isTruncated ? "Text-only, truncated" : "Text-only"} />
+            </div>
           ) : currentStatus ? (
             <SummaryBlock items={[currentStatus]} title="Status explanation" />
           ) : null}
           {kind === "project" && currentStatus ? <SummaryBlock items={[currentStatus]} title="Status explanation" /> : null}
           {kind === "work_object" && primaryPoints.length > 0 ? <SummaryBlock items={primaryPoints} title="Key points" /> : null}
+          {kind === "file" && list(output.key_points).length > 0 ? <SummaryBlock items={list(output.key_points)} title="Key points" /> : null}
+          {kind === "file" && importantFileSignals.length > 0 ? <SummaryBlock items={importantFileSignals} title="Important dates or numbers" /> : null}
           {kind === "company" && primaryPoints.length > 0 ? <SummaryBlock items={primaryPoints} title="Operational highlights" /> : null}
           {kind === "company" && attentionItems.length > 0 ? <SummaryBlock items={attentionItems} title="Attention items" /> : null}
           {blockers.length > 0 ? <SummaryBlock items={blockers} title="Blockers or risks" /> : null}
+          {kind === "file" && fileRisks.length > 0 ? <SummaryBlock items={fileRisks} title="Risks or concerns" /> : null}
           {nextSteps.length > 0 ? <SummaryBlock items={nextSteps} title="Suggested next steps" /> : null}
+          {kind === "file" && limitations.length > 0 ? <SummaryBlock items={limitations} title="Limitations" /> : null}
           <p className="text-xs font-semibold text-ink-500">
             {generatedAt ? `Generated ${formatTime(generatedAt)}` : "Generated time unavailable"}
             {modelName ? ` / ${modelName}` : ""}

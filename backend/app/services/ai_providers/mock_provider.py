@@ -71,6 +71,18 @@ class MockAIProvider(BaseAIProvider):
                 "blockers_or_risks": ["Mock output only; no real blocker analysis was generated."],
                 "suggested_next_steps": ["Enable Groq with explicit external processing consent to generate a real work summary."],
             }
+        if request.job_type == "file_summary_safe":
+            return {
+                "summary": "Mock AI file summary. Real provider not connected.",
+                "document_type_guess": "mock text document",
+                "key_points": ["Mock mode verified that the file belongs to this company and is a supported safe text file."],
+                "important_dates_or_numbers": [],
+                "risks_or_concerns": ["Mock output only; no real document analysis was generated."],
+                "suggested_next_steps": ["Enable Groq with explicit external processing consent to generate a real file summary."],
+                "limitations": ["Mock provider does not read, parse, or summarize file content externally."],
+                "truncated": bool(request.entity_context.get("truncated", False)),
+                "unsupported_reason": request.entity_context.get("unsupported_reason"),
+            }
         return {
             "summary": f"Mock AI summary for {entity}. Real provider not connected.",
             "key_points": ["Mock placeholder output only."],

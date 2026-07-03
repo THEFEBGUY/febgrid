@@ -6,7 +6,7 @@ from fastapi.responses import FileResponse
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
-from app.api.deps import db_session, get_optional_current_user
+from app.api.deps import db_session, get_current_user, get_optional_current_user
 from app.api.utils import ensure_company, get_or_404
 from app.core.permissions import MANAGER_ROLES, ensure_company_access, ensure_role
 from app.models.attachment import Attachment
@@ -15,7 +15,9 @@ from app.models.employee import Employee
 from app.models.project import Project
 from app.models.user import User
 from app.models.work_object import WorkObject
+from app.schemas.ai_job import AIJobRead
 from app.schemas.attachment import AttachmentCreate, AttachmentRead, AttachmentUpdate
+from app.services.ai_service import ai_service
 from app.services.event_service import EventService
 from app.services.file_service import FileService
 
@@ -426,6 +428,45 @@ def get_file(
     current_user: User | None = Depends(get_optional_current_user),
 ) -> Attachment:
     return get_attachment(attachment_id, company_id, db, current_user)
+
+
+@files_router.post("/{attachment_id}/ai-summary", response_model=AIJobRead)
+def generate_file_ai_summary(
+    attachment_id: UUID,
+    company_id: UUID,
+    db: Session = Depends(db_session),
+    current_user: User = Depends(get_current_user),
+) -> AIJobRead:
+    attachment = get_attachment_for_user(db, current_user, attachment_id=attachment_id, company_id=company_id)
+    job = ai_service.generate_summary(
+        db,
+        company_id=company_id,
+        job_type="file_summary_safe",
+        input_entity_type="attachment",
+        input_entity_id=attachment.id,
+        current_user=current_user,
+    )
+    db.commit()
+    db.refresh(job)
+    return job
+
+
+@files_router.get("/{attachment_id}/ai-summary/latest", response_model=AIJobRead | None)
+def get_latest_file_ai_summary(
+    attachment_id: UUID,
+    company_id: UUID,
+    db: Session = Depends(db_session),
+    current_user: User = Depends(get_current_user),
+) -> AIJobRead | None:
+    attachment = get_attachment_for_user(db, current_user, attachment_id=attachment_id, company_id=company_id)
+    return ai_service.latest_summary_job(
+        db,
+        company_id=company_id,
+        job_type="file_summary_safe",
+        input_entity_type="attachment",
+        input_entity_id=attachment.id,
+        current_user=current_user,
+    )
 
 
 @files_router.patch("/{attachment_id}", response_model=AttachmentRead)

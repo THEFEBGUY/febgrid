@@ -648,7 +648,8 @@ export type AIJobType =
   | "company_brief_mock"
   | "work_object_summary_safe"
   | "project_summary_safe"
-  | "company_brief_safe";
+  | "company_brief_safe"
+  | "file_summary_safe";
 
 export interface AIJob extends Timestamped {
   id: string;

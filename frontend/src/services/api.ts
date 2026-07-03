@@ -266,6 +266,10 @@ export const api = {
     request<Attachment>(companyPath(`/files/${attachmentId}`, companyId), jsonInit("PATCH", payload)),
   archiveFile: (attachmentId: string, companyId: string) => request<Attachment>(companyPath(`/files/${attachmentId}/archive`, companyId), jsonInit("POST", {})),
   restoreFile: (attachmentId: string, companyId: string) => request<Attachment>(companyPath(`/files/${attachmentId}/restore`, companyId), jsonInit("POST", {})),
+  generateFileAISummary: (attachmentId: string, companyId: string) =>
+    request<AIJob>(companyPath(`/files/${attachmentId}/ai-summary`, companyId), jsonInit("POST", {})),
+  latestFileAISummary: (attachmentId: string, companyId: string) =>
+    request<AIJob | null>(companyPath(`/files/${attachmentId}/ai-summary/latest`, companyId)),
   aiCapabilities: (companyId: string) => request<AICapabilities>(companyPath("/ai/capabilities", companyId)),
   aiProviderStatus: (companyId: string) => request<AIProviderStatus>(companyPath("/ai/provider-status", companyId)),
   aiSafetySettings: (companyId: string) => request<AISafetySettings>(companyPath("/ai/safety-settings", companyId)),
