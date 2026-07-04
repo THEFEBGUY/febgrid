@@ -4,10 +4,21 @@ from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import db_session, get_current_user
-from app.core.permissions import ensure_company_access
+from app.core.permissions import OWNER_ADMIN_ROLES, ensure_company_access, ensure_role
 from app.models.ai_job import AIJob
 from app.models.user import User
-from app.schemas.ai_job import AICapabilitiesRead, AIJobCreate, AIJobRead, AIProviderStatusRead, AISafetySettingsRead, AISafetySettingsUpdate
+from app.schemas.ai_job import (
+    AICapabilitiesRead,
+    AIJobCreate,
+    AIJobProcessResult,
+    AIJobQueueSummaryRead,
+    AIJobRead,
+    AIJobRecoveryResult,
+    AIProviderStatusRead,
+    AISafetySettingsRead,
+    AISafetySettingsUpdate,
+)
+from app.services.ai_job_runner import AIJobRunner
 from app.services.ai_service import ai_service
 
 router = APIRouter(prefix="/ai", tags=["ai"])
@@ -94,6 +105,17 @@ def list_ai_jobs(
     )
 
 
+@router.get("/jobs/queue-summary", response_model=AIJobQueueSummaryRead)
+def get_ai_job_queue_summary(
+    company_id: UUID,
+    db: Session = Depends(db_session),
+    current_user: User = Depends(get_current_user),
+) -> AIJobQueueSummaryRead:
+    ensure_company_access(current_user, company_id)
+    ensure_role(current_user, OWNER_ADMIN_ROLES)
+    return AIJobRunner().queue_summary(db, company_id=company_id)
+
+
 @router.post("/jobs", response_model=AIJobRead, status_code=status.HTTP_201_CREATED)
 def create_ai_job(
     payload: AIJobCreate,
@@ -106,6 +128,31 @@ def create_ai_job(
     return job
 
 
+@router.post("/jobs/process-next", response_model=AIJobProcessResult)
+def process_next_ai_job(
+    company_id: UUID,
+    db: Session = Depends(db_session),
+    current_user: User = Depends(get_current_user),
+) -> AIJobProcessResult:
+    job = AIJobRunner().process_next(db, company_id=company_id, current_user=current_user)
+    db.commit()
+    if job is None:
+        return AIJobProcessResult(processed=False, message="No queued AI job is ready to process.", job=None)
+    db.refresh(job)
+    return AIJobProcessResult(processed=True, message="Processed one queued AI job.", job=job)
+
+
+@router.post("/jobs/recover-stale", response_model=AIJobRecoveryResult)
+def recover_stale_ai_jobs(
+    company_id: UUID,
+    db: Session = Depends(db_session),
+    current_user: User = Depends(get_current_user),
+) -> AIJobRecoveryResult:
+    recovered = AIJobRunner().recover_stale_jobs(db, company_id=company_id, current_user=current_user)
+    db.commit()
+    return AIJobRecoveryResult(recovered=recovered, message=f"Recovered {recovered} stale AI job(s).")
+
+
 @router.get("/jobs/{ai_job_id}", response_model=AIJobRead)
 def get_ai_job(
     ai_job_id: UUID,
@@ -114,6 +161,20 @@ def get_ai_job(
     current_user: User = Depends(get_current_user),
 ) -> AIJob:
     return ai_service.get_visible_job(db, job_id=ai_job_id, company_id=company_id, current_user=current_user)
+
+
+@router.post("/jobs/{ai_job_id}/retry", response_model=AIJobRead)
+def retry_ai_job(
+    ai_job_id: UUID,
+    company_id: UUID,
+    db: Session = Depends(db_session),
+    current_user: User = Depends(get_current_user),
+) -> AIJob:
+    job = ai_service.get_visible_job(db, job_id=ai_job_id, company_id=company_id, current_user=current_user)
+    job = AIJobRunner().retry_failed_job(db, job=job, current_user=current_user)
+    db.commit()
+    db.refresh(job)
+    return job
 
 
 @router.post("/jobs/{ai_job_id}/run", response_model=AIJobRead)

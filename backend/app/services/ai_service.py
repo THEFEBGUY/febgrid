@@ -432,7 +432,11 @@ class AIService:
             output_payload={},
             provider_key=cls.provider_key_for_mode(provider_mode),
             provider_mode=provider_mode,
-            max_attempts=payload.max_attempts,
+            max_attempts=max(1, min(payload.max_attempts, 3)),
+            queued_at=utc_now(),
+            next_attempt_at=payload.scheduled_at,
+            timeout_seconds=get_ai_provider_config().groq_timeout_seconds,
+            run_mode="manual",
             scheduled_at=payload.scheduled_at,
             metadata_json={
                 **metadata_dict(payload.metadata),
@@ -452,6 +456,14 @@ class AIService:
             event_type="ai_job.created",
             title=f"AI job queued: {job.job_type}",
             description="A tenant-safe AI foundation job was created.",
+        )
+        cls.record_job_event(
+            db,
+            job=job,
+            current_user=current_user,
+            event_type="ai_job.queued",
+            title=f"AI job queued: {job.job_type}",
+            description="A tenant-safe AI foundation job entered the queue.",
         )
         return job
 
@@ -512,7 +524,10 @@ class AIService:
             output_payload={},
             provider_key=cls.provider_key_for_mode(provider_mode),
             provider_mode=provider_mode,
-            max_attempts=1,
+            max_attempts=3,
+            queued_at=utc_now(),
+            timeout_seconds=get_ai_provider_config().groq_timeout_seconds,
+            run_mode="manual",
             metadata_json={
                 "provider_mode_requested": provider_mode,
                 "external_processing_used": False,
@@ -533,6 +548,14 @@ class AIService:
             event_type="ai_job.created",
             title=f"AI summary queued: {job.job_type}",
             description="A tenant-safe AI summary job was created.",
+        )
+        cls.record_job_event(
+            db,
+            job=job,
+            current_user=current_user,
+            event_type="ai_job.queued",
+            title=f"AI summary queued: {job.job_type}",
+            description="A tenant-safe AI summary job entered the queue.",
         )
         cls.record_summary_event(db, job=job, current_user=current_user, phase="requested")
         return job
@@ -557,7 +580,8 @@ class AIService:
             current_user=current_user,
         )
         job = cls.run_job(db, job=job, current_user=current_user)
-        cls.record_summary_event(db, job=job, current_user=current_user, phase="succeeded" if job.status == "succeeded" else "failed")
+        if job.status in {"succeeded", "failed"}:
+            cls.record_summary_event(db, job=job, current_user=current_user, phase="succeeded" if job.status == "succeeded" else "failed")
         return job
 
     @classmethod
@@ -1068,105 +1092,9 @@ class AIService:
 
     @classmethod
     def run_job(cls, db: Session, *, job: AIJob, current_user: User) -> AIJob:
-        cls.ensure_manage_job(current_user, job)
-        if job.status != "queued":
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Only queued AI jobs can be run")
-        if job.attempts >= job.max_attempts:
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="AI job has reached its attempt limit")
+        from app.services.ai_job_runner import AIJobRunner
 
-        runtime = get_ai_provider_config()
-        company = get_or_404(db, Company, job.company_id, label="Company")
-        company_settings = cls.company_ai_settings(company)
-        provider_mode = cls.resolved_provider_mode(job.job_type, company_settings)
-
-        now = utc_now()
-        job.status = "running"
-        job.started_at = now
-        job.attempts += 1
-        job.provider_key = cls.provider_key_for_mode(provider_mode)
-        job.provider_mode = provider_mode
-        db.flush()
-        cls.record_job_event(
-            db,
-            job=job,
-            current_user=current_user,
-            event_type="ai_job.started",
-            title=f"AI job started: {job.job_type}",
-            description="A tenant-safe AI foundation job started.",
-        )
-
-        try:
-            if not company_settings["ai_enabled"]:
-                raise AIProviderError("ai_disabled", "AI is disabled for this company.")
-            if job.job_type not in company_settings["allowed_ai_job_types"]:
-                raise AIProviderError("job_type_not_allowed", "AI job type is not allowed for this company.")
-            if provider_mode in REAL_AI_PROVIDER_MODES:
-                if job.job_type not in REAL_AI_JOB_TYPES:
-                    raise AIProviderError("job_type_not_allowed", "Real provider execution is limited to safe text-only job types.")
-                if not runtime.external_processing_enabled or not company_settings["external_ai_processing_allowed"]:
-                    raise AIProviderError("external_processing_disabled", "External AI processing is disabled for this company.")
-            entity_context = cls.build_safe_context(db, job)
-            messages = cls.build_messages(job, entity_context, runtime.groq_max_input_chars)
-            provider = build_ai_provider(provider_mode, runtime)
-            result = provider.generate(
-                AIProviderRequest(
-                    job_type=job.job_type,
-                    input_entity_type=job.input_entity_type,
-                    input_entity_id=str(job.input_entity_id) if job.input_entity_id else None,
-                    input_payload=metadata_dict(job.input_payload),
-                    entity_context=entity_context,
-                    messages=messages,
-                    max_input_chars=runtime.groq_max_input_chars,
-                )
-            )
-            output_payload = metadata_dict(result.output_payload)
-            output_payload.setdefault("provider_key", result.provider_key)
-            output_payload.setdefault("provider_mode", result.provider_mode)
-            output_payload.setdefault("model_name", result.model_name)
-            output_payload.setdefault("generated_at", utc_now().isoformat())
-            output_payload.setdefault("is_mock", not result.external_processing_used)
-            job.output_payload = output_payload
-            job.provider_key = result.provider_key
-            job.provider_mode = result.provider_mode
-            job.status = "succeeded"
-            job.completed_at = utc_now()
-            job.error_message = None
-            job.metadata_json = cls.merged_job_metadata(
-                job,
-                {
-                    "provider_key": result.provider_key,
-                    "provider_mode": result.provider_mode,
-                    "model_name": result.model_name,
-                    "latency_ms": result.latency_ms,
-                    "input_token_estimate": result.input_token_estimate,
-                    "output_token_estimate": result.output_token_estimate,
-                    "safety_status": result.safety_status,
-                    "external_processing_used": result.external_processing_used,
-                    "provider_metadata": metadata_dict(result.metadata),
-                },
-            )
-            db.flush()
-            succeeded_event = cls.record_job_event(
-                db,
-                job=job,
-                current_user=current_user,
-                event_type="ai_job.succeeded",
-                title=f"AI job succeeded: {job.job_type}",
-                description="A tenant-safe AI foundation job completed successfully.",
-            )
-            cls.notify_requester(db, job=job, event_id=succeeded_event.id, success=True)
-        except AIProviderError as exc:
-            cls.fail_job(db, job=job, current_user=current_user, error_code=exc.code, error_message=exc.safe_message, metadata=exc.metadata)
-        except Exception:
-            cls.fail_job(
-                db,
-                job=job,
-                current_user=current_user,
-                error_code="provider_unknown_error",
-                error_message="AI job failed safely.",
-                metadata={},
-            )
-        return job
+        return AIJobRunner().run_job(db, job=job, current_user=current_user, run_mode="manual")
 
     @classmethod
     def fail_job(
@@ -1202,11 +1130,17 @@ class AIService:
         job.status = "failed"
         job.failed_at = utc_now()
         job.error_message = error_message[:1000]
+        job.error_code = error_code
+        job.retryable = bool(error_code in {"provider_timeout", "provider_rate_limited", "provider_unavailable", "provider_unknown_error"})
+        job.locked_at = None
+        job.locked_by = None
+        job.next_attempt_at = None
         job.metadata_json = cls.merged_job_metadata(
             job,
             {
                 "error_code": error_code,
                 "error_message": error_message[:500],
+                "retryable": job.retryable,
                 "safety_status": "failed_safely",
                 "external_processing_used": False,
                 "provider_metadata": metadata_dict(metadata),
@@ -1230,22 +1164,9 @@ class AIService:
 
     @classmethod
     def cancel_job(cls, db: Session, *, job: AIJob, current_user: User) -> AIJob:
-        cls.ensure_manage_job(current_user, job)
-        if job.status not in {"queued", "running"}:
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Only queued or running AI jobs can be cancelled")
-        job.status = "cancelled"
-        job.cancelled_at = utc_now()
-        job.metadata_json = cls.merged_job_metadata(job, {"safety_status": "cancelled", "external_processing_used": False})
-        db.flush()
-        cls.record_job_event(
-            db,
-            job=job,
-            current_user=current_user,
-            event_type="ai_job.cancelled",
-            title=f"AI job cancelled: {job.job_type}",
-            description="A tenant-safe AI foundation job was cancelled.",
-        )
-        return job
+        from app.services.ai_job_runner import AIJobRunner
+
+        return AIJobRunner().cancel_job(db, job=job, current_user=current_user)
 
     @classmethod
     def record_job_event(
@@ -1281,8 +1202,11 @@ class AIService:
                 "model_name": metadata.get("model_name"),
                 "safety_status": metadata.get("safety_status"),
                 "external_processing_used": bool(metadata.get("external_processing_used", False)),
-                "error_code": metadata.get("error_code"),
+                "error_code": job.error_code or metadata.get("error_code"),
                 "attempts": job.attempts,
+                "max_attempts": job.max_attempts,
+                "retryable": job.retryable,
+                "run_mode": job.run_mode,
                 "input_entity_type": job.input_entity_type,
                 "input_entity_id": str(job.input_entity_id) if job.input_entity_id else None,
             },
@@ -1341,9 +1265,17 @@ class AIService:
         )
 
     @classmethod
-    def notify_requester(cls, db: Session, *, job: AIJob, event_id: UUID, success: bool) -> None:
-        title = "AI job completed" if success else "AI job failed"
-        message = f"{job.job_type} {'completed' if success else 'failed safely'}."
+    def notify_requester(cls, db: Session, *, job: AIJob, event_id: UUID, success: bool, cancelled: bool = False) -> None:
+        if cancelled:
+            title = "AI job cancelled"
+            message = f"{job.job_type} was cancelled."
+            notification_type = "ai_job.cancelled"
+            priority = "normal"
+        else:
+            title = "AI job completed" if success else "AI job failed"
+            message = f"{job.job_type} {'completed' if success else 'failed safely'}."
+            notification_type = "ai_job.succeeded" if success else "ai_job.failed"
+            priority = "normal" if success else "high"
         NotificationService.create_notification(
             db,
             company_id=job.company_id,
@@ -1352,10 +1284,10 @@ class AIService:
             event_id=event_id,
             target_entity_type="ai_job",
             target_entity_id=job.id,
-            notification_type="ai_job.succeeded" if success else "ai_job.failed",
+            notification_type=notification_type,
             title=title,
             message=message,
-            priority="normal" if success else "high",
+            priority=priority,
             action_url="#/settings",
             metadata={"job_type": job.job_type, "provider_mode": job.provider_mode, "status": job.status},
         )

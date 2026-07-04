@@ -10,6 +10,9 @@ import type {
   AISafetySettingsUpdatePayload,
   AIJob,
   AIJobCreatePayload,
+  AIJobProcessResult,
+  AIJobQueueSummary,
+  AIJobRecoveryResult,
   AuditLog,
   AuthMe,
   AuthSession,
@@ -286,6 +289,10 @@ export const api = {
     });
     return request<AIJob[]>(`/ai/jobs?${searchParams.toString()}`);
   },
+  aiJobQueueSummary: (companyId: string) => request<AIJobQueueSummary>(companyPath("/ai/jobs/queue-summary", companyId)),
+  processNextAIJob: (companyId: string) => request<AIJobProcessResult>(companyPath("/ai/jobs/process-next", companyId), jsonInit("POST", {})),
+  recoverStaleAIJobs: (companyId: string) => request<AIJobRecoveryResult>(companyPath("/ai/jobs/recover-stale", companyId), jsonInit("POST", {})),
+  retryAIJob: (jobId: string, companyId: string) => request<AIJob>(companyPath(`/ai/jobs/${jobId}/retry`, companyId), jsonInit("POST", {})),
   generateWorkObjectAISummary: (workObjectId: string, companyId: string) =>
     request<AIJob>(companyPath(`/work-objects/${workObjectId}/ai-summary`, companyId), jsonInit("POST", {})),
   latestWorkObjectAISummary: (workObjectId: string, companyId: string) =>

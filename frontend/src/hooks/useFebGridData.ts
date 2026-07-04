@@ -39,6 +39,7 @@ const emptyData: FebGridData = {
   aiCapabilities: null,
   aiProviderStatus: null,
   aiSafetySettings: null,
+  aiJobQueueSummary: null,
   aiJobs: [],
   auditLogs: [],
   billingPlans: [],
@@ -123,6 +124,9 @@ interface FebGridDataState {
   restoreFile: (attachmentId: string) => Promise<void>;
   createAIJob: (payload: Omit<AIJobCreatePayload, "company_id">) => Promise<void>;
   runAIJob: (jobId: string) => Promise<void>;
+  processNextAIJob: () => Promise<void>;
+  retryAIJob: (jobId: string) => Promise<void>;
+  recoverStaleAIJobs: () => Promise<void>;
   cancelAIJob: (jobId: string) => Promise<void>;
   updateAISafetySettings: (payload: AISafetySettingsUpdatePayload) => Promise<void>;
   applyIndustryTemplate: (templateKey: string) => Promise<void>;
@@ -327,6 +331,7 @@ export function useFebGridData({ enabled = true, role = null }: UseFebGridDataOp
       aiCapabilities,
       aiProviderStatus,
       aiSafetySettings,
+      aiJobQueueSummary,
       aiJobs,
     ] = await Promise.allSettled([
       api.companySettings(selectedCompanyId),
@@ -351,6 +356,7 @@ export function useFebGridData({ enabled = true, role = null }: UseFebGridDataOp
       api.aiCapabilities(selectedCompanyId),
       api.aiProviderStatus(selectedCompanyId),
       api.aiSafetySettings(selectedCompanyId),
+      api.aiJobQueueSummary(selectedCompanyId),
       api.aiJobs(selectedCompanyId, { limit: 10 }),
     ]);
 
@@ -422,6 +428,9 @@ export function useFebGridData({ enabled = true, role = null }: UseFebGridDataOp
 
     if (aiSafetySettings.status === "fulfilled") nextData.aiSafetySettings = aiSafetySettings.value;
     else nextErrors.aiSafetySettings = getErrorMessage(aiSafetySettings.reason);
+
+    if (aiJobQueueSummary.status === "fulfilled") nextData.aiJobQueueSummary = aiJobQueueSummary.value;
+    else nextErrors.aiJobQueueSummary = getErrorMessage(aiJobQueueSummary.reason);
 
     if (aiJobs.status === "fulfilled") nextData.aiJobs = aiJobs.value;
     else nextErrors.aiJobs = getErrorMessage(aiJobs.reason);
@@ -843,6 +852,30 @@ export function useFebGridData({ enabled = true, role = null }: UseFebGridDataOp
     });
   }
 
+  async function processNextAIJob(): Promise<void> {
+    if (!selectedCompanyId) return;
+    await runMutation(async () => {
+      await api.processNextAIJob(selectedCompanyId);
+      await refreshModules();
+    });
+  }
+
+  async function retryAIJob(jobId: string): Promise<void> {
+    if (!selectedCompanyId) return;
+    await runMutation(async () => {
+      await api.retryAIJob(jobId, selectedCompanyId);
+      await refreshModules();
+    });
+  }
+
+  async function recoverStaleAIJobs(): Promise<void> {
+    if (!selectedCompanyId) return;
+    await runMutation(async () => {
+      await api.recoverStaleAIJobs(selectedCompanyId);
+      await refreshModules();
+    });
+  }
+
   async function cancelAIJob(jobId: string): Promise<void> {
     if (!selectedCompanyId) return;
     await runMutation(async () => {
@@ -973,6 +1006,9 @@ export function useFebGridData({ enabled = true, role = null }: UseFebGridDataOp
     restoreFile,
     createAIJob,
     runAIJob,
+    processNextAIJob,
+    retryAIJob,
+    recoverStaleAIJobs,
     cancelAIJob,
     updateAISafetySettings,
     applyIndustryTemplate,

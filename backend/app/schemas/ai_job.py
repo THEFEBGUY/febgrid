@@ -88,6 +88,17 @@ class AIJobRead(Timestamped):
     provider_mode: ProviderMode | str
     attempts: int
     max_attempts: int
+    queued_at: datetime | None = None
+    locked_at: datetime | None = None
+    locked_by: str | None = None
+    next_attempt_at: datetime | None = None
+    last_attempt_at: datetime | None = None
+    timeout_seconds: int = 30
+    error_code: str | None = None
+    retryable: bool = False
+    cancelled_by_user_id: UUID | None = None
+    cancellation_reason: str | None = None
+    run_mode: str = "manual"
     scheduled_at: datetime | None = None
     started_at: datetime | None = None
     completed_at: datetime | None = None
@@ -103,6 +114,29 @@ class AIJobRead(Timestamped):
     @classmethod
     def ensure_json_dict(cls, value: Any) -> dict[str, Any]:
         return ensure_dict(value)
+
+
+class AIJobQueueSummaryRead(FebGridModel):
+    company_id: UUID
+    queued: int = 0
+    running: int = 0
+    succeeded: int = 0
+    failed: int = 0
+    cancelled: int = 0
+    skipped: int = 0
+    retryable_failed: int = 0
+    stale_running: int = 0
+
+
+class AIJobProcessResult(FebGridModel):
+    processed: bool
+    message: str
+    job: AIJobRead | None = None
+
+
+class AIJobRecoveryResult(FebGridModel):
+    recovered: int
+    message: str
 
 
 class AICapability(FebGridModel):

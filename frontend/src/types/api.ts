@@ -668,12 +668,46 @@ export interface AIJob extends Timestamped {
   provider_mode: AIProviderMode | string;
   attempts: number;
   max_attempts: number;
+  queued_at: string | null;
+  locked_at: string | null;
+  locked_by: string | null;
+  next_attempt_at: string | null;
+  last_attempt_at: string | null;
+  timeout_seconds: number;
+  error_code: string | null;
+  retryable: boolean;
+  cancelled_by_user_id: string | null;
+  cancellation_reason: string | null;
+  run_mode: string;
   scheduled_at: string | null;
   started_at: string | null;
   completed_at: string | null;
   failed_at: string | null;
   cancelled_at: string | null;
   metadata: Record<string, unknown>;
+}
+
+export interface AIJobQueueSummary {
+  company_id: string;
+  queued: number;
+  running: number;
+  succeeded: number;
+  failed: number;
+  cancelled: number;
+  skipped: number;
+  retryable_failed: number;
+  stale_running: number;
+}
+
+export interface AIJobProcessResult {
+  processed: boolean;
+  message: string;
+  job: AIJob | null;
+}
+
+export interface AIJobRecoveryResult {
+  recovered: number;
+  message: string;
 }
 
 export interface AIJobCreatePayload {
@@ -1199,6 +1233,7 @@ export interface FebGridData {
   aiCapabilities: AICapabilities | null;
   aiProviderStatus: AIProviderStatus | null;
   aiSafetySettings: AISafetySettings | null;
+  aiJobQueueSummary: AIJobQueueSummary | null;
   aiJobs: AIJob[];
   auditLogs: AuditLog[];
   billingPlans: PlanDefinition[];

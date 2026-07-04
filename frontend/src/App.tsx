@@ -246,6 +246,7 @@ export function App(): JSX.Element {
                 febGrid.moduleErrors.aiCapabilities ??
                 febGrid.moduleErrors.aiProviderStatus ??
                 febGrid.moduleErrors.aiSafetySettings ??
+                febGrid.moduleErrors.aiJobQueueSummary ??
                 febGrid.moduleErrors.aiJobs ??
                 febGrid.moduleErrors.industryTemplates ??
                 febGrid.moduleErrors.workObjectTypes ??
@@ -261,6 +262,9 @@ export function App(): JSX.Element {
             onCreateAIJob={febGrid.createAIJob}
             onCreateCustomField={febGrid.createCustomField}
             onCreateWorkObjectType={febGrid.createWorkObjectType}
+            onProcessNextAIJob={febGrid.processNextAIJob}
+            onRecoverStaleAIJobs={febGrid.recoverStaleAIJobs}
+            onRetryAIJob={febGrid.retryAIJob}
             onRunAIJob={febGrid.runAIJob}
             onUpdateAISafetySettings={febGrid.updateAISafetySettings}
             onUpdateCompanySettings={febGrid.updateCompanySettings}

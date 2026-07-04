@@ -42,6 +42,9 @@ interface SettingsPageProps extends ModulePageProps {
   onCreateAIJob: (payload: Omit<AIJobCreatePayload, "company_id">) => Promise<void>;
   onCreateCustomField: (payload: Omit<CustomFieldCreatePayload, "company_id">) => Promise<void>;
   onCreateWorkObjectType: (payload: Omit<WorkObjectTypeCreatePayload, "company_id">) => Promise<void>;
+  onProcessNextAIJob: () => Promise<void>;
+  onRecoverStaleAIJobs: () => Promise<void>;
+  onRetryAIJob: (jobId: string) => Promise<void>;
   onRunAIJob: (jobId: string) => Promise<void>;
   onUpdateAISafetySettings: (payload: AISafetySettingsUpdatePayload) => Promise<void>;
   onUpdateCompanySettings: (payload: CompanySettingsUpdatePayload) => Promise<void>;
@@ -148,6 +151,9 @@ export function SettingsPage({
   onCreateAIJob,
   onCreateCustomField,
   onCreateWorkObjectType,
+  onProcessNextAIJob,
+  onRecoverStaleAIJobs,
+  onRetryAIJob,
   onRunAIJob,
   onUpdateAISafetySettings,
   onUpdateCompanySettings,
@@ -409,7 +415,21 @@ export function SettingsPage({
     },
     { key: "status", label: "Status", render: (job) => <Badge label={formatLabel(job.status)} tone={aiJobTone(job.status)} /> },
     { key: "provider", label: "Provider", render: (job) => <Badge label={formatLabel(job.provider_mode)} tone="slate" /> },
-    { key: "attempts", label: "Attempts", render: (job) => `${job.attempts}/${job.max_attempts}` },
+    {
+      key: "attempts",
+      label: "Attempts",
+      render: (job) => (
+        <span>
+          <span className="block font-bold text-ink-950">{job.attempts}/{job.max_attempts}</span>
+          <span className="block text-xs font-semibold text-ink-500">{job.retryable ? "Retryable" : formatLabel(job.run_mode)}</span>
+        </span>
+      ),
+    },
+    {
+      key: "next",
+      label: "Next",
+      render: (job) => (job.next_attempt_at ? formatDate(job.next_attempt_at) : job.error_code ? formatLabel(job.error_code) : "Ready"),
+    },
     { key: "created", label: "Created", render: (job) => formatDate(job.created_at) },
     {
       key: "actions",
@@ -425,6 +445,16 @@ export function SettingsPage({
             onClick={() => void onRunAIJob(job.id)}
           >
             <span className="sr-only">Run AI job</span>
+          </Button>
+          <Button
+            aria-label={`Retry ${formatLabel(job.job_type)}`}
+            className="size-9 px-0"
+            disabled={!canManage || isMutating || job.status !== "failed" || !job.retryable || job.attempts >= job.max_attempts}
+            icon={<RotateCcw className="size-4" aria-hidden="true" />}
+            title={`Retry ${formatLabel(job.job_type)}`}
+            onClick={() => void handleRetryAIJob(job.id)}
+          >
+            <span className="sr-only">Retry AI job</span>
           </Button>
           <Button
             aria-label={`Cancel ${formatLabel(job.job_type)}`}
@@ -703,6 +733,39 @@ export function SettingsPage({
     }
   }
 
+  async function handleProcessNextAIJob(): Promise<void> {
+    if (!canManage) return;
+    setSettingsMessage(null);
+    try {
+      await onProcessNextAIJob();
+      setSettingsMessage("AI queue processed one ready job if one was available.");
+    } catch {
+      setSettingsMessage("AI queue could not process the next job.");
+    }
+  }
+
+  async function handleRecoverStaleAIJobs(): Promise<void> {
+    if (!canManage) return;
+    setSettingsMessage(null);
+    try {
+      await onRecoverStaleAIJobs();
+      setSettingsMessage("Stale AI runner locks were checked and recovered.");
+    } catch {
+      setSettingsMessage("Stale AI jobs could not be recovered.");
+    }
+  }
+
+  async function handleRetryAIJob(jobId: string): Promise<void> {
+    if (!canManage) return;
+    setSettingsMessage(null);
+    try {
+      await onRetryAIJob(jobId);
+      setSettingsMessage("Retryable AI job returned to the queue.");
+    } catch {
+      setSettingsMessage("AI job could not be retried.");
+    }
+  }
+
   async function handleToggleAIEnabled(nextValue: boolean): Promise<void> {
     if (!canManage) return;
     setSettingsMessage(null);
@@ -743,6 +806,15 @@ export function SettingsPage({
   const displayedModelName = aiProviderStatus?.model_name ?? (displayedProviderMode === "mock" ? "mock-deterministic" : "Not configured");
   const externalProcessingAllowed = Boolean(aiSafetySettings?.external_ai_processing_allowed ?? aiProviderStatus?.external_processing_allowed);
   const aiEnabled = Boolean(aiSafetySettings?.ai_enabled ?? aiProviderStatus?.ai_enabled ?? true);
+  const aiQueueSummary = data.aiJobQueueSummary;
+  const aiQueueCards = [
+    { label: "Queued", value: aiQueueSummary?.queued ?? 0, tone: "amber" as const },
+    { label: "Running", value: aiQueueSummary?.running ?? 0, tone: "blue" as const },
+    { label: "Failed", value: aiQueueSummary?.failed ?? 0, tone: "red" as const },
+    { label: "Retryable", value: aiQueueSummary?.retryable_failed ?? 0, tone: "amber" as const },
+    { label: "Stale", value: aiQueueSummary?.stale_running ?? 0, tone: "slate" as const },
+    { label: "Succeeded", value: aiQueueSummary?.succeeded ?? 0, tone: "green" as const },
+  ];
 
   return (
     <>
@@ -949,6 +1021,12 @@ export function SettingsPage({
             <Button disabled={!canManage || !selectedCompany || isMutating} icon={<Bot className="size-4" aria-hidden="true" />} onClick={() => void handleCreateMockAIJob()}>
               Create mock job
             </Button>
+            <Button disabled={!canManage || !selectedCompany || isMutating} icon={<Play className="size-4" aria-hidden="true" />} onClick={() => void handleProcessNextAIJob()}>
+              Process next
+            </Button>
+            <Button disabled={!canManage || !selectedCompany || isMutating} icon={<RotateCcw className="size-4" aria-hidden="true" />} onClick={() => void handleRecoverStaleAIJobs()}>
+              Recover stale
+            </Button>
           </div>
         }
       >
@@ -1022,6 +1100,17 @@ export function SettingsPage({
                 Safe real jobs are text-only and server-prompted. Raw files, tokens, passwords, and prompt templates are not sent.
               </p>
             </div>
+          </div>
+          <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
+            {aiQueueCards.map((card) => (
+              <div key={card.label} className="rounded-lg border border-grid-200 bg-white/70 p-3">
+                <p className="text-xs font-black uppercase text-ink-500">{card.label}</p>
+                <div className="mt-2 flex items-center justify-between gap-3">
+                  <p className="text-2xl font-black text-ink-950">{card.value}</p>
+                  <Badge label={card.label} tone={card.tone} />
+                </div>
+              </div>
+            ))}
           </div>
           {data.aiJobs.length === 0 ? (
             <EmptyState description="Create a mock foundation job or generate work/project summaries to verify tenant-safe AI job storage, events, and notifications." title="No AI jobs yet" />
