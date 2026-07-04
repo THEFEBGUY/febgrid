@@ -13,9 +13,14 @@ interface AISummaryPanelProps {
   generateLabel: string;
   isGenerating: boolean;
   isLoading: boolean;
+  isSavingToMemory?: boolean;
   job: AIJob | null;
   kind: SummaryKind;
   onGenerate: () => void;
+  onSaveToMemory?: () => void;
+  saveToMemoryError?: string | null;
+  saveToMemoryLabel?: string;
+  saveToMemoryMessage?: string | null;
 }
 
 function text(value: unknown): string | null {
@@ -61,9 +66,14 @@ export function AISummaryPanel({
   generateLabel,
   isGenerating,
   isLoading,
+  isSavingToMemory = false,
   job,
   kind,
   onGenerate,
+  onSaveToMemory,
+  saveToMemoryError = null,
+  saveToMemoryLabel = "Suggest Memory",
+  saveToMemoryMessage = null,
 }: AISummaryPanelProps): JSX.Element {
   const output = job?.output_payload ?? {};
   const summary = kind === "company" ? text(output.executive_summary) ?? text(output.summary) : text(output.summary);
@@ -97,20 +107,38 @@ export function AISummaryPanel({
             Server-owned prompt, safe {kind === "company" ? "aggregated company" : kind === "file" ? "supported text-file" : "entity"} context, no raw paths, no secrets.
           </p>
         </div>
-        <Button
-          aria-label={generateLabel}
-          disabled={isGenerating}
-          icon={<Sparkles className="size-4" aria-hidden="true" />}
-          title={generateLabel}
-          variant="primary"
-          onClick={onGenerate}
-        >
-          {isGenerating ? "Generating..." : generateLabel}
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          {onSaveToMemory && job?.status === "succeeded" ? (
+            <Button
+              aria-label={saveToMemoryLabel}
+              disabled={isSavingToMemory}
+              title={saveToMemoryLabel}
+              onClick={onSaveToMemory}
+            >
+              {isSavingToMemory ? "Saving..." : saveToMemoryLabel}
+            </Button>
+          ) : null}
+          <Button
+            aria-label={generateLabel}
+            disabled={isGenerating}
+            icon={<Sparkles className="size-4" aria-hidden="true" />}
+            title={generateLabel}
+            variant="primary"
+            onClick={onGenerate}
+          >
+            {isGenerating ? "Generating..." : generateLabel}
+          </Button>
+        </div>
       </div>
 
       {isLoading ? <LoadingState label="Loading latest AI summary" /> : null}
       {error ? <p className="m-4 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-bold text-rose-700">{error}</p> : null}
+      {saveToMemoryError ? (
+        <p className="mx-4 mt-4 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-bold text-rose-700">{saveToMemoryError}</p>
+      ) : null}
+      {saveToMemoryMessage ? (
+        <p className="mx-4 mt-4 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm font-bold text-green-700">{saveToMemoryMessage}</p>
+      ) : null}
 
       {!isLoading && !job && !error ? (
         <div className="px-4 py-5">

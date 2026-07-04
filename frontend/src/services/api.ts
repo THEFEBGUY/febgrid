@@ -16,6 +16,10 @@ import type {
   BillingSummary,
   Company,
   CompanyCreatePayload,
+  CompanyMemory,
+  CompanyMemoryCreatePayload,
+  CompanyMemoryFromAIJobPayload,
+  CompanyMemoryUpdatePayload,
   CompanyPlanUpdatePayload,
   CompanySettings,
   CompanySettingsUpdatePayload,
@@ -294,6 +298,36 @@ export const api = {
     request<AIJob>(companyPath(`/companies/${companyId}/ai-brief`, companyId), jsonInit("POST", {})),
   latestCompanyAIBrief: (companyId: string) =>
     request<AIJob | null>(companyPath(`/companies/${companyId}/ai-brief/latest`, companyId)),
+  companyMemory: (
+    companyId: string,
+    params: {
+      status?: string;
+      memory_type?: string;
+      scope_type?: string;
+      source_type?: string;
+      importance?: string;
+      q?: string;
+      limit?: number;
+      offset?: number;
+    } = {},
+  ) => {
+    const searchParams = new URLSearchParams({ company_id: companyId });
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined && value !== null && value !== "") searchParams.set(key, String(value));
+    });
+    return request<CompanyMemory[]>(`/company-memory?${searchParams.toString()}`);
+  },
+  createCompanyMemory: (payload: CompanyMemoryCreatePayload) => request<CompanyMemory>("/company-memory", jsonInit("POST", payload)),
+  updateCompanyMemory: (memoryId: string, companyId: string, payload: CompanyMemoryUpdatePayload) =>
+    request<CompanyMemory>(companyPath(`/company-memory/${memoryId}`, companyId), jsonInit("PATCH", payload)),
+  approveCompanyMemory: (memoryId: string, companyId: string) =>
+    request<CompanyMemory>(`/company-memory/${memoryId}/approve`, jsonInit("POST", { company_id: companyId })),
+  rejectCompanyMemory: (memoryId: string, companyId: string, note?: string | null) =>
+    request<CompanyMemory>(`/company-memory/${memoryId}/reject`, jsonInit("POST", { company_id: companyId, note })),
+  archiveCompanyMemory: (memoryId: string, companyId: string) =>
+    request<CompanyMemory>(`/company-memory/${memoryId}/archive`, jsonInit("POST", { company_id: companyId })),
+  createCompanyMemoryFromAIJob: (aiJobId: string, payload: CompanyMemoryFromAIJobPayload) =>
+    request<CompanyMemory>(`/company-memory/from-ai-job/${aiJobId}`, jsonInit("POST", payload)),
   createAIJob: (payload: AIJobCreatePayload) => request<AIJob>("/ai/jobs", jsonInit("POST", payload)),
   runAIJob: (jobId: string, companyId: string) => request<AIJob>(companyPath(`/ai/jobs/${jobId}/run`, companyId), jsonInit("POST", {})),
   cancelAIJob: (jobId: string, companyId: string) => request<AIJob>(companyPath(`/ai/jobs/${jobId}/cancel`, companyId), jsonInit("POST", {})),

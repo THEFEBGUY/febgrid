@@ -16,6 +16,7 @@ export type PageKey =
   | "events"
   | "announcements"
   | "notifications"
+  | "memory"
   | "settings";
 
 export interface NavigationItem {

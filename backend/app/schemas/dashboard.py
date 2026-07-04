@@ -71,6 +71,12 @@ class DashboardAnnouncementSummary(FebGridModel):
     urgent_announcements: int
 
 
+class DashboardMemorySummary(FebGridModel):
+    approved_memories: int
+    pending_suggestions: int
+    important_memories: int
+
+
 class DashboardSummaryRead(FebGridModel):
     company_overview: DashboardCompanyOverview
     employee_summary: DashboardEmployeeSummary
@@ -80,6 +86,7 @@ class DashboardSummaryRead(FebGridModel):
     file_summary: DashboardFileSummary
     notification_summary: DashboardNotificationSummary
     announcement_summary: DashboardAnnouncementSummary
+    memory_summary: DashboardMemorySummary
     recent_events: list[EventRead]
     recent_notifications: list[NotificationRead]
     recent_announcements: list[AnnouncementRead]

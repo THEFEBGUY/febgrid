@@ -1048,6 +1048,85 @@ export interface SearchResponse {
   results: SearchResultItem[];
 }
 
+export type CompanyMemoryStatus = "draft" | "suggested" | "approved" | "rejected" | "archived";
+export type CompanyMemoryImportance = "low" | "normal" | "high" | "critical";
+export type CompanyMemoryVisibility = "owner_admin" | "manager_hr" | "team" | "project_members" | "employee_self" | "company";
+
+export interface CompanyMemory {
+  id: string;
+  company_id: string;
+  title: string;
+  memory_type: string;
+  scope_type: string;
+  scope_id: string | null;
+  source_type: string | null;
+  source_id: string | null;
+  source_ai_job_id: string | null;
+  content: string;
+  summary: string | null;
+  tags: string[];
+  importance: CompanyMemoryImportance;
+  confidence: number | null;
+  status: CompanyMemoryStatus;
+  visibility: CompanyMemoryVisibility;
+  created_by_user_id: string | null;
+  created_by_employee_id: string | null;
+  approved_by_user_id: string | null;
+  approved_at: string | null;
+  rejected_by_user_id: string | null;
+  rejected_at: string | null;
+  archived_by_user_id: string | null;
+  archived_at: string | null;
+  last_used_at: string | null;
+  metadata: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CompanyMemoryCreatePayload {
+  company_id: string;
+  title: string;
+  memory_type: string;
+  scope_type: string;
+  scope_id?: string | null;
+  source_type?: string | null;
+  source_id?: string | null;
+  source_ai_job_id?: string | null;
+  content: string;
+  summary?: string | null;
+  tags?: string[];
+  importance?: CompanyMemoryImportance;
+  confidence?: number | null;
+  status?: CompanyMemoryStatus;
+  visibility?: CompanyMemoryVisibility;
+  metadata?: Record<string, unknown>;
+}
+
+export interface CompanyMemoryUpdatePayload {
+  title?: string;
+  memory_type?: string;
+  scope_type?: string;
+  scope_id?: string | null;
+  content?: string;
+  summary?: string | null;
+  tags?: string[];
+  importance?: CompanyMemoryImportance;
+  confidence?: number | null;
+  visibility?: CompanyMemoryVisibility;
+  metadata?: Record<string, unknown>;
+}
+
+export interface CompanyMemoryFromAIJobPayload {
+  company_id: string;
+  title?: string | null;
+  memory_type?: string | null;
+  importance?: CompanyMemoryImportance;
+  visibility?: CompanyMemoryVisibility;
+  approve_now?: boolean;
+  tags?: string[];
+  metadata?: Record<string, unknown>;
+}
+
 export interface DashboardSummary {
   company_overview: {
     company_id: string;
@@ -1101,6 +1180,11 @@ export interface DashboardSummary {
   announcement_summary: {
     active_announcements: number;
     urgent_announcements: number;
+  };
+  memory_summary?: {
+    approved_memories: number;
+    pending_suggestions: number;
+    important_memories: number;
   };
   recent_events: Event[];
   recent_notifications: Notification[];

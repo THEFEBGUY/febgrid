@@ -1,5 +1,6 @@
 import {
   Bell,
+  Brain,
   BriefcaseBusiness,
   Building2,
   CalendarDays,
@@ -27,6 +28,7 @@ export const adminNavigationItems: NavigationItem[] = [
   { key: "events", label: "Events", description: "Universal timeline", icon: Zap },
   { key: "announcements", label: "Announcements", description: "Company broadcast", icon: Megaphone },
   { key: "notifications", label: "Notifications", description: "Action stream", icon: Bell },
+  { key: "memory", label: "Memory", description: "Company knowledge", icon: Brain },
   { key: "settings", label: "Settings", description: "Company config", icon: Settings },
 ];
 

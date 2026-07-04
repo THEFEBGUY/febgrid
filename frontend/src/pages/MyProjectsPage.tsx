@@ -32,6 +32,9 @@ export function MyProjectsPage({
   const [isAISummaryLoading, setIsAISummaryLoading] = useState(false);
   const [isAISummaryGenerating, setIsAISummaryGenerating] = useState(false);
   const [aiSummaryError, setAISummaryError] = useState<string | null>(null);
+  const [isSavingProjectMemory, setIsSavingProjectMemory] = useState(false);
+  const [projectMemoryMessage, setProjectMemoryMessage] = useState<string | null>(null);
+  const [projectMemoryError, setProjectMemoryError] = useState<string | null>(null);
 
   const visibleProjects = useMemo(() => data.projects.filter((project) => project.is_active), [data.projects]);
 
@@ -42,6 +45,8 @@ export function MyProjectsPage({
       setIsAISummaryLoading(true);
       setDetailError(null);
       setAISummaryError(null);
+      setProjectMemoryMessage(null);
+      setProjectMemoryError(null);
       try {
         const [workObjectsResult, eventsResult, summaryResult] = await Promise.allSettled([
           api.projectWorkObjects(projectId, selectedCompanyId),
@@ -68,6 +73,8 @@ export function MyProjectsPage({
     setProjectEvents([]);
     setAISummary(null);
     setAISummaryError(null);
+    setProjectMemoryMessage(null);
+    setProjectMemoryError(null);
     setDetailError(null);
     void loadDetail(project.id);
   }
@@ -84,6 +91,26 @@ export function MyProjectsPage({
       setAISummaryError(caughtError instanceof Error ? caughtError.message : "AI project summary could not be generated.");
     } finally {
       setIsAISummaryGenerating(false);
+    }
+  }
+
+  async function handleSuggestProjectMemory(): Promise<void> {
+    if (!aiSummary || !selectedCompanyId || isSavingProjectMemory) return;
+    setIsSavingProjectMemory(true);
+    setProjectMemoryError(null);
+    setProjectMemoryMessage(null);
+    try {
+      await api.createCompanyMemoryFromAIJob(aiSummary.id, {
+        company_id: selectedCompanyId,
+        memory_type: "project_context",
+        importance: "normal",
+        tags: ["project_context", "ai_summary"],
+      });
+      setProjectMemoryMessage("Project summary submitted to Company Memory for review.");
+    } catch (caughtError) {
+      setProjectMemoryError(caughtError instanceof Error ? caughtError.message : "Unable to suggest this project summary.");
+    } finally {
+      setIsSavingProjectMemory(false);
     }
   }
 
@@ -172,9 +199,14 @@ export function MyProjectsPage({
               generateLabel="Generate AI Project Summary"
               isGenerating={isAISummaryGenerating}
               isLoading={isAISummaryLoading}
+              isSavingToMemory={isSavingProjectMemory}
               job={aiSummary}
               kind="project"
               onGenerate={() => void handleGenerateAISummary()}
+              onSaveToMemory={() => void handleSuggestProjectMemory()}
+              saveToMemoryError={projectMemoryError}
+              saveToMemoryLabel="Suggest Memory"
+              saveToMemoryMessage={projectMemoryMessage}
             />
 
             {isDetailLoading ? <LoadingState label="Loading project details" /> : null}

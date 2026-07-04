@@ -9,6 +9,7 @@ import { useTheme } from "./hooks/useTheme";
 import { AnnouncementsPage } from "./pages/AnnouncementsPage";
 import { AuthPage } from "./pages/AuthPage";
 import { CompaniesPage } from "./pages/CompaniesPage";
+import { CompanyMemoryPage } from "./pages/CompanyMemoryPage";
 import { DashboardPage } from "./pages/DashboardPage";
 import { EmployeesPage } from "./pages/EmployeesPage";
 import { EmployeeDashboardPage } from "./pages/EmployeeDashboardPage";
@@ -232,6 +233,8 @@ export function App(): JSX.Element {
             onMarkUnread={febGrid.markNotificationUnread}
           />
         );
+      case "memory":
+        return <CompanyMemoryPage selectedCompany={febGrid.selectedCompany} currentUserRole={auth.user?.role ?? null} />;
       case "settings":
         return (
           <SettingsPage

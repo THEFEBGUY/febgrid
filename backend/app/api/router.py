@@ -6,6 +6,7 @@ from app.api.routes import (
     ai_jobs,
     billing,
     companies,
+    company_memory,
     configuration,
     communication,
     dashboard,
@@ -51,4 +52,5 @@ api_router.include_router(events.audit_router)
 api_router.include_router(notifications.router)
 api_router.include_router(ai_jobs.router)
 api_router.include_router(ai_jobs.legacy_router)
+api_router.include_router(company_memory.router)
 api_router.include_router(search.router)

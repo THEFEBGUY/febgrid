@@ -124,6 +124,9 @@ export function ProjectsPage({
   const [isAISummaryLoading, setIsAISummaryLoading] = useState(false);
   const [isAISummaryGenerating, setIsAISummaryGenerating] = useState(false);
   const [aiSummaryError, setAISummaryError] = useState<string | null>(null);
+  const [isSavingProjectMemory, setIsSavingProjectMemory] = useState(false);
+  const [projectMemoryMessage, setProjectMemoryMessage] = useState<string | null>(null);
+  const [projectMemoryError, setProjectMemoryError] = useState<string | null>(null);
   const [memberForm, setMemberForm] = useState(initialMemberForm);
   const [memberError, setMemberError] = useState<string | null>(null);
   const [searchFilter, setSearchFilter] = useState("");
@@ -170,6 +173,8 @@ export function ProjectsPage({
       setIsAISummaryLoading(true);
       setDetailError(null);
       setAISummaryError(null);
+      setProjectMemoryMessage(null);
+      setProjectMemoryError(null);
       try {
         const [membersResult, eventsResult, workObjectsResult, summaryResult] = await Promise.allSettled([
           api.projectMembers(projectId, selectedCompanyId),
@@ -390,6 +395,26 @@ export function ProjectsPage({
     }
   }
 
+  async function handleSuggestProjectMemory(): Promise<void> {
+    if (!aiSummary || !selectedCompanyId || isSavingProjectMemory) return;
+    setIsSavingProjectMemory(true);
+    setProjectMemoryError(null);
+    setProjectMemoryMessage(null);
+    try {
+      await api.createCompanyMemoryFromAIJob(aiSummary.id, {
+        company_id: selectedCompanyId,
+        memory_type: "project_context",
+        importance: "high",
+        tags: ["project_context", "ai_summary"],
+      });
+      setProjectMemoryMessage("Project summary saved as a memory suggestion.");
+    } catch (caughtError) {
+      setProjectMemoryError(caughtError instanceof Error ? caughtError.message : "Unable to save project summary to memory.");
+    } finally {
+      setIsSavingProjectMemory(false);
+    }
+  }
+
   return (
     <>
       <SectionPanel
@@ -573,9 +598,14 @@ export function ProjectsPage({
               generateLabel="Generate AI Project Summary"
               isGenerating={isAISummaryGenerating}
               isLoading={isAISummaryLoading}
+              isSavingToMemory={isSavingProjectMemory}
               job={aiSummary}
               kind="project"
               onGenerate={() => void handleGenerateAISummary()}
+              onSaveToMemory={() => void handleSuggestProjectMemory()}
+              saveToMemoryError={projectMemoryError}
+              saveToMemoryLabel="Suggest Memory"
+              saveToMemoryMessage={projectMemoryMessage}
             />
 
             {isDetailLoading ? <LoadingState label="Loading project detail" /> : null}

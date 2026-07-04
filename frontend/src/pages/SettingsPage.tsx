@@ -187,6 +187,9 @@ export function SettingsPage({
   const [isFileAISummaryLoading, setIsFileAISummaryLoading] = useState(false);
   const [isFileAISummaryGenerating, setIsFileAISummaryGenerating] = useState(false);
   const [fileAISummaryError, setFileAISummaryError] = useState<string | null>(null);
+  const [isSavingFileMemory, setIsSavingFileMemory] = useState(false);
+  const [fileMemoryMessage, setFileMemoryMessage] = useState<string | null>(null);
+  const [fileMemoryError, setFileMemoryError] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [isExternalAIWarningOpen, setIsExternalAIWarningOpen] = useState(false);
 
@@ -492,6 +495,8 @@ export function SettingsPage({
     setFormError(null);
     setFileAISummary(null);
     setFileAISummaryError(null);
+    setFileMemoryMessage(null);
+    setFileMemoryError(null);
     setFileForm({
       description: file.description ?? "",
       tags: file.tags.join(", "),
@@ -503,12 +508,16 @@ export function SettingsPage({
     setEditingFile(null);
     setFileAISummary(null);
     setFileAISummaryError(null);
+    setFileMemoryMessage(null);
+    setFileMemoryError(null);
   }
 
   async function loadFileAISummary(file: Attachment): Promise<void> {
     if (!selectedCompany) return;
     setIsFileAISummaryLoading(true);
     setFileAISummaryError(null);
+    setFileMemoryMessage(null);
+    setFileMemoryError(null);
     try {
       const job = await api.latestFileAISummary(file.id, selectedCompany.id);
       setFileAISummary(job);
@@ -530,6 +539,26 @@ export function SettingsPage({
       setFileAISummaryError(caughtError instanceof Error ? caughtError.message : "AI file summary could not be generated.");
     } finally {
       setIsFileAISummaryGenerating(false);
+    }
+  }
+
+  async function handleSuggestFileMemory(): Promise<void> {
+    if (!fileAISummary || !selectedCompany || isSavingFileMemory) return;
+    setIsSavingFileMemory(true);
+    setFileMemoryError(null);
+    setFileMemoryMessage(null);
+    try {
+      await api.createCompanyMemoryFromAIJob(fileAISummary.id, {
+        company_id: selectedCompany.id,
+        memory_type: "file_insight",
+        importance: "normal",
+        tags: ["file_insight", "ai_summary"],
+      });
+      setFileMemoryMessage("File summary saved as a memory suggestion.");
+    } catch (caughtError) {
+      setFileMemoryError(caughtError instanceof Error ? caughtError.message : "Unable to save file summary to memory.");
+    } finally {
+      setIsSavingFileMemory(false);
     }
   }
 
@@ -1088,9 +1117,14 @@ export function SettingsPage({
               generateLabel="Generate AI File Summary"
               isGenerating={isFileAISummaryGenerating}
               isLoading={isFileAISummaryLoading}
+              isSavingToMemory={isSavingFileMemory}
               job={fileAISummary}
               kind="file"
               onGenerate={() => void handleGenerateFileAISummary()}
+              onSaveToMemory={() => void handleSuggestFileMemory()}
+              saveToMemoryError={fileMemoryError}
+              saveToMemoryLabel="Suggest Memory"
+              saveToMemoryMessage={fileMemoryMessage}
             />
           ) : null}
           {formError ? <p className="text-sm font-semibold text-rose-700">{formError}</p> : null}

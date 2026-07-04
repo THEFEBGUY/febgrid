@@ -186,11 +186,17 @@ export function WorkObjectsPage({
   const [isAISummaryLoading, setIsAISummaryLoading] = useState(false);
   const [isAISummaryGenerating, setIsAISummaryGenerating] = useState(false);
   const [aiSummaryError, setAISummaryError] = useState<string | null>(null);
+  const [isSavingWorkMemory, setIsSavingWorkMemory] = useState(false);
+  const [workMemoryMessage, setWorkMemoryMessage] = useState<string | null>(null);
+  const [workMemoryError, setWorkMemoryError] = useState<string | null>(null);
   const [fileSummaryAttachment, setFileSummaryAttachment] = useState<Attachment | null>(null);
   const [fileAISummary, setFileAISummary] = useState<AIJob | null>(null);
   const [isFileAISummaryLoading, setIsFileAISummaryLoading] = useState(false);
   const [isFileAISummaryGenerating, setIsFileAISummaryGenerating] = useState(false);
   const [fileAISummaryError, setFileAISummaryError] = useState<string | null>(null);
+  const [isSavingFileMemory, setIsSavingFileMemory] = useState(false);
+  const [fileMemoryMessage, setFileMemoryMessage] = useState<string | null>(null);
+  const [fileMemoryError, setFileMemoryError] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [uploadDescription, setUploadDescription] = useState("");
   const [isUploading, setIsUploading] = useState(false);
@@ -269,6 +275,8 @@ export function WorkObjectsPage({
       setDetailError(null);
       setAttachmentError(null);
       setAISummaryError(null);
+      setWorkMemoryMessage(null);
+      setWorkMemoryError(null);
       try {
         const [eventsResult, attachmentsResult, summaryResult] = await Promise.allSettled([
           api.workObjectTimeline(workObjectId, selectedCompanyId),
@@ -509,6 +517,8 @@ export function WorkObjectsPage({
     setFileSummaryAttachment(attachment);
     setIsFileAISummaryLoading(true);
     setFileAISummaryError(null);
+    setFileMemoryMessage(null);
+    setFileMemoryError(null);
     try {
       const job = await api.latestFileAISummary(attachment.id, selectedCompanyId);
       setFileAISummary(job);
@@ -531,6 +541,46 @@ export function WorkObjectsPage({
       setFileAISummaryError(caughtError instanceof Error ? caughtError.message : "AI file summary could not be generated.");
     } finally {
       setIsFileAISummaryGenerating(false);
+    }
+  }
+
+  async function handleSuggestWorkMemory(): Promise<void> {
+    if (!aiSummary || !selectedCompanyId || isSavingWorkMemory) return;
+    setIsSavingWorkMemory(true);
+    setWorkMemoryError(null);
+    setWorkMemoryMessage(null);
+    try {
+      await api.createCompanyMemoryFromAIJob(aiSummary.id, {
+        company_id: selectedCompanyId,
+        memory_type: "work_context",
+        importance: aiSummary.output_payload?.blockers_or_risks ? "high" : "normal",
+        tags: ["work_context", "ai_summary"],
+      });
+      setWorkMemoryMessage("Work summary saved as a memory suggestion.");
+    } catch (caughtError) {
+      setWorkMemoryError(caughtError instanceof Error ? caughtError.message : "Unable to save work summary to memory.");
+    } finally {
+      setIsSavingWorkMemory(false);
+    }
+  }
+
+  async function handleSuggestFileMemory(): Promise<void> {
+    if (!fileAISummary || !selectedCompanyId || isSavingFileMemory) return;
+    setIsSavingFileMemory(true);
+    setFileMemoryError(null);
+    setFileMemoryMessage(null);
+    try {
+      await api.createCompanyMemoryFromAIJob(fileAISummary.id, {
+        company_id: selectedCompanyId,
+        memory_type: "file_insight",
+        importance: "normal",
+        tags: ["file_insight", "ai_summary"],
+      });
+      setFileMemoryMessage("File summary saved as a memory suggestion.");
+    } catch (caughtError) {
+      setFileMemoryError(caughtError instanceof Error ? caughtError.message : "Unable to save file summary to memory.");
+    } finally {
+      setIsSavingFileMemory(false);
     }
   }
 
@@ -853,9 +903,14 @@ export function WorkObjectsPage({
               generateLabel="Generate AI Summary"
               isGenerating={isAISummaryGenerating}
               isLoading={isAISummaryLoading}
+              isSavingToMemory={isSavingWorkMemory}
               job={aiSummary}
               kind="work_object"
               onGenerate={() => void handleGenerateAISummary()}
+              onSaveToMemory={() => void handleSuggestWorkMemory()}
+              saveToMemoryError={workMemoryError}
+              saveToMemoryLabel="Suggest Memory"
+              saveToMemoryMessage={workMemoryMessage}
             />
 
             <div className="flex flex-wrap gap-2">
@@ -970,9 +1025,14 @@ export function WorkObjectsPage({
                     generateLabel="Generate AI File Summary"
                     isGenerating={isFileAISummaryGenerating}
                     isLoading={isFileAISummaryLoading}
+                    isSavingToMemory={isSavingFileMemory}
                     job={fileAISummary}
                     kind="file"
                     onGenerate={() => void handleGenerateFileAISummary()}
+                    onSaveToMemory={() => void handleSuggestFileMemory()}
+                    saveToMemoryError={fileMemoryError}
+                    saveToMemoryLabel="Suggest Memory"
+                    saveToMemoryMessage={fileMemoryMessage}
                   />
                 </div>
               ) : null}

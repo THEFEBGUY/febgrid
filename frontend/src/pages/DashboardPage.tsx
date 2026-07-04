@@ -1,6 +1,7 @@
 import {
   AlertTriangle,
   Bell,
+  Brain,
   BriefcaseBusiness,
   CalendarDays,
   CheckCircle2,
@@ -49,6 +50,9 @@ export function DashboardPage({
   const [briefError, setBriefError] = useState<string | null>(null);
   const [isBriefLoading, setIsBriefLoading] = useState(false);
   const [isBriefGenerating, setIsBriefGenerating] = useState(false);
+  const [isSavingBriefMemory, setIsSavingBriefMemory] = useState(false);
+  const [briefMemoryMessage, setBriefMemoryMessage] = useState<string | null>(null);
+  const [briefMemoryError, setBriefMemoryError] = useState<string | null>(null);
   const employeeNames = useMemo(
     () => Object.fromEntries(data.employees.map((employee) => [employee.id, employee.full_name])),
     [data.employees],
@@ -95,6 +99,27 @@ export function DashboardPage({
       setBriefError(error instanceof Error ? error.message : "Unable to generate the company brief.");
     } finally {
       setIsBriefGenerating(false);
+    }
+  }
+
+  async function handleSuggestBriefMemory(): Promise<void> {
+    const companyId = selectedCompany?.id;
+    if (!companyId || !companyBrief || isSavingBriefMemory) return;
+    setIsSavingBriefMemory(true);
+    setBriefMemoryError(null);
+    setBriefMemoryMessage(null);
+    try {
+      await api.createCompanyMemoryFromAIJob(companyBrief.id, {
+        company_id: companyId,
+        memory_type: "company_brief",
+        importance: "high",
+        tags: ["company_brief", "ai_summary"],
+      });
+      setBriefMemoryMessage("Company brief saved as a memory suggestion.");
+    } catch (error) {
+      setBriefMemoryError(error instanceof Error ? error.message : "Unable to save company brief to memory.");
+    } finally {
+      setIsSavingBriefMemory(false);
     }
   }
 
@@ -207,10 +232,34 @@ export function DashboardPage({
           generateLabel="Generate Company Brief"
           isGenerating={isBriefGenerating}
           isLoading={isBriefLoading}
+          isSavingToMemory={isSavingBriefMemory}
           job={companyBrief}
           kind="company"
           onGenerate={() => void handleGenerateCompanyBrief()}
+          onSaveToMemory={() => void handleSuggestBriefMemory()}
+          saveToMemoryError={briefMemoryError}
+          saveToMemoryLabel="Suggest Memory"
+          saveToMemoryMessage={briefMemoryMessage}
         />
+      ) : null}
+
+      {summary.memory_summary ? (
+        <SectionPanel
+          eyebrow="Company Memory"
+          title="Approved knowledge"
+          description="Reviewable company knowledge created manually or from safe AI summary outputs."
+          action={
+            <Button icon={<Brain className="size-4" aria-hidden="true" />} onClick={() => navigateTo("memory")}>
+              Open Memory
+            </Button>
+          }
+        >
+          <div className="grid gap-3 p-5 md:grid-cols-3">
+            <StatusTile label="Approved" value={summary.memory_summary.approved_memories} tone="green" />
+            <StatusTile label="Suggestions" value={summary.memory_summary.pending_suggestions} tone="amber" />
+            <StatusTile label="Important" value={summary.memory_summary.important_memories} tone="red" />
+          </div>
+        </SectionPanel>
       ) : null}
 
       <section className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">

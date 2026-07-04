@@ -2,6 +2,7 @@ from app.models.ai_job import AIJob
 from app.models.attachment import Attachment
 from app.models.billing import CompanyBillingPlan
 from app.models.company import Company
+from app.models.company_memory import CompanyMemory
 from app.models.communication import Announcement, Comment, CommentMention
 from app.models.configuration import CustomFieldDefinition, WorkObjectType
 from app.models.department import Department
@@ -24,6 +25,7 @@ __all__ = [
     "Comment",
     "CommentMention",
     "Company",
+    "CompanyMemory",
     "CustomFieldDefinition",
     "Department",
     "Employee",

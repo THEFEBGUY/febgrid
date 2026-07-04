@@ -12,6 +12,7 @@ from app.core.permissions import OWNER_ADMIN_ROLES, ensure_company_access
 from app.models.attachment import Attachment
 from app.models.communication import Announcement
 from app.models.company import Company
+from app.models.company_memory import CompanyMemory
 from app.models.employee import Employee
 from app.models.event import Event
 from app.models.leave_request import LeaveRequest
@@ -25,6 +26,7 @@ from app.schemas.dashboard import (
     DashboardEmployeeSummary,
     DashboardFileSummary,
     DashboardLeaveSummary,
+    DashboardMemorySummary,
     DashboardNotificationSummary,
     DashboardProjectSummary,
     DashboardSummaryRead,
@@ -273,6 +275,28 @@ def get_dashboard_summary(
         ),
     )
 
+    memory_summary = DashboardMemorySummary(
+        approved_memories=count_rows(
+            db,
+            CompanyMemory,
+            CompanyMemory.company_id == company_id,
+            CompanyMemory.status == "approved",
+        ),
+        pending_suggestions=count_rows(
+            db,
+            CompanyMemory,
+            CompanyMemory.company_id == company_id,
+            CompanyMemory.status == "suggested",
+        ),
+        important_memories=count_rows(
+            db,
+            CompanyMemory,
+            CompanyMemory.company_id == company_id,
+            CompanyMemory.status == "approved",
+            CompanyMemory.importance.in_(["high", "critical"]),
+        ),
+    )
+
     recent_events = serialize_events(
         db.scalars(
             select(Event)
@@ -354,6 +378,7 @@ def get_dashboard_summary(
         file_summary=file_summary,
         notification_summary=notification_summary,
         announcement_summary=announcement_summary,
+        memory_summary=memory_summary,
         recent_events=recent_events,
         recent_notifications=list(db.scalars(recent_notifications_statement).all()),
         recent_announcements=list(recent_announcements),

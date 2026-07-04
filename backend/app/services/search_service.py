@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.core.permissions import OWNER_ADMIN_ROLES
 from app.models.attachment import Attachment
+from app.models.company_memory import CompanyMemory
 from app.models.communication import Announcement, Comment
 from app.models.configuration import CustomFieldDefinition, WorkObjectType
 from app.models.department import Department
@@ -35,6 +36,7 @@ SEARCH_GROUPS = {
     "files",
     "work_object_types",
     "custom_fields",
+    "company_memory",
 }
 
 TYPE_ALIASES = {
@@ -62,6 +64,9 @@ TYPE_ALIASES = {
     "custom_field": "custom_fields",
     "custom-field": "custom_fields",
     "field": "custom_fields",
+    "memory": "company_memory",
+    "company_memory": "company_memory",
+    "company-memory": "company_memory",
 }
 
 
@@ -225,6 +230,8 @@ class SearchService:
             groups["events"] = SearchService._events(db, company_id, term, group_limit)
         if "notifications" in selected_types:
             groups["notifications"] = SearchService._notifications(db, company_id, term, group_limit, current_user)
+        if "company_memory" in selected_types:
+            groups["company_memory"] = SearchService._company_memory(db, company_id, term, group_limit, current_user)
 
         filtered_groups = {name: results for name, results in groups.items() if results}
         flat_results = [result for results in filtered_groups.values() for result in results]
@@ -656,4 +663,58 @@ class SearchService:
                 },
             )
             for notification in db.scalars(statement).all()
+        ]
+
+    @staticmethod
+    def _company_memory(
+        db: Session,
+        company_id: UUID,
+        term: str | None,
+        limit: int,
+        current_user: User | None,
+    ) -> list[SearchResult]:
+        statement = select(CompanyMemory).where(CompanyMemory.company_id == company_id)
+        if current_user is not None and current_user.role not in OWNER_ADMIN_ROLES:
+            statement = statement.where(
+                or_(
+                    CompanyMemory.created_by_user_id == current_user.id,
+                    and_(CompanyMemory.status == "approved", CompanyMemory.visibility == "company"),
+                )
+            )
+        if term:
+            statement = statement.where(
+                _text_match(
+                    CompanyMemory.title,
+                    CompanyMemory.content,
+                    CompanyMemory.summary,
+                    CompanyMemory.memory_type,
+                    CompanyMemory.scope_type,
+                    CompanyMemory.importance,
+                    term=term,
+                )
+            )
+        statement = statement.order_by(CompanyMemory.updated_at.desc()).limit(limit)
+        return [
+            _result(
+                item_type="company_memory",
+                item_id=memory.id,
+                title=memory.title,
+                subtitle=f"{memory.memory_type} / {memory.status}",
+                description=memory.summary or memory.content,
+                status=memory.status,
+                priority=memory.importance,
+                related_entity_type=memory.scope_type,
+                related_entity_id=memory.scope_id,
+                created_at=memory.created_at,
+                updated_at=memory.updated_at,
+                href="#/memory",
+                metadata={
+                    "visibility": memory.visibility,
+                    "source_type": memory.source_type,
+                    "source_id": str(memory.source_id) if memory.source_id else None,
+                    "source_ai_job_id": str(memory.source_ai_job_id) if memory.source_ai_job_id else None,
+                    "tags": memory.tags,
+                },
+            )
+            for memory in db.scalars(statement).all()
         ]

@@ -118,6 +118,7 @@ export function Topbar({
         comment: item.related_entity_type === "project" ? "/projects" : "/work-objects",
         work_object_type: "/settings",
         custom_field: "/settings",
+        company_memory: "/memory",
       };
       window.location.hash = fallbackRoutes[item.type] ?? "/dashboard";
     }
