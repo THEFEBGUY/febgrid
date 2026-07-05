@@ -83,6 +83,23 @@ class MockAIProvider(BaseAIProvider):
                 "truncated": bool(request.entity_context.get("truncated", False)),
                 "unsupported_reason": request.entity_context.get("unsupported_reason"),
             }
+        if request.job_type == "document_analysis_safe":
+            return {
+                "document_overview": "Mock AI document analysis. Real provider not connected.",
+                "document_type_guess": "mock text document",
+                "key_points": ["Mock mode verified that the document belongs to this company and passed text-only safety checks."],
+                "decisions_or_commitments": [],
+                "action_items": ["Mock output only; no real action item extraction was generated."],
+                "important_dates": [],
+                "important_numbers": [],
+                "risks_or_concerns": ["Mock output only; no real document risk analysis was generated."],
+                "people_or_teams_mentioned": [],
+                "related_work_suggestions": ["Enable Groq with explicit external processing consent to generate real document analysis suggestions."],
+                "suggested_next_steps": ["Review this mock analysis and use supported text documents for real provider validation later."],
+                "limitations": ["Mock provider does not send document text externally."],
+                "truncated": bool(request.entity_context.get("truncated", False)),
+                "unsupported_reason": request.entity_context.get("unsupported_reason"),
+            }
         return {
             "summary": f"Mock AI summary for {entity}. Real provider not connected.",
             "key_points": ["Mock placeholder output only."],

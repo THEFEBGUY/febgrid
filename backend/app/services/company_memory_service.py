@@ -318,6 +318,7 @@ class CompanyMemoryService:
             "attachment": Attachment,
             "file": Attachment,
             "file_summary": Attachment,
+            "document_analysis": Attachment,
             "event": Event,
         }
         model = model_by_source.get(source_type)
@@ -465,14 +466,15 @@ class CompanyMemoryService:
                 "source_id": job.input_entity_id,
                 "title": "Project summary memory",
             }
-        if entity_type in {"file", "attachment"} or job_type in {"file_summary_safe", "file_summary_mock"}:
+        if entity_type in {"file", "attachment"} or job_type in {"file_summary_safe", "file_summary_mock", "document_analysis_safe"}:
+            is_document_analysis = job_type == "document_analysis_safe"
             return {
                 "memory_type": "file_insight",
                 "scope_type": "file",
                 "scope_id": job.input_entity_id,
-                "source_type": "file_summary",
+                "source_type": "document_analysis" if is_document_analysis else "file_summary",
                 "source_id": job.input_entity_id,
-                "title": "File insight memory",
+                "title": "Document analysis memory" if is_document_analysis else "File insight memory",
             }
         return {
             "memory_type": "work_context",
@@ -487,17 +489,23 @@ class CompanyMemoryService:
     def content_from_ai_output(job: AIJob) -> str:
         output = metadata_dict(job.output_payload)
         lines: list[str] = []
-        primary = output.get("executive_summary") or output.get("summary")
+        primary = output.get("executive_summary") or output.get("summary") or output.get("document_overview")
         if primary:
             lines.append(str(primary))
         sections = [
             ("Operational highlights", output.get("operational_highlights")),
             ("Key points", output.get("key_points")),
+            ("Decisions or commitments", output.get("decisions_or_commitments")),
+            ("Action items", output.get("action_items")),
+            ("Important dates", output.get("important_dates")),
+            ("Important numbers", output.get("important_numbers")),
             ("Project overview", output.get("project_overview")),
             ("Work overview", output.get("work_overview")),
             ("People overview", output.get("people_overview")),
             ("Leave overview", output.get("leave_overview")),
             ("Blockers or risks", output.get("risks_or_blockers") or output.get("blockers_or_risks") or output.get("risks_or_concerns")),
+            ("People or teams mentioned", output.get("people_or_teams_mentioned")),
+            ("Related work suggestions", output.get("related_work_suggestions")),
             ("Attention items", output.get("attention_items")),
             ("Suggested next steps", output.get("suggested_next_actions") or output.get("suggested_next_steps")),
             ("Limitations", output.get("limitations")),
@@ -514,7 +522,7 @@ class CompanyMemoryService:
     @staticmethod
     def summary_from_ai_output(job: AIJob) -> str | None:
         output = metadata_dict(job.output_payload)
-        return normalize_text(str(output.get("executive_summary") or output.get("summary") or ""), max_chars=1000)
+        return normalize_text(str(output.get("executive_summary") or output.get("summary") or output.get("document_overview") or ""), max_chars=1000)
 
     @staticmethod
     def confidence_from_ai_output(job: AIJob) -> float | None:

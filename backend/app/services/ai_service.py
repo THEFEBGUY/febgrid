@@ -48,6 +48,7 @@ COMPANY_AI_SETTINGS_KEY = "ai"
 RESERVED_AI_KEYS = {"system_prompt", "raw_prompt", "provider_api_key", "api_key", "secret", "password", "token"}
 FILE_SUMMARY_MAX_BYTES = 1 * 1024 * 1024
 FILE_SUMMARY_EXTENSIONS = {".txt", ".md", ".csv", ".json", ".log"}
+DOCUMENT_ANALYSIS_EXTENSIONS = FILE_SUMMARY_EXTENSIONS
 SECRET_FILE_EXTENSIONS = {".env", ".pem", ".key"}
 SECRET_FILE_NAMES = {".env", "id_rsa", "id_dsa", "id_ecdsa", "id_ed25519"}
 SECRET_VALUE_PATTERN = re.compile(
@@ -105,6 +106,12 @@ CAPABILITY_DEFINITIONS = [
         job_type="file_summary_safe",
         label="Safe file summary",
         description="Run a supported text-file summary through the configured provider after file safety checks.",
+        mock_only=False,
+    ),
+    AICapability(
+        job_type="document_analysis_safe",
+        label="Safe document analysis",
+        description="Analyze supported text documents for structured operational insights after document safety checks.",
         mock_only=False,
     ),
 ]
@@ -310,8 +317,9 @@ class AIService:
             "project_summary_safe": "project",
             "company_brief_safe": "company",
             "file_summary_safe": "attachment",
+            "document_analysis_safe": "attachment",
         }
-        if job_type == "file_summary_safe" and input_entity_type in {"attachment", "file"}:
+        if job_type in {"file_summary_safe", "document_analysis_safe"} and input_entity_type in {"attachment", "file"}:
             return
         if job_type in expected and input_entity_type != expected[job_type]:
             raise HTTPException(
@@ -365,7 +373,7 @@ class AIService:
         input_entity_id: UUID,
         current_user: User,
     ) -> None:
-        if job_type != "file_summary_safe":
+        if job_type not in {"file_summary_safe", "document_analysis_safe"}:
             return
         attachment = get_or_404(db, Attachment, input_entity_id, label="File")
         ensure_company(attachment, company_id, label="File")
@@ -479,7 +487,13 @@ class AIService:
         current_user: User,
     ) -> AIJob:
         ensure_company_access(current_user, company_id)
-        if job_type not in {"work_object_summary_safe", "project_summary_safe", "company_brief_safe", "file_summary_safe"}:
+        if job_type not in {
+            "work_object_summary_safe",
+            "project_summary_safe",
+            "company_brief_safe",
+            "file_summary_safe",
+            "document_analysis_safe",
+        }:
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Unsupported AI summary type")
         if job_type == "company_brief_safe":
             ensure_role(current_user, OWNER_ADMIN_ROLES)
@@ -661,34 +675,63 @@ class AIService:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission for this action")
 
     @classmethod
-    def build_file_summary_context(cls, db: Session, *, attachment: Attachment, max_input_chars: int) -> dict[str, Any]:
+    def build_file_summary_context(
+        cls,
+        db: Session,
+        *,
+        attachment: Attachment,
+        max_input_chars: int,
+        purpose: str = "summary",
+    ) -> dict[str, Any]:
+        is_analysis = purpose == "analysis"
+        unsupported_message = (
+            "This document type is not supported for analysis yet."
+            if is_analysis
+            else "This file type is not supported for AI summary yet."
+        )
+        unavailable_message = "File content is not available for document analysis." if is_analysis else "File content is not available for AI summary."
+        too_large_message = "This document is too large for AI document analysis v1." if is_analysis else "This file is too large for AI summary v1."
+        provider_message = (
+            "This file storage provider is not supported for document analysis yet."
+            if is_analysis
+            else "This file storage provider is not supported for AI summary yet."
+        )
         extension = file_extension(attachment)
         if is_secret_like_filename(attachment.original_file_name):
-            raise AIProviderError("file_contains_secrets", "This file appears to contain secrets and cannot be summarized.")
-        if extension not in FILE_SUMMARY_EXTENSIONS:
+            raise AIProviderError(
+                "file_contains_secrets",
+                "This file appears to contain secrets and cannot be analyzed." if is_analysis else "This file appears to contain secrets and cannot be summarized.",
+            )
+        if extension not in (DOCUMENT_ANALYSIS_EXTENSIONS if is_analysis else FILE_SUMMARY_EXTENSIONS):
             raise AIProviderError(
                 "unsupported_file_type",
-                "This file type is not supported for AI summary yet.",
+                unsupported_message,
                 {"unsupported_reason": "unsupported_file_type", "extension": extension},
             )
         if attachment.storage_provider != FileService.STORAGE_PROVIDER:
-            raise AIProviderError("unsupported_storage_provider", "This file storage provider is not supported for AI summary yet.")
+            raise AIProviderError("unsupported_storage_provider", provider_message)
         if attachment.file_size is not None and attachment.file_size > FILE_SUMMARY_MAX_BYTES:
-            raise AIProviderError("file_too_large", "This file is too large for AI summary v1.", {"file_size": attachment.file_size})
+            raise AIProviderError("file_too_large", too_large_message, {"file_size": attachment.file_size})
 
         path = FileService.resolve_storage_path(attachment.storage_path)
         if not path.exists() or not path.is_file():
-            raise AIProviderError("file_not_available", "File content is not available for AI summary.")
+            raise AIProviderError("file_not_available", unavailable_message)
         actual_size = path.stat().st_size
         if actual_size > FILE_SUMMARY_MAX_BYTES:
-            raise AIProviderError("file_too_large", "This file is too large for AI summary v1.", {"file_size": actual_size})
+            raise AIProviderError("file_too_large", too_large_message, {"file_size": actual_size})
 
         raw_text = path.read_bytes().decode("utf-8", errors="replace")
         if PRIVATE_KEY_PATTERN.search(raw_text) or secret_signal_count(raw_text) >= 3:
-            raise AIProviderError("file_contains_secrets", "This file appears to contain secrets and cannot be summarized.")
+            raise AIProviderError(
+                "file_contains_secrets",
+                "This file appears to contain secrets and cannot be analyzed." if is_analysis else "This file appears to contain secrets and cannot be summarized.",
+            )
         redacted_text, was_redacted = redact_secret_like_text(raw_text)
         if LONG_SECRET_PATTERN.search(redacted_text) and secret_signal_count(raw_text) > 0:
-            raise AIProviderError("file_contains_secrets", "This file appears to contain secrets and cannot be summarized.")
+            raise AIProviderError(
+                "file_contains_secrets",
+                "This file appears to contain secrets and cannot be analyzed." if is_analysis else "This file appears to contain secrets and cannot be summarized.",
+            )
 
         max_text_chars = max(1000, min(max_input_chars - 2500, max_input_chars))
         sanitized_text = redacted_text.strip()
@@ -711,7 +754,7 @@ class AIService:
             linked_project_name = db.scalar(select(Project.name).where(Project.id == attachment.project_id, Project.company_id == attachment.company_id))
 
         return {
-            "type": "file",
+            "type": "document" if is_analysis else "file",
             "file_id": str(attachment.id),
             "original_file_name": safe_text(attachment.original_file_name, 255),
             "content_type": safe_text(attachment.content_type, 120),
@@ -729,6 +772,7 @@ class AIService:
             "truncated": truncated,
             "redacted_secret_like_values": was_redacted,
             "extraction_mode": "utf8_text_only",
+            "analysis_mode": purpose,
         }
 
     @classmethod
@@ -845,9 +889,15 @@ class AIService:
             attachment = get_or_404(db, Attachment, job.input_entity_id, label="File")
             ensure_company(attachment, job.company_id, label="File")
             if attachment.is_deleted or not attachment.is_active:
-                raise AIProviderError("file_not_available", "File content is not available for AI summary.")
+                message = "File content is not available for document analysis." if job.job_type == "document_analysis_safe" else "File content is not available for AI summary."
+                raise AIProviderError("file_not_available", message)
             runtime = get_ai_provider_config()
-            return cls.build_file_summary_context(db, attachment=attachment, max_input_chars=runtime.groq_max_input_chars)
+            return cls.build_file_summary_context(
+                db,
+                attachment=attachment,
+                max_input_chars=runtime.groq_max_input_chars,
+                purpose="analysis" if job.job_type == "document_analysis_safe" else "summary",
+            )
         if job.input_entity_type == "company":
             company = get_or_404(db, Company, job.company_id, label="Company")
             now = utc_now()
@@ -1107,19 +1157,43 @@ class AIService:
         error_message: str,
         metadata: dict[str, Any],
     ) -> None:
-        if job.job_type == "file_summary_safe":
+        if job.job_type in {"file_summary_safe", "document_analysis_safe"}:
             output_payload = metadata_dict(job.output_payload)
+            if job.job_type == "document_analysis_safe":
+                output_payload.update(
+                    {
+                        "document_overview": "",
+                        "document_type_guess": "unknown",
+                        "key_points": [],
+                        "decisions_or_commitments": [],
+                        "action_items": [],
+                        "important_dates": [],
+                        "important_numbers": [],
+                        "risks_or_concerns": [],
+                        "people_or_teams_mentioned": [],
+                        "related_work_suggestions": [],
+                        "suggested_next_steps": [],
+                        "limitations": [error_message[:500]],
+                        "truncated": bool(metadata.get("truncated", False)),
+                        "unsupported_reason": metadata.get("unsupported_reason") or error_code,
+                    }
+                )
+            else:
+                output_payload.update(
+                    {
+                        "summary": "",
+                        "document_type_guess": "unknown",
+                        "key_points": [],
+                        "important_dates_or_numbers": [],
+                        "risks_or_concerns": [],
+                        "suggested_next_steps": [],
+                        "limitations": [error_message[:500]],
+                        "truncated": bool(metadata.get("truncated", False)),
+                        "unsupported_reason": metadata.get("unsupported_reason") or error_code,
+                    }
+                )
             output_payload.update(
                 {
-                    "summary": "",
-                    "document_type_guess": "unknown",
-                    "key_points": [],
-                    "important_dates_or_numbers": [],
-                    "risks_or_concerns": [],
-                    "suggested_next_steps": [],
-                    "limitations": [error_message[:500]],
-                    "truncated": bool(metadata.get("truncated", False)),
-                    "unsupported_reason": metadata.get("unsupported_reason") or error_code,
                     "provider_key": job.provider_key,
                     "provider_mode": job.provider_mode,
                     "is_mock": job.provider_mode == "mock",
@@ -1180,7 +1254,6 @@ class AIService:
         description: str,
     ):
         metadata = metadata_dict(job.metadata_json)
-        output_payload = metadata_dict(job.output_payload)
         return EventService.record_event(
             db,
             company_id=job.company_id,
@@ -1223,10 +1296,15 @@ class AIService:
             description = f"A tenant-safe AI company brief was {phase}."
             target_entity_type = "company"
         elif job.input_entity_type in {"attachment", "file"}:
-            entity_label = "file"
-            event_type = f"ai_summary.file.{phase}"
-            title = f"AI file summary {phase}"
-            description = f"A tenant-safe AI file summary was {phase}."
+            is_document_analysis = job.job_type == "document_analysis_safe"
+            entity_label = "document analysis" if is_document_analysis else "file"
+            event_type = f"ai_analysis.document.{phase}" if is_document_analysis else f"ai_summary.file.{phase}"
+            title = f"AI document analysis {phase}" if is_document_analysis else f"AI file summary {phase}"
+            description = (
+                f"A tenant-safe AI document analysis was {phase}."
+                if is_document_analysis
+                else f"A tenant-safe AI file summary was {phase}."
+            )
             target_entity_type = "attachment"
         else:
             entity_label = "work object" if job.input_entity_type == "work_object" else "project"
@@ -1235,6 +1313,7 @@ class AIService:
             description = f"A tenant-safe AI {entity_label} summary was {phase}."
             target_entity_type = job.input_entity_type
         metadata = metadata_dict(job.metadata_json)
+        output_payload = metadata_dict(job.output_payload)
         return EventService.record_event(
             db,
             company_id=job.company_id,
@@ -1259,8 +1338,8 @@ class AIService:
                 "safety_status": metadata.get("safety_status"),
                 "external_processing_used": bool(metadata.get("external_processing_used", False)),
                 "error_code": metadata.get("error_code"),
-                "truncated": bool(output_payload.get("truncated", False)) if job.job_type == "file_summary_safe" else None,
-                "unsupported_reason": output_payload.get("unsupported_reason") if job.job_type == "file_summary_safe" else None,
+                "truncated": bool(output_payload.get("truncated", False)) if job.job_type in {"file_summary_safe", "document_analysis_safe"} else None,
+                "unsupported_reason": output_payload.get("unsupported_reason") if job.job_type in {"file_summary_safe", "document_analysis_safe"} else None,
             },
         )
 

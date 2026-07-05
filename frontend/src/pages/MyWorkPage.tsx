@@ -1,4 +1,4 @@
-import { CheckCircle2, Download, Eye, Sparkles, Upload } from "lucide-react";
+import { CheckCircle2, Download, Eye, FileSearch, Sparkles, Upload } from "lucide-react";
 import { type FormEvent, useCallback, useMemo, useState } from "react";
 
 import { AISummaryPanel } from "../components/ai/AISummaryPanel";
@@ -55,6 +55,7 @@ export function MyWorkPage({
   const [workMemoryMessage, setWorkMemoryMessage] = useState<string | null>(null);
   const [workMemoryError, setWorkMemoryError] = useState<string | null>(null);
   const [fileSummaryAttachment, setFileSummaryAttachment] = useState<Attachment | null>(null);
+  const [fileAIInsightMode, setFileAIInsightMode] = useState<"summary" | "analysis">("summary");
   const [fileAISummary, setFileAISummary] = useState<AIJob | null>(null);
   const [isFileAISummaryLoading, setIsFileAISummaryLoading] = useState(false);
   const [isFileAISummaryGenerating, setIsFileAISummaryGenerating] = useState(false);
@@ -144,6 +145,7 @@ export function MyWorkPage({
   async function loadFileAISummary(attachment: Attachment): Promise<void> {
     if (!selectedCompanyId) return;
     setFileSummaryAttachment(attachment);
+    setFileAIInsightMode("summary");
     setIsFileAISummaryLoading(true);
     setFileAISummaryError(null);
     setFileMemoryMessage(null);
@@ -158,16 +160,43 @@ export function MyWorkPage({
     }
   }
 
+  async function loadFileAIAnalysis(attachment: Attachment): Promise<void> {
+    if (!selectedCompanyId) return;
+    setFileSummaryAttachment(attachment);
+    setFileAIInsightMode("analysis");
+    setIsFileAISummaryLoading(true);
+    setFileAISummaryError(null);
+    setFileMemoryMessage(null);
+    setFileMemoryError(null);
+    try {
+      const job = await api.latestFileAIAnalysis(attachment.id, selectedCompanyId);
+      setFileAISummary(job);
+    } catch (caughtError) {
+      setFileAISummaryError(caughtError instanceof Error ? caughtError.message : "Unable to load the latest document analysis.");
+    } finally {
+      setIsFileAISummaryLoading(false);
+    }
+  }
+
   async function handleGenerateFileAISummary(): Promise<void> {
     if (!fileSummaryAttachment || !selectedCompanyId) return;
     setIsFileAISummaryGenerating(true);
     setFileAISummaryError(null);
     try {
-      const job = await api.generateFileAISummary(fileSummaryAttachment.id, selectedCompanyId);
+      const job =
+        fileAIInsightMode === "analysis"
+          ? await api.generateFileAIAnalysis(fileSummaryAttachment.id, selectedCompanyId)
+          : await api.generateFileAISummary(fileSummaryAttachment.id, selectedCompanyId);
       setFileAISummary(job);
       if (detailWorkObject) void loadDetail(detailWorkObject.id);
     } catch (caughtError) {
-      setFileAISummaryError(caughtError instanceof Error ? caughtError.message : "AI file summary could not be generated.");
+      setFileAISummaryError(
+        caughtError instanceof Error
+          ? caughtError.message
+          : fileAIInsightMode === "analysis"
+            ? "AI document analysis could not be generated."
+            : "AI file summary could not be generated.",
+      );
     } finally {
       setIsFileAISummaryGenerating(false);
     }
@@ -203,11 +232,11 @@ export function MyWorkPage({
         company_id: selectedCompanyId,
         memory_type: "file_insight",
         importance: "normal",
-        tags: ["file_insight", "ai_summary"],
+        tags: fileAIInsightMode === "analysis" ? ["file_insight", "document_analysis"] : ["file_insight", "ai_summary"],
       });
-      setFileMemoryMessage("File summary submitted to Company Memory for review.");
+      setFileMemoryMessage(fileAIInsightMode === "analysis" ? "Document analysis submitted to Company Memory for review." : "File summary submitted to Company Memory for review.");
     } catch (caughtError) {
-      setFileMemoryError(caughtError instanceof Error ? caughtError.message : "Unable to suggest this file summary.");
+      setFileMemoryError(caughtError instanceof Error ? caughtError.message : "Unable to suggest this file insight.");
     } finally {
       setIsSavingFileMemory(false);
     }
@@ -404,6 +433,15 @@ export function MyWorkPage({
                         >
                           <span className="sr-only">Summarize file</span>
                         </Button>
+                        <Button
+                          className="size-9 px-0"
+                          aria-label={`Analyze document ${attachment.original_file_name}`}
+                          icon={<FileSearch className="size-4" aria-hidden="true" />}
+                          title={`Analyze document ${attachment.original_file_name}`}
+                          onClick={() => void loadFileAIAnalysis(attachment)}
+                        >
+                          <span className="sr-only">Analyze document</span>
+                        </Button>
                         <Button className="size-9 px-0" aria-label="Download file" icon={<Download className="size-4" aria-hidden="true" />} title="Download file" onClick={() => void handleDownloadAttachment(attachment)}>
                           <span className="sr-only">Download file</span>
                         </Button>
@@ -415,20 +453,20 @@ export function MyWorkPage({
               {fileSummaryAttachment ? (
                 <div className="border-t border-grid-200 p-4">
                   <p className="mb-3 text-xs font-black uppercase tracking-normal text-ink-500">
-                    File summary / {fileSummaryAttachment.original_file_name}
+                    {fileAIInsightMode === "analysis" ? "Document analysis" : "File summary"} / {fileSummaryAttachment.original_file_name}
                   </p>
                   <AISummaryPanel
                     error={fileAISummaryError}
-                    generateLabel="Generate AI File Summary"
+                    generateLabel={fileAIInsightMode === "analysis" ? "Analyze Document" : "Generate AI File Summary"}
                     isGenerating={isFileAISummaryGenerating}
                     isLoading={isFileAISummaryLoading}
                     isSavingToMemory={isSavingFileMemory}
                     job={fileAISummary}
-                    kind="file"
+                    kind={fileAIInsightMode === "analysis" ? "document" : "file"}
                     onGenerate={() => void handleGenerateFileAISummary()}
                     onSaveToMemory={() => void handleSuggestFileMemory()}
                     saveToMemoryError={fileMemoryError}
-                    saveToMemoryLabel="Suggest Memory"
+                    saveToMemoryLabel={fileAIInsightMode === "analysis" ? "Suggest Analysis to Memory" : "Suggest Memory"}
                     saveToMemoryMessage={fileMemoryMessage}
                   />
                 </div>

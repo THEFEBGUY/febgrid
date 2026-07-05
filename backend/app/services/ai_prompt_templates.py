@@ -46,6 +46,24 @@ def output_contract_for_job(job_type: str) -> dict[str, Any]:
             "unsupported_reason": None,
             "confidence": None,
         }
+    if job_type == "document_analysis_safe":
+        return {
+            "document_overview": "short operational overview of the supported text document",
+            "document_type_guess": "plain-language guess from filename, content type, and text, or unknown",
+            "key_points": ["up to 6 concise points grounded only in the provided text"],
+            "decisions_or_commitments": ["decisions, approvals, promises, or commitments only if explicitly present"],
+            "action_items": ["action items with owner/date only if explicitly present"],
+            "important_dates": ["dates or deadlines only if explicitly present"],
+            "important_numbers": ["amounts, counts, IDs, or metrics only if explicitly present"],
+            "risks_or_concerns": ["up to 5 concerns, inconsistencies, or operational risks, only when evidence exists"],
+            "people_or_teams_mentioned": ["people or team names only if explicitly mentioned in the provided text"],
+            "related_work_suggestions": ["non-automatic work suggestions based only on the document, phrased as suggestions"],
+            "suggested_next_steps": ["up to 5 practical next steps based only on provided fields"],
+            "limitations": ["mention unsupported sections, truncation, uncertainty, or missing context"],
+            "truncated": False,
+            "unsupported_reason": None,
+            "confidence": None,
+        }
     return {
         "summary": "short operational summary of the work object",
         "current_status_explanation": "plain-language explanation grounded only in provided data",
@@ -82,7 +100,9 @@ def build_summary_messages(
                 "For company briefs, answer what changed recently, what needs attention, what is going well, "
                 "what is blocked or risky, and what owner/admin should do next. Return valid compact JSON "
                 "matching the requested output contract. For file summaries, summarize only the provided text, "
-                "mention when content was truncated, and avoid restating any secret-like values."
+                "mention when content was truncated, and avoid restating any secret-like values. For document "
+                "analysis, extract operational insights only from the provided text, keep related work ideas as "
+                "suggestions, and do not create tasks, projects, memories, or actions."
             ),
         },
         {"role": "user", "content": serialized},

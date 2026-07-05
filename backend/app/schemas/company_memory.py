@@ -31,6 +31,7 @@ SOURCE_TYPES = {
     "work_object_summary",
     "project_summary",
     "file_summary",
+    "document_analysis",
     "event",
     "manual",
 }
