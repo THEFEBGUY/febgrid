@@ -117,6 +117,25 @@ class MockAIProvider(BaseAIProvider):
                 ],
                 "unsupported_reason": request.entity_context.get("unsupported_reason"),
             }
+        if request.job_type == "audio_transcription_safe":
+            duration = request.entity_context.get("duration_seconds")
+            return {
+                "transcript": "Mock transcript for this uploaded audio file. Real audio transcription provider not connected.",
+                "transcript_summary": "Mock AI audio transcription. Real transcription provider not connected.",
+                "key_points": ["Mock mode verified company ownership, file type, file size, and permissions without external processing."],
+                "action_items": ["Enable a future audio-capable provider with explicit external processing consent to generate real transcription notes."],
+                "decisions_or_commitments": [],
+                "important_dates_or_numbers": [],
+                "risks_or_concerns": ["Mock output only; no real audio understanding was generated."],
+                "suggested_next_steps": ["Use supported audio files and an audio-capable provider when FebGrid enables real transcription."],
+                "limitations": [
+                    "Mock provider does not inspect or send audio bytes.",
+                    "No speaker identity, biometric, emotion, or sensitive-trait inference is performed.",
+                ],
+                "language_detected": None,
+                "duration_seconds": duration,
+                "unsupported_reason": request.entity_context.get("unsupported_reason"),
+            }
         return {
             "summary": f"Mock AI summary for {entity}. Real provider not connected.",
             "key_points": ["Mock placeholder output only."],

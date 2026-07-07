@@ -20,6 +20,8 @@ class GroqAIProvider(BaseAIProvider):
         self.model_name = config.groq_model
 
     def generate(self, request: AIProviderRequest) -> AIProviderResult:
+        if request.job_type == "audio_transcription_safe":
+            raise AIProviderError("provider_unsupported_capability", "Current AI provider/model does not support audio transcription yet.")
         if request.job_type == "image_analysis_safe":
             raise AIProviderError("provider_unsupported_capability", "Current AI provider/model does not support image analysis yet.")
         if not self.config.groq_api_key:
@@ -123,9 +125,12 @@ class GroqAIProvider(BaseAIProvider):
                     "executive_summary",
                     "document_overview",
                     "image_overview",
+                    "transcript",
+                    "transcript_summary",
                     "current_status_explanation",
                     "document_type_guess",
                     "operational_relevance",
+                    "language_detected",
                     "project_health",
                     "status_explanation",
                     "progress_overview",
@@ -175,6 +180,8 @@ class GroqAIProvider(BaseAIProvider):
                 output["truncated"] = bool(parsed.get("truncated", False))
                 unsupported_reason = parsed.get("unsupported_reason")
                 output["unsupported_reason"] = str(unsupported_reason).strip()[:500] if unsupported_reason else None
+                if parsed.get("duration_seconds") is not None:
+                    output["duration_seconds"] = parsed.get("duration_seconds")
                 output["confidence"] = parsed.get("confidence")
                 if "summary" not in output and "executive_summary" not in output:
                     output["summary"] = ""
@@ -186,6 +193,8 @@ class GroqAIProvider(BaseAIProvider):
             "executive_summary": text[:4000],
             "document_overview": text[:4000],
             "image_overview": text[:4000],
+            "transcript": text[:4000],
+            "transcript_summary": text[:4000],
             "key_points": [],
             "blockers_or_risks": [],
             "risks_or_blockers": [],

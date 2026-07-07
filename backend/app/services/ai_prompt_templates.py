@@ -76,6 +76,22 @@ def output_contract_for_job(job_type: str) -> dict[str, Any]:
             "unsupported_reason": None,
             "confidence": None,
         }
+    if job_type == "audio_transcription_safe":
+        return {
+            "transcript": "best-effort transcript text if an audio-capable provider returns it; otherwise empty",
+            "transcript_summary": "short operational summary of the transcript",
+            "key_points": ["up to 6 concise points grounded only in the transcript"],
+            "action_items": ["suggested action items only when explicitly supported by the transcript"],
+            "decisions_or_commitments": ["decisions, approvals, promises, or commitments only if explicitly present"],
+            "important_dates_or_numbers": ["dates, times, amounts, IDs, or counts only if explicitly present"],
+            "risks_or_concerns": ["up to 5 operational risks or concerns, only when evidence exists"],
+            "suggested_next_steps": ["up to 5 practical next steps, phrased as suggestions only"],
+            "limitations": ["mention unclear audio, missing context, non-identification, or unsupported provider limits"],
+            "language_detected": None,
+            "duration_seconds": None,
+            "unsupported_reason": None,
+            "confidence": None,
+        }
     return {
         "summary": "short operational summary of the work object",
         "current_status_explanation": "plain-language explanation grounded only in provided data",
@@ -117,7 +133,10 @@ def build_summary_messages(
                 "suggestions, and do not create tasks, projects, memories, or actions. For image analysis, do not "
                 "identify people, do not infer identity or sensitive traits, do not perform biometric or emotion "
                 "analysis, do not make medical/legal/safety-critical claims, avoid OCR/transcription except for "
-                "incidental clearly visible labels, mark uncertainty, and keep related work ideas as suggestions."
+                "incidental clearly visible labels, mark uncertainty, and keep related work ideas as suggestions. "
+                "For audio transcription, do not identify speakers by real identity, do not infer emotion or "
+                "sensitive traits, do not make medical/legal/financial claims, keep action items as suggestions "
+                "only, and mark uncertainty when audio or transcript context is incomplete."
             ),
         },
         {"role": "user", "content": serialized},

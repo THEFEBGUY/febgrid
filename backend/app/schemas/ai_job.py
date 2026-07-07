@@ -20,6 +20,7 @@ REAL_AI_JOB_TYPES = {
     "file_summary_safe",
     "document_analysis_safe",
     "image_analysis_safe",
+    "audio_transcription_safe",
 }
 AI_JOB_TYPES = MOCK_AI_JOB_TYPES | REAL_AI_JOB_TYPES
 AI_JOB_STATUSES = {"queued", "running", "succeeded", "failed", "cancelled", "skipped"}

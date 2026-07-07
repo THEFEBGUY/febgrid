@@ -26,10 +26,12 @@ class StoredUpload:
 
 class FileService:
     MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024
+    MAX_AUDIO_FILE_SIZE_BYTES = 15 * 1024 * 1024
     STORAGE_PROVIDER = "local"
     STORAGE_ROOT = Path(__file__).resolve().parents[2] / "storage" / "uploads"
     SAFE_TEXT_EXTENSIONS = {".txt", ".md", ".csv", ".json", ".log"}
-    ALLOWED_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".pdf", ".doc", ".docx", ".xls", ".xlsx"} | SAFE_TEXT_EXTENSIONS
+    AUDIO_EXTENSIONS = {".mp3", ".wav", ".m4a", ".webm", ".ogg"}
+    ALLOWED_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".pdf", ".doc", ".docx", ".xls", ".xlsx"} | SAFE_TEXT_EXTENSIONS | AUDIO_EXTENSIONS
     SAFE_TEXT_CONTENT_TYPES = {
         "text/plain",
         "text/markdown",
@@ -37,6 +39,17 @@ class FileService:
         "application/csv",
         "application/json",
         "application/octet-stream",
+    }
+    AUDIO_CONTENT_TYPES = {
+        "audio/mpeg",
+        "audio/mp3",
+        "audio/wav",
+        "audio/x-wav",
+        "audio/mp4",
+        "audio/x-m4a",
+        "audio/webm",
+        "audio/ogg",
+        "application/ogg",
     }
     ALLOWED_CONTENT_TYPES = {
         "image/png",
@@ -47,7 +60,7 @@ class FileService:
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         "application/vnd.ms-excel",
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    } | (SAFE_TEXT_CONTENT_TYPES - {"application/octet-stream"})
+    } | (SAFE_TEXT_CONTENT_TYPES - {"application/octet-stream"}) | AUDIO_CONTENT_TYPES
 
     @staticmethod
     def sanitize_original_filename(filename: str | None) -> str:
@@ -61,12 +74,18 @@ class FileService:
         detected_type = content_type or mimetypes.guess_type(original_file_name)[0] or "application/octet-stream"
         if extension in cls.SAFE_TEXT_EXTENSIONS and detected_type in cls.SAFE_TEXT_CONTENT_TYPES:
             return detected_type
+        if extension in cls.AUDIO_EXTENSIONS and detected_type in cls.AUDIO_CONTENT_TYPES:
+            return detected_type
         if extension not in cls.ALLOWED_EXTENSIONS or detected_type not in cls.ALLOWED_CONTENT_TYPES:
             raise HTTPException(
                 status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
                 detail="File type is not allowed for File Upload v1",
             )
         return detected_type
+
+    @classmethod
+    def upload_limit_for_extension(cls, extension: str) -> int:
+        return cls.MAX_AUDIO_FILE_SIZE_BYTES if extension.lower() in cls.AUDIO_EXTENSIONS else cls.MAX_FILE_SIZE_BYTES
 
     @classmethod
     def build_storage_path(cls, *, company_id: UUID, work_object_id: UUID, original_file_name: str) -> tuple[str, Path]:
@@ -94,6 +113,7 @@ class FileService:
     def save_upload(cls, *, file: UploadFile, company_id: UUID, work_object_id: UUID) -> StoredUpload:
         original_file_name = cls.sanitize_original_filename(file.filename)
         content_type = cls.validate_file_type(original_file_name, file.content_type)
+        upload_limit = cls.upload_limit_for_extension(Path(original_file_name).suffix.lower())
         storage_path, absolute_path = cls.build_storage_path(
             company_id=company_id,
             work_object_id=work_object_id,
@@ -110,12 +130,12 @@ class FileService:
                     if not chunk:
                         break
                     size += len(chunk)
-                    if size > cls.MAX_FILE_SIZE_BYTES:
+                    if size > upload_limit:
                         output.close()
                         absolute_path.unlink(missing_ok=True)
                         raise HTTPException(
                             status_code=status.HTTP_413_CONTENT_TOO_LARGE,
-                            detail="File is larger than the 10 MB upload limit",
+                            detail=f"File is larger than the {upload_limit // (1024 * 1024)} MB upload limit",
                         )
                     checksum.update(chunk)
                     output.write(chunk)
@@ -183,8 +203,9 @@ class FileService:
     def copy_probe_file(cls, *, source_path: Path, company_id: UUID, work_object_id: UUID, original_file_name: str) -> StoredUpload:
         original = cls.sanitize_original_filename(original_file_name)
         content_type = cls.validate_file_type(original, mimetypes.guess_type(original)[0])
-        if source_path.stat().st_size > cls.MAX_FILE_SIZE_BYTES:
-            raise HTTPException(status_code=status.HTTP_413_CONTENT_TOO_LARGE, detail="File is larger than the 10 MB upload limit")
+        upload_limit = cls.upload_limit_for_extension(Path(original).suffix.lower())
+        if source_path.stat().st_size > upload_limit:
+            raise HTTPException(status_code=status.HTTP_413_CONTENT_TOO_LARGE, detail=f"File is larger than the {upload_limit // (1024 * 1024)} MB upload limit")
         storage_path, absolute_path = cls.build_storage_path(company_id=company_id, work_object_id=work_object_id, original_file_name=original)
         absolute_path.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(source_path, absolute_path)

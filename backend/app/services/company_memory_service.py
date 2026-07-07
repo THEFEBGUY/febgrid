@@ -320,6 +320,7 @@ class CompanyMemoryService:
             "file_summary": Attachment,
             "document_analysis": Attachment,
             "image_analysis": Attachment,
+            "audio_transcription": Attachment,
             "event": Event,
         }
         model = model_by_source.get(source_type)
@@ -467,16 +468,17 @@ class CompanyMemoryService:
                 "source_id": job.input_entity_id,
                 "title": "Project summary memory",
             }
-        if entity_type in {"file", "attachment"} or job_type in {"file_summary_safe", "file_summary_mock", "document_analysis_safe", "image_analysis_safe"}:
+        if entity_type in {"file", "attachment"} or job_type in {"file_summary_safe", "file_summary_mock", "document_analysis_safe", "image_analysis_safe", "audio_transcription_safe"}:
             is_document_analysis = job_type == "document_analysis_safe"
             is_image_analysis = job_type == "image_analysis_safe"
+            is_audio_transcription = job_type == "audio_transcription_safe"
             return {
                 "memory_type": "file_insight",
                 "scope_type": "file",
                 "scope_id": job.input_entity_id,
-                "source_type": "image_analysis" if is_image_analysis else "document_analysis" if is_document_analysis else "file_summary",
+                "source_type": "audio_transcription" if is_audio_transcription else "image_analysis" if is_image_analysis else "document_analysis" if is_document_analysis else "file_summary",
                 "source_id": job.input_entity_id,
-                "title": "Image analysis memory" if is_image_analysis else "Document analysis memory" if is_document_analysis else "File insight memory",
+                "title": "Audio transcription memory" if is_audio_transcription else "Image analysis memory" if is_image_analysis else "Document analysis memory" if is_document_analysis else "File insight memory",
             }
         return {
             "memory_type": "work_context",
@@ -491,7 +493,13 @@ class CompanyMemoryService:
     def content_from_ai_output(job: AIJob) -> str:
         output = metadata_dict(job.output_payload)
         lines: list[str] = []
-        primary = output.get("executive_summary") or output.get("summary") or output.get("document_overview") or output.get("image_overview")
+        primary = (
+            output.get("executive_summary")
+            or output.get("summary")
+            or output.get("document_overview")
+            or output.get("image_overview")
+            or output.get("transcript_summary")
+        )
         if primary:
             lines.append(str(primary))
         sections = [
@@ -500,7 +508,10 @@ class CompanyMemoryService:
             ("Decisions or commitments", output.get("decisions_or_commitments")),
             ("Action items", output.get("action_items")),
             ("Important dates", output.get("important_dates")),
+            ("Important dates or numbers", output.get("important_dates_or_numbers")),
             ("Important numbers", output.get("important_numbers")),
+            ("Transcript summary", output.get("transcript_summary")),
+            ("Transcript", output.get("transcript")),
             ("Visible objects or elements", output.get("visible_objects_or_elements")),
             ("Possible context", output.get("possible_context")),
             ("Operational relevance", output.get("operational_relevance")),
@@ -527,7 +538,17 @@ class CompanyMemoryService:
     @staticmethod
     def summary_from_ai_output(job: AIJob) -> str | None:
         output = metadata_dict(job.output_payload)
-        return normalize_text(str(output.get("executive_summary") or output.get("summary") or output.get("document_overview") or output.get("image_overview") or ""), max_chars=1000)
+        return normalize_text(
+            str(
+                output.get("executive_summary")
+                or output.get("summary")
+                or output.get("document_overview")
+                or output.get("image_overview")
+                or output.get("transcript_summary")
+                or ""
+            ),
+            max_chars=1000,
+        )
 
     @staticmethod
     def confidence_from_ai_output(job: AIJob) -> float | None:

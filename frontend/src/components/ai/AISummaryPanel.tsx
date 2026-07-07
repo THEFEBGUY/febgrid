@@ -6,7 +6,7 @@ import { Badge } from "../ui/Badge";
 import { Button } from "../ui/Button";
 import { LoadingState } from "../ui/States";
 
-type SummaryKind = "work_object" | "project" | "company" | "file" | "document" | "image";
+type SummaryKind = "work_object" | "project" | "company" | "file" | "document" | "image" | "audio";
 
 interface AISummaryPanelProps {
   error: string | null;
@@ -42,6 +42,7 @@ function providerLabel(job: AIJob | null): string {
 function summaryTitle(kind: SummaryKind): string {
   if (kind === "company") return "AI executive brief";
   if (kind === "project") return "AI project summary";
+  if (kind === "audio") return "AI audio transcription";
   if (kind === "image") return "AI image analysis";
   if (kind === "document") return "AI document analysis";
   if (kind === "file") return "AI file summary";
@@ -51,6 +52,7 @@ function summaryTitle(kind: SummaryKind): string {
 function entityLabel(kind: SummaryKind): string {
   if (kind === "company") return "company";
   if (kind === "project") return "project";
+  if (kind === "audio") return "audio";
   if (kind === "image") return "image";
   if (kind === "document") return "document";
   if (kind === "file") return "file";
@@ -83,6 +85,8 @@ export function AISummaryPanel({
   const summary =
     kind === "company"
       ? text(output.executive_summary) ?? text(output.summary)
+      : kind === "audio"
+        ? text(output.transcript_summary) ?? text(output.summary)
       : kind === "image"
         ? text(output.image_overview) ?? text(output.summary)
       : kind === "document"
@@ -105,6 +109,9 @@ export function AISummaryPanel({
   const visibleElements = list(output.visible_objects_or_elements);
   const possibleContext = list(output.possible_context);
   const operationalRelevance = text(output.operational_relevance);
+  const transcript = text(output.transcript);
+  const languageDetected = text(output.language_detected);
+  const durationSeconds = typeof output.duration_seconds === "number" ? output.duration_seconds : null;
   const limitations = list(output.limitations);
   const nextSteps = kind === "company" ? list(output.suggested_next_actions) : list(output.suggested_next_steps);
   const currentStatus = kind === "project" ? text(output.status_explanation) : text(output.current_status_explanation);
@@ -125,7 +132,16 @@ export function AISummaryPanel({
           </div>
           <p className="mt-1 text-xs font-semibold text-ink-500">
             Server-owned prompt, safe{" "}
-            {kind === "company" ? "aggregated company" : kind === "image" ? "supported image metadata" : kind === "file" || kind === "document" ? "supported text-document" : "entity"} context, no raw paths, no secrets.
+            {kind === "company"
+              ? "aggregated company"
+              : kind === "audio"
+                ? "supported audio metadata"
+                : kind === "image"
+                  ? "supported image metadata"
+                  : kind === "file" || kind === "document"
+                    ? "supported text-document"
+                    : "entity"}{" "}
+            context, no raw paths, no secrets.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -178,7 +194,7 @@ export function AISummaryPanel({
             </p>
           ) : null}
           {(kind === "file" || kind === "document") && isTruncated ? <Badge label="Content truncated" tone="amber" /> : null}
-          {(kind === "file" || kind === "document" || kind === "image") && unsupportedReason ? <Badge label={formatLabel(unsupportedReason)} tone="red" /> : null}
+          {(kind === "file" || kind === "document" || kind === "image" || kind === "audio") && unsupportedReason ? <Badge label={formatLabel(unsupportedReason)} tone="red" /> : null}
           {summary ? (
             <div className="rounded-lg border border-grid-200 bg-grid-50 p-4">
               <p className="text-xs font-black uppercase tracking-normal text-ink-500">
@@ -211,6 +227,13 @@ export function AISummaryPanel({
               <SummaryStat label="Image type" value={text(output.document_type_guess) ?? "Supported image"} />
               <SummaryStat label="Safety" value="No identity, biometric, or sensitive-trait analysis" />
             </div>
+          ) : kind === "audio" ? (
+            <div className="grid gap-3 md:grid-cols-2">
+              <SummaryStat label="Language" value={languageDetected ?? "Unknown"} />
+              <SummaryStat label="Duration" value={durationSeconds !== null ? `${Math.round(durationSeconds)} seconds` : "Not detected"} />
+              <SummaryStat label="Safety" value="No speaker identity, emotion, or sensitive-trait analysis" />
+              <SummaryStat label="Mode" value="Uploaded audio only" />
+            </div>
           ) : currentStatus ? (
             <SummaryBlock items={[currentStatus]} title="Status explanation" />
           ) : null}
@@ -226,14 +249,19 @@ export function AISummaryPanel({
           {kind === "image" && visibleElements.length > 0 ? <SummaryBlock items={visibleElements} title="Visible objects or elements" /> : null}
           {kind === "image" && possibleContext.length > 0 ? <SummaryBlock items={possibleContext} title="Possible context" /> : null}
           {kind === "image" && operationalRelevance ? <SummaryBlock items={[operationalRelevance]} title="Operational relevance" /> : null}
+          {kind === "audio" && list(output.key_points).length > 0 ? <SummaryBlock items={list(output.key_points)} title="Key points" /> : null}
+          {kind === "audio" && actionItems.length > 0 ? <SummaryBlock items={actionItems} title="Action items" /> : null}
+          {kind === "audio" && decisionsOrCommitments.length > 0 ? <SummaryBlock items={decisionsOrCommitments} title="Decisions or commitments" /> : null}
+          {kind === "audio" && importantFileSignals.length > 0 ? <SummaryBlock items={importantFileSignals} title="Important dates or numbers" /> : null}
+          {kind === "audio" && transcript ? <TranscriptBlock transcript={transcript} /> : null}
           {kind === "company" && primaryPoints.length > 0 ? <SummaryBlock items={primaryPoints} title="Operational highlights" /> : null}
           {kind === "company" && attentionItems.length > 0 ? <SummaryBlock items={attentionItems} title="Attention items" /> : null}
           {blockers.length > 0 ? <SummaryBlock items={blockers} title="Blockers or risks" /> : null}
-          {(kind === "file" || kind === "document" || kind === "image") && fileRisks.length > 0 ? <SummaryBlock items={fileRisks} title="Risks or concerns" /> : null}
+          {(kind === "file" || kind === "document" || kind === "image" || kind === "audio") && fileRisks.length > 0 ? <SummaryBlock items={fileRisks} title="Risks or concerns" /> : null}
           {kind === "document" && mentionedPeople.length > 0 ? <SummaryBlock items={mentionedPeople} title="People or teams mentioned" /> : null}
           {kind === "document" && relatedWorkSuggestions.length > 0 ? <SummaryBlock items={relatedWorkSuggestions} title="Related work suggestions" /> : null}
           {nextSteps.length > 0 ? <SummaryBlock items={nextSteps} title="Suggested next steps" /> : null}
-          {(kind === "file" || kind === "document" || kind === "image") && limitations.length > 0 ? <SummaryBlock items={limitations} title="Limitations" /> : null}
+          {(kind === "file" || kind === "document" || kind === "image" || kind === "audio") && limitations.length > 0 ? <SummaryBlock items={limitations} title="Limitations" /> : null}
           <p className="text-xs font-semibold text-ink-500">
             {generatedAt ? `Generated ${formatTime(generatedAt)}` : "Generated time unavailable"}
             {modelName ? ` / ${modelName}` : ""}
@@ -254,6 +282,17 @@ function SummaryBlock({ items, title }: { items: string[]; title: string }): JSX
         ))}
       </ul>
     </div>
+  );
+}
+
+function TranscriptBlock({ transcript }: { transcript: string }): JSX.Element {
+  return (
+    <details className="rounded-lg border border-grid-200 bg-grid-50 p-4">
+      <summary className="cursor-pointer text-xs font-black uppercase tracking-normal text-ink-500">
+        Transcript text
+      </summary>
+      <p className="mt-3 whitespace-pre-wrap text-sm font-semibold leading-6 text-ink-700">{transcript}</p>
+    </details>
   );
 }
 

@@ -1,6 +1,7 @@
 import json
 import re
 import struct
+import wave
 from pathlib import Path
 from typing import Any
 from uuid import UUID
@@ -54,6 +55,20 @@ IMAGE_ANALYSIS_MAX_BYTES = 5 * 1024 * 1024
 IMAGE_ANALYSIS_MAX_DIMENSION = 4096
 IMAGE_ANALYSIS_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 IMAGE_ANALYSIS_CONTENT_TYPES = {"image/png", "image/jpeg", "image/webp"}
+AUDIO_TRANSCRIPTION_MAX_BYTES = 15 * 1024 * 1024
+AUDIO_TRANSCRIPTION_MAX_DURATION_SECONDS = 10 * 60
+AUDIO_TRANSCRIPTION_EXTENSIONS = {".mp3", ".wav", ".m4a", ".webm", ".ogg"}
+AUDIO_TRANSCRIPTION_CONTENT_TYPES = {
+    "audio/mpeg",
+    "audio/mp3",
+    "audio/wav",
+    "audio/x-wav",
+    "audio/mp4",
+    "audio/x-m4a",
+    "audio/webm",
+    "audio/ogg",
+    "application/ogg",
+}
 SECRET_FILE_EXTENSIONS = {".env", ".pem", ".key"}
 SECRET_FILE_NAMES = {".env", "id_rsa", "id_dsa", "id_ecdsa", "id_ed25519"}
 SECRET_VALUE_PATTERN = re.compile(
@@ -123,6 +138,12 @@ CAPABILITY_DEFINITIONS = [
         job_type="image_analysis_safe",
         label="Safe image analysis",
         description="Analyze supported images for operational context after image safety checks. Real providers must explicitly support image input.",
+        mock_only=False,
+    ),
+    AICapability(
+        job_type="audio_transcription_safe",
+        label="Safe audio transcription",
+        description="Transcribe supported audio files into operational notes after audio safety checks. Real providers must explicitly support audio transcription.",
         mock_only=False,
     ),
 ]
@@ -295,6 +316,20 @@ def detect_image_dimensions(path: Path, extension: str) -> tuple[int, int]:
     raise AIProviderError("corrupted_image", "This image appears to be corrupted or unreadable.")
 
 
+def detect_audio_duration(path: Path, extension: str) -> float | None:
+    if extension != ".wav":
+        return None
+    try:
+        with wave.open(str(path), "rb") as audio_file:
+            frame_rate = audio_file.getframerate()
+            frame_count = audio_file.getnframes()
+            if frame_rate <= 0:
+                raise wave.Error("invalid frame rate")
+            return float(frame_count) / float(frame_rate)
+    except (wave.Error, EOFError, OSError) as exc:
+        raise AIProviderError("corrupted_audio", "This audio file appears to be corrupted or unreadable.") from exc
+
+
 class AIService:
     @staticmethod
     def ensure_job_type(job_type: str) -> str:
@@ -332,8 +367,9 @@ class AIService:
         if not isinstance(allowed_types, list):
             allowed_types = sorted(AI_JOB_TYPES)
         normalized_allowed = sorted({str(item).strip() for item in allowed_types if str(item).strip() in AI_JOB_TYPES})
-        if "image_analysis_safe" not in normalized_allowed:
-            normalized_allowed.append("image_analysis_safe")
+        for default_job_type in {"image_analysis_safe", "audio_transcription_safe"}:
+            if default_job_type not in normalized_allowed:
+                normalized_allowed.append(default_job_type)
             normalized_allowed = sorted(normalized_allowed)
         return {
             "ai_enabled": bool(raw_ai.get("ai_enabled", True)),
@@ -396,8 +432,9 @@ class AIService:
             "file_summary_safe": "attachment",
             "document_analysis_safe": "attachment",
             "image_analysis_safe": "attachment",
+            "audio_transcription_safe": "attachment",
         }
-        if job_type in {"file_summary_safe", "document_analysis_safe", "image_analysis_safe"} and input_entity_type in {"attachment", "file"}:
+        if job_type in {"file_summary_safe", "document_analysis_safe", "image_analysis_safe", "audio_transcription_safe"} and input_entity_type in {"attachment", "file"}:
             return
         if job_type in expected and input_entity_type != expected[job_type]:
             raise HTTPException(
@@ -451,7 +488,7 @@ class AIService:
         input_entity_id: UUID,
         current_user: User,
     ) -> None:
-        if job_type not in {"file_summary_safe", "document_analysis_safe", "image_analysis_safe"}:
+        if job_type not in {"file_summary_safe", "document_analysis_safe", "image_analysis_safe", "audio_transcription_safe"}:
             return
         attachment = get_or_404(db, Attachment, input_entity_id, label="File")
         ensure_company(attachment, company_id, label="File")
@@ -572,6 +609,7 @@ class AIService:
             "file_summary_safe",
             "document_analysis_safe",
             "image_analysis_safe",
+            "audio_transcription_safe",
         }:
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Unsupported AI summary type")
         if job_type == "company_brief_safe":
@@ -931,6 +969,80 @@ class AIService:
         }
 
     @classmethod
+    def build_audio_transcription_context(
+        cls,
+        db: Session,
+        *,
+        attachment: Attachment,
+    ) -> dict[str, Any]:
+        extension = file_extension(attachment)
+        content_type = (attachment.content_type or "").strip().lower()
+        if is_secret_like_filename(attachment.original_file_name):
+            raise AIProviderError("file_contains_secrets", "This audio file name appears to reference secrets and cannot be transcribed.")
+        if extension not in AUDIO_TRANSCRIPTION_EXTENSIONS or content_type not in AUDIO_TRANSCRIPTION_CONTENT_TYPES:
+            raise AIProviderError(
+                "unsupported_audio_type",
+                "This audio type is not supported for transcription yet.",
+                {"unsupported_reason": "unsupported_audio_type", "extension": extension, "content_type": content_type or None},
+            )
+        if attachment.storage_provider != FileService.STORAGE_PROVIDER:
+            raise AIProviderError("unsupported_storage_provider", "This file storage provider is not supported for audio transcription yet.")
+        if attachment.file_size is not None and attachment.file_size > AUDIO_TRANSCRIPTION_MAX_BYTES:
+            raise AIProviderError("audio_too_large", "This audio file is too large for AI audio transcription v1.", {"file_size": attachment.file_size})
+
+        path = FileService.resolve_storage_path(attachment.storage_path)
+        if not path.exists() or not path.is_file():
+            raise AIProviderError("file_not_available", "Audio content is not available for transcription.")
+        actual_size = path.stat().st_size
+        if actual_size > AUDIO_TRANSCRIPTION_MAX_BYTES:
+            raise AIProviderError("audio_too_large", "This audio file is too large for AI audio transcription v1.", {"file_size": actual_size})
+        duration_seconds = detect_audio_duration(path, extension)
+        if duration_seconds is not None and duration_seconds > AUDIO_TRANSCRIPTION_MAX_DURATION_SECONDS:
+            raise AIProviderError(
+                "audio_too_long",
+                "This audio file is too long for AI audio transcription v1.",
+                {"duration_seconds": duration_seconds},
+            )
+
+        uploader_name = None
+        if attachment.uploaded_by_employee_id:
+            uploader_name = display_name(
+                db.scalar(select(Employee).where(Employee.id == attachment.uploaded_by_employee_id, Employee.company_id == attachment.company_id))
+            )
+        linked_work_title = None
+        linked_project_name = None
+        if attachment.work_object_id:
+            linked_work_title = db.scalar(
+                select(WorkObject.title).where(WorkObject.id == attachment.work_object_id, WorkObject.company_id == attachment.company_id)
+            )
+        if attachment.project_id:
+            linked_project_name = db.scalar(select(Project.name).where(Project.id == attachment.project_id, Project.company_id == attachment.company_id))
+
+        return {
+            "type": "audio",
+            "file_id": str(attachment.id),
+            "original_file_name": safe_text(attachment.original_file_name, 255),
+            "content_type": safe_text(attachment.content_type, 120),
+            "extension": extension,
+            "file_size": attachment.file_size,
+            "upload_date": attachment.created_at.isoformat() if attachment.created_at else None,
+            "uploader_display_name": uploader_name,
+            "linked_entity_type": safe_text(attachment.linked_entity_type, 80),
+            "linked_entity_id": str(attachment.linked_entity_id) if attachment.linked_entity_id else None,
+            "linked_work_object_title": safe_text(linked_work_title, 220),
+            "linked_project_name": safe_text(linked_project_name, 220),
+            "description": safe_text(attachment.description, 600),
+            "tags": [safe_text(tag, 80) for tag in attachment.tags[:10] if safe_text(tag, 80)],
+            "duration_seconds": round(duration_seconds, 2) if duration_seconds is not None else None,
+            "duration_detection_mode": "wav_header" if duration_seconds is not None else "not_available_without_media_probe",
+            "raw_audio_bytes_included": False,
+            "audio_stream_included": False,
+            "local_path_included": False,
+            "hidden_metadata_included": False,
+            "analysis_mode": "audio_transcription",
+        }
+
+    @classmethod
     def build_safe_context(cls, db: Session, job: AIJob) -> dict[str, Any]:
         if job.input_entity_type == "work_object" and job.input_entity_id:
             work_object = get_or_404(db, WorkObject, job.input_entity_id, label="Work object")
@@ -1044,11 +1156,15 @@ class AIService:
             attachment = get_or_404(db, Attachment, job.input_entity_id, label="File")
             ensure_company(attachment, job.company_id, label="File")
             if attachment.is_deleted or not attachment.is_active:
-                if job.job_type == "image_analysis_safe":
+                if job.job_type == "audio_transcription_safe":
+                    message = "Audio content is not available for transcription."
+                elif job.job_type == "image_analysis_safe":
                     message = "Image content is not available for analysis."
                 else:
                     message = "File content is not available for document analysis." if job.job_type == "document_analysis_safe" else "File content is not available for AI summary."
                 raise AIProviderError("file_not_available", message)
+            if job.job_type == "audio_transcription_safe":
+                return cls.build_audio_transcription_context(db, attachment=attachment)
             if job.job_type == "image_analysis_safe":
                 return cls.build_image_analysis_context(db, attachment=attachment)
             runtime = get_ai_provider_config()
@@ -1317,9 +1433,26 @@ class AIService:
         error_message: str,
         metadata: dict[str, Any],
     ) -> None:
-        if job.job_type in {"file_summary_safe", "document_analysis_safe", "image_analysis_safe"}:
+        if job.job_type in {"file_summary_safe", "document_analysis_safe", "image_analysis_safe", "audio_transcription_safe"}:
             output_payload = metadata_dict(job.output_payload)
-            if job.job_type == "image_analysis_safe":
+            if job.job_type == "audio_transcription_safe":
+                output_payload.update(
+                    {
+                        "transcript": "",
+                        "transcript_summary": "",
+                        "key_points": [],
+                        "action_items": [],
+                        "decisions_or_commitments": [],
+                        "important_dates_or_numbers": [],
+                        "risks_or_concerns": [],
+                        "suggested_next_steps": [],
+                        "limitations": [error_message[:500]],
+                        "language_detected": None,
+                        "duration_seconds": None,
+                        "unsupported_reason": metadata.get("unsupported_reason") or error_code,
+                    }
+                )
+            elif job.job_type == "image_analysis_safe":
                 output_payload.update(
                     {
                         "image_overview": "",
@@ -1471,7 +1604,12 @@ class AIService:
         elif job.input_entity_type in {"attachment", "file"}:
             is_document_analysis = job.job_type == "document_analysis_safe"
             is_image_analysis = job.job_type == "image_analysis_safe"
-            if is_image_analysis:
+            is_audio_transcription = job.job_type == "audio_transcription_safe"
+            if is_audio_transcription:
+                event_type = f"ai_transcription.audio.{phase}"
+                title = f"AI audio transcription {phase}"
+                description = f"A tenant-safe AI audio transcription was {phase}."
+            elif is_image_analysis:
                 event_type = f"ai_analysis.image.{phase}"
                 title = f"AI image analysis {phase}"
                 description = f"A tenant-safe AI image analysis was {phase}."
@@ -1517,7 +1655,9 @@ class AIService:
                 "external_processing_used": bool(metadata.get("external_processing_used", False)),
                 "error_code": metadata.get("error_code"),
                 "truncated": bool(output_payload.get("truncated", False)) if job.job_type in {"file_summary_safe", "document_analysis_safe"} else None,
-                "unsupported_reason": output_payload.get("unsupported_reason") if job.job_type in {"file_summary_safe", "document_analysis_safe", "image_analysis_safe"} else None,
+                "unsupported_reason": output_payload.get("unsupported_reason")
+                if job.job_type in {"file_summary_safe", "document_analysis_safe", "image_analysis_safe", "audio_transcription_safe"}
+                else None,
             },
         )
 
@@ -1702,7 +1842,7 @@ class AIService:
             message = "AI provider mode is disabled."
         else:
             message = "Future provider mode is reserved and not implemented yet."
-        supported_real_job_types = sorted(REAL_AI_JOB_TYPES - {"image_analysis_safe"})
+        supported_real_job_types = sorted(REAL_AI_JOB_TYPES - {"image_analysis_safe", "audio_transcription_safe"})
         return AIProviderStatusRead(
             company_id=company_id,
             provider_key=cls.provider_key_for_mode(provider_mode),

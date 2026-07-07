@@ -1,4 +1,4 @@
-import { Archive, CheckCircle2, Download, Eye, FileSearch, FileText, ImageIcon, Pencil, Plus, Sparkles, Trash2, Upload } from "lucide-react";
+import { Archive, CheckCircle2, Download, Eye, FileSearch, FileText, ImageIcon, Mic, Pencil, Plus, Sparkles, Trash2, Upload } from "lucide-react";
 import { type FormEvent, useCallback, useMemo, useState } from "react";
 
 import { CommentsSection } from "../components/communication/CommentsSection";
@@ -16,7 +16,7 @@ import { priorityTone, statusTone } from "../components/ui/tone";
 import { api } from "../services/api";
 import type { AIJob, Attachment, CustomFieldDefinition, Event as FebGridEvent, WorkObject, WorkObjectCreatePayload, WorkObjectUpdatePayload } from "../types/api";
 import type { ModulePageProps } from "../types/page";
-import { isSupportedImageAttachment } from "../utils/files";
+import { isSupportedAudioAttachment, isSupportedImageAttachment } from "../utils/files";
 import { compactList, formatDate, formatLabel, formatTime } from "../utils/format";
 
 interface WorkObjectsPageProps extends ModulePageProps {
@@ -33,7 +33,29 @@ const fallbackObjectTypeOptions = ["task", "approval_request", "issue", "site_vi
 const statusOptions = ["assigned", "in_progress", "under_review", "blocked", "completed", "cancelled"];
 const priorityOptions = ["low", "medium", "high", "critical"];
 const maxUploadBytes = 10 * 1024 * 1024;
-const allowedAttachmentExtensions = [".png", ".jpg", ".jpeg", ".webp", ".pdf", ".csv", ".txt", ".md", ".json", ".log", ".doc", ".docx", ".xls", ".xlsx"];
+const maxAudioUploadBytes = 15 * 1024 * 1024;
+const allowedAudioAttachmentExtensions = [".mp3", ".wav", ".m4a", ".webm", ".ogg"];
+const allowedAttachmentExtensions = [
+  ".png",
+  ".jpg",
+  ".jpeg",
+  ".webp",
+  ".pdf",
+  ".csv",
+  ".txt",
+  ".md",
+  ".json",
+  ".log",
+  ".doc",
+  ".docx",
+  ".xls",
+  ".xlsx",
+  ".mp3",
+  ".wav",
+  ".m4a",
+  ".webm",
+  ".ogg",
+];
 
 interface WorkObjectForm {
   title: string;
@@ -115,8 +137,10 @@ function validateAttachmentFile(file: File): string | null {
   if (!allowedAttachmentExtensions.some((extension) => lowerName.endsWith(extension))) {
     return "This file type is not allowed for File Upload v1.";
   }
-  if (file.size > maxUploadBytes) {
-    return "File must be 10 MB or smaller.";
+  const isAudio = allowedAudioAttachmentExtensions.some((extension) => lowerName.endsWith(extension));
+  const limit = isAudio ? maxAudioUploadBytes : maxUploadBytes;
+  if (file.size > limit) {
+    return `File must be ${isAudio ? "15" : "10"} MB or smaller.`;
   }
   return null;
 }
@@ -191,7 +215,7 @@ export function WorkObjectsPage({
   const [workMemoryMessage, setWorkMemoryMessage] = useState<string | null>(null);
   const [workMemoryError, setWorkMemoryError] = useState<string | null>(null);
   const [fileSummaryAttachment, setFileSummaryAttachment] = useState<Attachment | null>(null);
-  const [fileAIInsightMode, setFileAIInsightMode] = useState<"summary" | "analysis" | "image">("summary");
+  const [fileAIInsightMode, setFileAIInsightMode] = useState<"summary" | "analysis" | "image" | "audio">("summary");
   const [fileAISummary, setFileAISummary] = useState<AIJob | null>(null);
   const [isFileAISummaryLoading, setIsFileAISummaryLoading] = useState(false);
   const [isFileAISummaryGenerating, setIsFileAISummaryGenerating] = useState(false);
@@ -568,13 +592,33 @@ export function WorkObjectsPage({
     }
   }
 
+  async function loadFileAITranscription(attachment: Attachment): Promise<void> {
+    if (!selectedCompanyId) return;
+    setFileSummaryAttachment(attachment);
+    setFileAIInsightMode("audio");
+    setIsFileAISummaryLoading(true);
+    setFileAISummaryError(null);
+    setFileMemoryMessage(null);
+    setFileMemoryError(null);
+    try {
+      const job = await api.latestFileAITranscription(attachment.id, selectedCompanyId);
+      setFileAISummary(job);
+    } catch (caughtError) {
+      setFileAISummaryError(caughtError instanceof Error ? caughtError.message : "Unable to load the latest audio transcription.");
+    } finally {
+      setIsFileAISummaryLoading(false);
+    }
+  }
+
   async function handleGenerateFileAISummary(): Promise<void> {
     if (!fileSummaryAttachment || !selectedCompanyId) return;
     setIsFileAISummaryGenerating(true);
     setFileAISummaryError(null);
     try {
       const job =
-        fileAIInsightMode === "image"
+        fileAIInsightMode === "audio"
+          ? await api.generateFileAITranscription(fileSummaryAttachment.id, selectedCompanyId)
+          : fileAIInsightMode === "image"
           ? await api.generateFileAIImageAnalysis(fileSummaryAttachment.id, selectedCompanyId)
           : fileAIInsightMode === "analysis"
           ? await api.generateFileAIAnalysis(fileSummaryAttachment.id, selectedCompanyId)
@@ -585,7 +629,9 @@ export function WorkObjectsPage({
       setFileAISummaryError(
         caughtError instanceof Error
           ? caughtError.message
-          : fileAIInsightMode === "image"
+          : fileAIInsightMode === "audio"
+            ? "AI audio transcription could not be generated."
+            : fileAIInsightMode === "image"
             ? "AI image analysis could not be generated."
             : fileAIInsightMode === "analysis"
             ? "AI document analysis could not be generated."
@@ -626,10 +672,19 @@ export function WorkObjectsPage({
         company_id: selectedCompanyId,
         memory_type: "file_insight",
         importance: "normal",
-        tags: fileAIInsightMode === "image" ? ["file_insight", "image_analysis"] : fileAIInsightMode === "analysis" ? ["file_insight", "document_analysis"] : ["file_insight", "ai_summary"],
+        tags:
+          fileAIInsightMode === "audio"
+            ? ["file_insight", "audio_transcription"]
+            : fileAIInsightMode === "image"
+              ? ["file_insight", "image_analysis"]
+              : fileAIInsightMode === "analysis"
+                ? ["file_insight", "document_analysis"]
+                : ["file_insight", "ai_summary"],
       });
       setFileMemoryMessage(
-        fileAIInsightMode === "image"
+        fileAIInsightMode === "audio"
+          ? "Audio transcription saved as a memory suggestion."
+          : fileAIInsightMode === "image"
           ? "Image analysis saved as a memory suggestion."
           : fileAIInsightMode === "analysis"
             ? "Document analysis saved as a memory suggestion."
@@ -988,7 +1043,7 @@ export function WorkObjectsPage({
                 <FieldShell label="File">
                   <TextInput
                     key={selectedFile?.name ?? "empty-file"}
-                    accept=".png,.jpg,.jpeg,.webp,.pdf,.csv,.txt,.md,.json,.log,.doc,.docx,.xls,.xlsx"
+                    accept=".png,.jpg,.jpeg,.webp,.pdf,.csv,.txt,.md,.json,.log,.doc,.docx,.xls,.xlsx,.mp3,.wav,.m4a,.webm,.ogg"
                     type="file"
                     onChange={(event) => setSelectedFile(event.target.files?.[0] ?? null)}
                   />
@@ -1081,6 +1136,17 @@ export function WorkObjectsPage({
                               <span className="sr-only">Analyze image</span>
                             </Button>
                           ) : null}
+                          {isSupportedAudioAttachment(attachment) ? (
+                            <Button
+                              className="size-9 px-0"
+                              aria-label={`Transcribe audio ${attachment.original_file_name}`}
+                              icon={<Mic className="size-4" aria-hidden="true" />}
+                              title={`Transcribe audio ${attachment.original_file_name}`}
+                              onClick={() => void loadFileAITranscription(attachment)}
+                            >
+                              <span className="sr-only">Transcribe audio</span>
+                            </Button>
+                          ) : null}
                           <Button className="size-9 px-0" aria-label="Download attachment" icon={<Download className="size-4" aria-hidden="true" />} onClick={() => void handleDownloadAttachment(attachment)}>
                             <span className="sr-only">Download</span>
                           </Button>
@@ -1096,20 +1162,20 @@ export function WorkObjectsPage({
               {fileSummaryAttachment ? (
                 <div className="border-t border-grid-200 p-4">
                   <p className="mb-3 text-xs font-black uppercase tracking-normal text-ink-500">
-                    {fileAIInsightMode === "image" ? "Image analysis" : fileAIInsightMode === "analysis" ? "Document analysis" : "File summary"} / {fileSummaryAttachment.original_file_name}
+                    {fileAIInsightMode === "audio" ? "Audio transcription" : fileAIInsightMode === "image" ? "Image analysis" : fileAIInsightMode === "analysis" ? "Document analysis" : "File summary"} / {fileSummaryAttachment.original_file_name}
                   </p>
                   <AISummaryPanel
                     error={fileAISummaryError}
-                    generateLabel={fileAIInsightMode === "image" ? "Analyze Image" : fileAIInsightMode === "analysis" ? "Analyze Document" : "Generate AI File Summary"}
+                    generateLabel={fileAIInsightMode === "audio" ? "Transcribe Audio" : fileAIInsightMode === "image" ? "Analyze Image" : fileAIInsightMode === "analysis" ? "Analyze Document" : "Generate AI File Summary"}
                     isGenerating={isFileAISummaryGenerating}
                     isLoading={isFileAISummaryLoading}
                     isSavingToMemory={isSavingFileMemory}
                     job={fileAISummary}
-                    kind={fileAIInsightMode === "image" ? "image" : fileAIInsightMode === "analysis" ? "document" : "file"}
+                    kind={fileAIInsightMode === "audio" ? "audio" : fileAIInsightMode === "image" ? "image" : fileAIInsightMode === "analysis" ? "document" : "file"}
                     onGenerate={() => void handleGenerateFileAISummary()}
                     onSaveToMemory={() => void handleSuggestFileMemory()}
                     saveToMemoryError={fileMemoryError}
-                    saveToMemoryLabel={fileAIInsightMode === "image" || fileAIInsightMode === "analysis" ? "Suggest Analysis to Memory" : "Suggest Memory"}
+                    saveToMemoryLabel={fileAIInsightMode === "audio" ? "Suggest Transcription to Memory" : fileAIInsightMode === "image" || fileAIInsightMode === "analysis" ? "Suggest Analysis to Memory" : "Suggest Memory"}
                     saveToMemoryMessage={fileMemoryMessage}
                   />
                 </div>

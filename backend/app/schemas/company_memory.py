@@ -33,6 +33,7 @@ SOURCE_TYPES = {
     "file_summary",
     "document_analysis",
     "image_analysis",
+    "audio_transcription",
     "event",
     "manual",
 }

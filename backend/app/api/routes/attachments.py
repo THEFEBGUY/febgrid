@@ -547,6 +547,45 @@ def get_latest_file_ai_image_analysis(
     )
 
 
+@files_router.post("/{attachment_id}/ai-transcription", response_model=AIJobRead)
+def generate_file_ai_transcription(
+    attachment_id: UUID,
+    company_id: UUID,
+    db: Session = Depends(db_session),
+    current_user: User = Depends(get_current_user),
+) -> AIJobRead:
+    attachment = get_attachment_for_user(db, current_user, attachment_id=attachment_id, company_id=company_id)
+    job = ai_service.generate_summary(
+        db,
+        company_id=company_id,
+        job_type="audio_transcription_safe",
+        input_entity_type="attachment",
+        input_entity_id=attachment.id,
+        current_user=current_user,
+    )
+    db.commit()
+    db.refresh(job)
+    return job
+
+
+@files_router.get("/{attachment_id}/ai-transcription/latest", response_model=AIJobRead | None)
+def get_latest_file_ai_transcription(
+    attachment_id: UUID,
+    company_id: UUID,
+    db: Session = Depends(db_session),
+    current_user: User = Depends(get_current_user),
+) -> AIJobRead | None:
+    attachment = get_attachment_for_user(db, current_user, attachment_id=attachment_id, company_id=company_id)
+    return ai_service.latest_summary_job(
+        db,
+        company_id=company_id,
+        job_type="audio_transcription_safe",
+        input_entity_type="attachment",
+        input_entity_id=attachment.id,
+        current_user=current_user,
+    )
+
+
 @files_router.patch("/{attachment_id}", response_model=AttachmentRead)
 def update_file(
     attachment_id: UUID,
