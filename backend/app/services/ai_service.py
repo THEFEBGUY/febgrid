@@ -1,5 +1,6 @@
 import json
 import re
+import struct
 from pathlib import Path
 from typing import Any
 from uuid import UUID
@@ -49,6 +50,10 @@ RESERVED_AI_KEYS = {"system_prompt", "raw_prompt", "provider_api_key", "api_key"
 FILE_SUMMARY_MAX_BYTES = 1 * 1024 * 1024
 FILE_SUMMARY_EXTENSIONS = {".txt", ".md", ".csv", ".json", ".log"}
 DOCUMENT_ANALYSIS_EXTENSIONS = FILE_SUMMARY_EXTENSIONS
+IMAGE_ANALYSIS_MAX_BYTES = 5 * 1024 * 1024
+IMAGE_ANALYSIS_MAX_DIMENSION = 4096
+IMAGE_ANALYSIS_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
+IMAGE_ANALYSIS_CONTENT_TYPES = {"image/png", "image/jpeg", "image/webp"}
 SECRET_FILE_EXTENSIONS = {".env", ".pem", ".key"}
 SECRET_FILE_NAMES = {".env", "id_rsa", "id_dsa", "id_ecdsa", "id_ed25519"}
 SECRET_VALUE_PATTERN = re.compile(
@@ -112,6 +117,12 @@ CAPABILITY_DEFINITIONS = [
         job_type="document_analysis_safe",
         label="Safe document analysis",
         description="Analyze supported text documents for structured operational insights after document safety checks.",
+        mock_only=False,
+    ),
+    AICapability(
+        job_type="image_analysis_safe",
+        label="Safe image analysis",
+        description="Analyze supported images for operational context after image safety checks. Real providers must explicitly support image input.",
         mock_only=False,
     ),
 ]
@@ -221,6 +232,69 @@ def secret_signal_count(text: str) -> int:
     return len(SECRET_VALUE_PATTERN.findall(text)) + len(BEARER_PATTERN.findall(text)) + len(PRIVATE_KEY_PATTERN.findall(text))
 
 
+def detect_image_dimensions(path: Path, extension: str) -> tuple[int, int]:
+    try:
+        header = path.read_bytes()[:4096]
+    except OSError as exc:
+        raise AIProviderError("file_not_available", "Image content is not available for analysis.") from exc
+
+    try:
+        if extension == ".png":
+            if len(header) < 24 or not header.startswith(b"\x89PNG\r\n\x1a\n"):
+                raise ValueError("invalid png")
+            width, height = struct.unpack(">II", header[16:24])
+            return int(width), int(height)
+        if extension in {".jpg", ".jpeg"}:
+            if len(header) < 4 or not header.startswith(b"\xff\xd8"):
+                raise ValueError("invalid jpeg")
+            offset = 2
+            data = path.read_bytes()
+            while offset < len(data):
+                if data[offset] != 0xFF:
+                    offset += 1
+                    continue
+                while offset < len(data) and data[offset] == 0xFF:
+                    offset += 1
+                if offset >= len(data):
+                    break
+                marker = data[offset]
+                offset += 1
+                if marker in {0xD8, 0xD9, 0x01} or 0xD0 <= marker <= 0xD7:
+                    continue
+                if offset + 2 > len(data):
+                    break
+                segment_length = int.from_bytes(data[offset : offset + 2], "big")
+                if segment_length < 2 or offset + segment_length > len(data):
+                    break
+                if marker in {0xC0, 0xC1, 0xC2, 0xC3, 0xC5, 0xC6, 0xC7, 0xC9, 0xCA, 0xCB, 0xCD, 0xCE, 0xCF}:
+                    if offset + 7 > len(data):
+                        break
+                    height = int.from_bytes(data[offset + 3 : offset + 5], "big")
+                    width = int.from_bytes(data[offset + 5 : offset + 7], "big")
+                    return int(width), int(height)
+                offset += segment_length
+        if extension == ".webp":
+            if len(header) < 30 or not header.startswith(b"RIFF") or header[8:12] != b"WEBP":
+                raise ValueError("invalid webp")
+            chunk = header[12:16]
+            if chunk == b"VP8X" and len(header) >= 30:
+                width = 1 + int.from_bytes(header[24:27], "little")
+                height = 1 + int.from_bytes(header[27:30], "little")
+                return int(width), int(height)
+            if chunk == b"VP8L" and len(header) >= 25:
+                bits = int.from_bytes(header[21:25], "little")
+                width = 1 + (bits & 0x3FFF)
+                height = 1 + ((bits >> 14) & 0x3FFF)
+                return int(width), int(height)
+            if chunk == b"VP8 " and len(header) >= 30:
+                width = int.from_bytes(header[26:28], "little") & 0x3FFF
+                height = int.from_bytes(header[28:30], "little") & 0x3FFF
+                return int(width), int(height)
+    except (struct.error, ValueError) as exc:
+        raise AIProviderError("corrupted_image", "This image appears to be corrupted or unreadable.") from exc
+    raise AIProviderError("corrupted_image", "This image appears to be corrupted or unreadable.")
+
+
 class AIService:
     @staticmethod
     def ensure_job_type(job_type: str) -> str:
@@ -258,6 +332,9 @@ class AIService:
         if not isinstance(allowed_types, list):
             allowed_types = sorted(AI_JOB_TYPES)
         normalized_allowed = sorted({str(item).strip() for item in allowed_types if str(item).strip() in AI_JOB_TYPES})
+        if "image_analysis_safe" not in normalized_allowed:
+            normalized_allowed.append("image_analysis_safe")
+            normalized_allowed = sorted(normalized_allowed)
         return {
             "ai_enabled": bool(raw_ai.get("ai_enabled", True)),
             "external_ai_processing_allowed": bool(raw_ai.get("external_ai_processing_allowed", False)),
@@ -318,8 +395,9 @@ class AIService:
             "company_brief_safe": "company",
             "file_summary_safe": "attachment",
             "document_analysis_safe": "attachment",
+            "image_analysis_safe": "attachment",
         }
-        if job_type in {"file_summary_safe", "document_analysis_safe"} and input_entity_type in {"attachment", "file"}:
+        if job_type in {"file_summary_safe", "document_analysis_safe", "image_analysis_safe"} and input_entity_type in {"attachment", "file"}:
             return
         if job_type in expected and input_entity_type != expected[job_type]:
             raise HTTPException(
@@ -373,7 +451,7 @@ class AIService:
         input_entity_id: UUID,
         current_user: User,
     ) -> None:
-        if job_type not in {"file_summary_safe", "document_analysis_safe"}:
+        if job_type not in {"file_summary_safe", "document_analysis_safe", "image_analysis_safe"}:
             return
         attachment = get_or_404(db, Attachment, input_entity_id, label="File")
         ensure_company(attachment, company_id, label="File")
@@ -493,6 +571,7 @@ class AIService:
             "company_brief_safe",
             "file_summary_safe",
             "document_analysis_safe",
+            "image_analysis_safe",
         }:
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Unsupported AI summary type")
         if job_type == "company_brief_safe":
@@ -776,6 +855,82 @@ class AIService:
         }
 
     @classmethod
+    def build_image_analysis_context(
+        cls,
+        db: Session,
+        *,
+        attachment: Attachment,
+    ) -> dict[str, Any]:
+        extension = file_extension(attachment)
+        content_type = (attachment.content_type or "").strip().lower()
+        if is_secret_like_filename(attachment.original_file_name):
+            raise AIProviderError("file_contains_secrets", "This image file name appears to reference secrets and cannot be analyzed.")
+        if extension not in IMAGE_ANALYSIS_EXTENSIONS or content_type not in IMAGE_ANALYSIS_CONTENT_TYPES:
+            raise AIProviderError(
+                "unsupported_image_type",
+                "This image type is not supported for analysis yet.",
+                {"unsupported_reason": "unsupported_image_type", "extension": extension, "content_type": content_type or None},
+            )
+        if attachment.storage_provider != FileService.STORAGE_PROVIDER:
+            raise AIProviderError("unsupported_storage_provider", "This file storage provider is not supported for image analysis yet.")
+        if attachment.file_size is not None and attachment.file_size > IMAGE_ANALYSIS_MAX_BYTES:
+            raise AIProviderError("image_too_large", "This image is too large for AI image analysis v1.", {"file_size": attachment.file_size})
+
+        path = FileService.resolve_storage_path(attachment.storage_path)
+        if not path.exists() or not path.is_file():
+            raise AIProviderError("file_not_available", "Image content is not available for analysis.")
+        actual_size = path.stat().st_size
+        if actual_size > IMAGE_ANALYSIS_MAX_BYTES:
+            raise AIProviderError("image_too_large", "This image is too large for AI image analysis v1.", {"file_size": actual_size})
+        width, height = detect_image_dimensions(path, extension)
+        if width <= 0 or height <= 0:
+            raise AIProviderError("corrupted_image", "This image appears to be corrupted or unreadable.")
+        if width > IMAGE_ANALYSIS_MAX_DIMENSION or height > IMAGE_ANALYSIS_MAX_DIMENSION:
+            raise AIProviderError(
+                "image_dimensions_too_large",
+                "This image dimensions are too large for AI image analysis v1.",
+                {"width": width, "height": height},
+            )
+
+        uploader_name = None
+        if attachment.uploaded_by_employee_id:
+            uploader_name = display_name(
+                db.scalar(select(Employee).where(Employee.id == attachment.uploaded_by_employee_id, Employee.company_id == attachment.company_id))
+            )
+        linked_work_title = None
+        linked_project_name = None
+        if attachment.work_object_id:
+            linked_work_title = db.scalar(
+                select(WorkObject.title).where(WorkObject.id == attachment.work_object_id, WorkObject.company_id == attachment.company_id)
+            )
+        if attachment.project_id:
+            linked_project_name = db.scalar(select(Project.name).where(Project.id == attachment.project_id, Project.company_id == attachment.company_id))
+
+        return {
+            "type": "image",
+            "file_id": str(attachment.id),
+            "original_file_name": safe_text(attachment.original_file_name, 255),
+            "content_type": safe_text(attachment.content_type, 120),
+            "extension": extension,
+            "file_size": attachment.file_size,
+            "upload_date": attachment.created_at.isoformat() if attachment.created_at else None,
+            "uploader_display_name": uploader_name,
+            "linked_entity_type": safe_text(attachment.linked_entity_type, 80),
+            "linked_entity_id": str(attachment.linked_entity_id) if attachment.linked_entity_id else None,
+            "linked_work_object_title": safe_text(linked_work_title, 220),
+            "linked_project_name": safe_text(linked_project_name, 220),
+            "description": safe_text(attachment.description, 600),
+            "tags": [safe_text(tag, 80) for tag in attachment.tags[:10] if safe_text(tag, 80)],
+            "image_width": width,
+            "image_height": height,
+            "image_metadata_included": False,
+            "raw_image_bytes_included": False,
+            "base64_included": False,
+            "exif_gps_included": False,
+            "analysis_mode": "image",
+        }
+
+    @classmethod
     def build_safe_context(cls, db: Session, job: AIJob) -> dict[str, Any]:
         if job.input_entity_type == "work_object" and job.input_entity_id:
             work_object = get_or_404(db, WorkObject, job.input_entity_id, label="Work object")
@@ -889,8 +1044,13 @@ class AIService:
             attachment = get_or_404(db, Attachment, job.input_entity_id, label="File")
             ensure_company(attachment, job.company_id, label="File")
             if attachment.is_deleted or not attachment.is_active:
-                message = "File content is not available for document analysis." if job.job_type == "document_analysis_safe" else "File content is not available for AI summary."
+                if job.job_type == "image_analysis_safe":
+                    message = "Image content is not available for analysis."
+                else:
+                    message = "File content is not available for document analysis." if job.job_type == "document_analysis_safe" else "File content is not available for AI summary."
                 raise AIProviderError("file_not_available", message)
+            if job.job_type == "image_analysis_safe":
+                return cls.build_image_analysis_context(db, attachment=attachment)
             runtime = get_ai_provider_config()
             return cls.build_file_summary_context(
                 db,
@@ -1157,9 +1317,22 @@ class AIService:
         error_message: str,
         metadata: dict[str, Any],
     ) -> None:
-        if job.job_type in {"file_summary_safe", "document_analysis_safe"}:
+        if job.job_type in {"file_summary_safe", "document_analysis_safe", "image_analysis_safe"}:
             output_payload = metadata_dict(job.output_payload)
-            if job.job_type == "document_analysis_safe":
+            if job.job_type == "image_analysis_safe":
+                output_payload.update(
+                    {
+                        "image_overview": "",
+                        "visible_objects_or_elements": [],
+                        "possible_context": [],
+                        "operational_relevance": "",
+                        "risks_or_concerns": [],
+                        "suggested_next_steps": [],
+                        "limitations": [error_message[:500]],
+                        "unsupported_reason": metadata.get("unsupported_reason") or error_code,
+                    }
+                )
+            elif job.job_type == "document_analysis_safe":
                 output_payload.update(
                     {
                         "document_overview": "",
@@ -1297,14 +1470,19 @@ class AIService:
             target_entity_type = "company"
         elif job.input_entity_type in {"attachment", "file"}:
             is_document_analysis = job.job_type == "document_analysis_safe"
-            entity_label = "document analysis" if is_document_analysis else "file"
-            event_type = f"ai_analysis.document.{phase}" if is_document_analysis else f"ai_summary.file.{phase}"
-            title = f"AI document analysis {phase}" if is_document_analysis else f"AI file summary {phase}"
-            description = (
-                f"A tenant-safe AI document analysis was {phase}."
-                if is_document_analysis
-                else f"A tenant-safe AI file summary was {phase}."
-            )
+            is_image_analysis = job.job_type == "image_analysis_safe"
+            if is_image_analysis:
+                event_type = f"ai_analysis.image.{phase}"
+                title = f"AI image analysis {phase}"
+                description = f"A tenant-safe AI image analysis was {phase}."
+            elif is_document_analysis:
+                event_type = f"ai_analysis.document.{phase}"
+                title = f"AI document analysis {phase}"
+                description = f"A tenant-safe AI document analysis was {phase}."
+            else:
+                event_type = f"ai_summary.file.{phase}"
+                title = f"AI file summary {phase}"
+                description = f"A tenant-safe AI file summary was {phase}."
             target_entity_type = "attachment"
         else:
             entity_label = "work object" if job.input_entity_type == "work_object" else "project"
@@ -1339,7 +1517,7 @@ class AIService:
                 "external_processing_used": bool(metadata.get("external_processing_used", False)),
                 "error_code": metadata.get("error_code"),
                 "truncated": bool(output_payload.get("truncated", False)) if job.job_type in {"file_summary_safe", "document_analysis_safe"} else None,
-                "unsupported_reason": output_payload.get("unsupported_reason") if job.job_type in {"file_summary_safe", "document_analysis_safe"} else None,
+                "unsupported_reason": output_payload.get("unsupported_reason") if job.job_type in {"file_summary_safe", "document_analysis_safe", "image_analysis_safe"} else None,
             },
         )
 
@@ -1524,6 +1702,7 @@ class AIService:
             message = "AI provider mode is disabled."
         else:
             message = "Future provider mode is reserved and not implemented yet."
+        supported_real_job_types = sorted(REAL_AI_JOB_TYPES - {"image_analysis_safe"})
         return AIProviderStatusRead(
             company_id=company_id,
             provider_key=cls.provider_key_for_mode(provider_mode),
@@ -1534,7 +1713,7 @@ class AIService:
             external_processing_allowed=external_allowed,
             ai_enabled=bool(company_settings["ai_enabled"]),
             real_ai_connected=real_connected,
-            supported_real_job_types=sorted(REAL_AI_JOB_TYPES),
+            supported_real_job_types=supported_real_job_types,
             supported_mock_job_types=sorted(MOCK_AI_JOB_TYPES),
             message=message,
         )

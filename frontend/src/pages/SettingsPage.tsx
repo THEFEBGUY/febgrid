@@ -1,4 +1,4 @@
-import { Archive, Bot, CreditCard, FileSearch, FileText, Pencil, Play, Plus, RotateCcw, Save, ShieldAlert, Wand2, XCircle } from "lucide-react";
+import { Archive, Bot, CreditCard, FileSearch, FileText, ImageIcon, Pencil, Play, Plus, RotateCcw, Save, ShieldAlert, Wand2, XCircle } from "lucide-react";
 import { type FormEvent, useEffect, useMemo, useState } from "react";
 
 import { AISummaryPanel } from "../components/ai/AISummaryPanel";
@@ -30,6 +30,7 @@ import type {
   WorkObjectTypeUpdatePayload,
 } from "../types/api";
 import type { ModulePageProps } from "../types/page";
+import { isSupportedImageAttachment } from "../utils/files";
 import { compactList, formatDate, formatLabel } from "../utils/format";
 
 interface SettingsPageProps extends ModulePageProps {
@@ -189,7 +190,7 @@ export function SettingsPage({
   const [fileTypeFilter, setFileTypeFilter] = useState("");
   const [editingFile, setEditingFile] = useState<Attachment | null>(null);
   const [fileForm, setFileForm] = useState(emptyFileForm);
-  const [fileAIInsightMode, setFileAIInsightMode] = useState<"summary" | "analysis">("summary");
+  const [fileAIInsightMode, setFileAIInsightMode] = useState<"summary" | "analysis" | "image">("summary");
   const [fileAISummary, setFileAISummary] = useState<AIJob | null>(null);
   const [isFileAISummaryLoading, setIsFileAISummaryLoading] = useState(false);
   const [isFileAISummaryGenerating, setIsFileAISummaryGenerating] = useState(false);
@@ -384,6 +385,18 @@ export function SettingsPage({
           >
             <span className="sr-only">Analyze document</span>
           </Button>
+          {isSupportedImageAttachment(file) ? (
+            <Button
+              aria-label={`Analyze image ${file.original_file_name}`}
+              className="size-9 px-0"
+              disabled={!canManage}
+              icon={<ImageIcon className="size-4" aria-hidden="true" />}
+              title={`Analyze image ${file.original_file_name}`}
+              onClick={() => openFileModal(file, "image")}
+            >
+              <span className="sr-only">Analyze image</span>
+            </Button>
+          ) : null}
           {file.is_active ? (
             <Button
               aria-label={`Archive ${file.original_file_name}`}
@@ -531,7 +544,7 @@ export function SettingsPage({
     setIsFieldModalOpen(true);
   }
 
-  function openFileModal(file: Attachment, mode: "summary" | "analysis" = "summary"): void {
+  function openFileModal(file: Attachment, mode: "summary" | "analysis" | "image" = "summary"): void {
     setEditingFile(file);
     setFormError(null);
     setFileAIInsightMode(mode);
@@ -555,7 +568,7 @@ export function SettingsPage({
     setFileMemoryError(null);
   }
 
-  async function loadFileAIInsight(file: Attachment, mode: "summary" | "analysis" = fileAIInsightMode): Promise<void> {
+  async function loadFileAIInsight(file: Attachment, mode: "summary" | "analysis" | "image" = fileAIInsightMode): Promise<void> {
     if (!selectedCompany) return;
     setFileAIInsightMode(mode);
     setIsFileAISummaryLoading(true);
@@ -564,12 +577,22 @@ export function SettingsPage({
     setFileMemoryError(null);
     try {
       const job =
-        mode === "analysis"
+        mode === "image"
+          ? await api.latestFileAIImageAnalysis(file.id, selectedCompany.id)
+          : mode === "analysis"
           ? await api.latestFileAIAnalysis(file.id, selectedCompany.id)
           : await api.latestFileAISummary(file.id, selectedCompany.id);
       setFileAISummary(job);
     } catch (caughtError) {
-      setFileAISummaryError(caughtError instanceof Error ? caughtError.message : mode === "analysis" ? "Unable to load the latest document analysis." : "Unable to load the latest file summary.");
+      setFileAISummaryError(
+        caughtError instanceof Error
+          ? caughtError.message
+          : mode === "image"
+            ? "Unable to load the latest image analysis."
+            : mode === "analysis"
+              ? "Unable to load the latest document analysis."
+              : "Unable to load the latest file summary.",
+      );
     } finally {
       setIsFileAISummaryLoading(false);
     }
@@ -581,7 +604,9 @@ export function SettingsPage({
     setFileAISummaryError(null);
     try {
       const job =
-        fileAIInsightMode === "analysis"
+        fileAIInsightMode === "image"
+          ? await api.generateFileAIImageAnalysis(editingFile.id, selectedCompany.id)
+          : fileAIInsightMode === "analysis"
           ? await api.generateFileAIAnalysis(editingFile.id, selectedCompany.id)
           : await api.generateFileAISummary(editingFile.id, selectedCompany.id);
       setFileAISummary(job);
@@ -589,7 +614,9 @@ export function SettingsPage({
       setFileAISummaryError(
         caughtError instanceof Error
           ? caughtError.message
-          : fileAIInsightMode === "analysis"
+          : fileAIInsightMode === "image"
+            ? "AI image analysis could not be generated."
+            : fileAIInsightMode === "analysis"
             ? "AI document analysis could not be generated."
             : "AI file summary could not be generated.",
       );
@@ -608,9 +635,15 @@ export function SettingsPage({
         company_id: selectedCompany.id,
         memory_type: "file_insight",
         importance: "normal",
-        tags: fileAIInsightMode === "analysis" ? ["file_insight", "document_analysis"] : ["file_insight", "ai_summary"],
+        tags: fileAIInsightMode === "image" ? ["file_insight", "image_analysis"] : fileAIInsightMode === "analysis" ? ["file_insight", "document_analysis"] : ["file_insight", "ai_summary"],
       });
-      setFileMemoryMessage(fileAIInsightMode === "analysis" ? "Document analysis saved as a memory suggestion." : "File summary saved as a memory suggestion.");
+      setFileMemoryMessage(
+        fileAIInsightMode === "image"
+          ? "Image analysis saved as a memory suggestion."
+          : fileAIInsightMode === "analysis"
+            ? "Document analysis saved as a memory suggestion."
+            : "File summary saved as a memory suggestion.",
+      );
     } catch (caughtError) {
       setFileMemoryError(caughtError instanceof Error ? caughtError.message : "Unable to save this file insight to memory.");
     } finally {
@@ -832,6 +865,9 @@ export function SettingsPage({
   const displayedModelName = aiProviderStatus?.model_name ?? (displayedProviderMode === "mock" ? "mock-deterministic" : "Not configured");
   const externalProcessingAllowed = Boolean(aiSafetySettings?.external_ai_processing_allowed ?? aiProviderStatus?.external_processing_allowed);
   const aiEnabled = Boolean(aiSafetySettings?.ai_enabled ?? aiProviderStatus?.ai_enabled ?? true);
+  const imageAnalysisRealSupported = Boolean(aiProviderStatus?.supported_real_job_types.includes("image_analysis_safe"));
+  const imageAnalysisSupportLabel = displayedProviderMode === "mock" ? "Mock only" : imageAnalysisRealSupported ? "Supported" : "Not supported";
+  const imageAnalysisSupportTone: "blue" | "green" | "amber" = displayedProviderMode === "mock" ? "blue" : imageAnalysisRealSupported ? "green" : "amber";
   const aiQueueSummary = data.aiJobQueueSummary;
   const aiQueueCards = [
     { label: "Queued", value: aiQueueSummary?.queued ?? 0, tone: "amber" as const },
@@ -1084,6 +1120,17 @@ export function SettingsPage({
                   <p className="text-xs font-black uppercase text-ink-500">External processing</p>
                   <Badge label={externalProcessingAllowed ? "Allowed" : "Off"} tone={externalProcessingAllowed ? "amber" : "slate"} />
                 </div>
+                <div className="rounded-lg border border-grid-200 bg-white/70 p-3 sm:col-span-2">
+                  <p className="text-xs font-black uppercase text-ink-500">Image analysis</p>
+                  <div className="mt-1 flex flex-wrap items-center gap-2">
+                    <Badge label={imageAnalysisSupportLabel} tone={imageAnalysisSupportTone} />
+                    <span className="text-xs font-semibold text-ink-500">
+                      {imageAnalysisRealSupported
+                        ? "Current real provider declares image input support."
+                        : "Current provider/model does not support real image input yet; mock mode remains available."}
+                    </span>
+                  </div>
+                </div>
               </div>
               <p className="mt-3 text-sm font-semibold text-ink-500">
                 Groq is the current real AI provider target. Switching providers later should only require environment/config changes.
@@ -1123,7 +1170,7 @@ export function SettingsPage({
                 {!data.aiCapabilities ? <Badge label="Mock provider" tone="slate" /> : null}
               </div>
               <p className="mt-3 text-sm font-semibold text-ink-500">
-                Safe real jobs are text-only and server-prompted. Raw files, tokens, passwords, and prompt templates are not sent.
+                Safe real jobs are server-prompted and capability-gated. Raw files, tokens, passwords, image bytes, and prompt templates are not shown in the UI.
               </p>
             </div>
           </div>
@@ -1229,16 +1276,16 @@ export function SettingsPage({
           {editingFile ? (
             <AISummaryPanel
               error={fileAISummaryError}
-              generateLabel={fileAIInsightMode === "analysis" ? "Analyze Document" : "Generate AI File Summary"}
+              generateLabel={fileAIInsightMode === "image" ? "Analyze Image" : fileAIInsightMode === "analysis" ? "Analyze Document" : "Generate AI File Summary"}
               isGenerating={isFileAISummaryGenerating}
               isLoading={isFileAISummaryLoading}
               isSavingToMemory={isSavingFileMemory}
               job={fileAISummary}
-              kind={fileAIInsightMode === "analysis" ? "document" : "file"}
+              kind={fileAIInsightMode === "image" ? "image" : fileAIInsightMode === "analysis" ? "document" : "file"}
               onGenerate={() => void handleGenerateFileAISummary()}
               onSaveToMemory={() => void handleSuggestFileMemory()}
               saveToMemoryError={fileMemoryError}
-              saveToMemoryLabel={fileAIInsightMode === "analysis" ? "Suggest Analysis to Memory" : "Suggest Memory"}
+              saveToMemoryLabel={fileAIInsightMode === "image" || fileAIInsightMode === "analysis" ? "Suggest Analysis to Memory" : "Suggest Memory"}
               saveToMemoryMessage={fileMemoryMessage}
             />
           ) : null}

@@ -650,7 +650,8 @@ export type AIJobType =
   | "project_summary_safe"
   | "company_brief_safe"
   | "file_summary_safe"
-  | "document_analysis_safe";
+  | "document_analysis_safe"
+  | "image_analysis_safe";
 
 export interface AIJob extends Timestamped {
   id: string;

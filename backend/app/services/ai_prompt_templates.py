@@ -64,6 +64,18 @@ def output_contract_for_job(job_type: str) -> dict[str, Any]:
             "unsupported_reason": None,
             "confidence": None,
         }
+    if job_type == "image_analysis_safe":
+        return {
+            "image_overview": "short operational overview of the supported image",
+            "visible_objects_or_elements": ["up to 8 visible non-sensitive objects, elements, or scene details"],
+            "possible_context": ["brief context possibilities grounded only in visible evidence; mark uncertainty"],
+            "operational_relevance": "how this image may relate to business work, field evidence, project status, or file context",
+            "risks_or_concerns": ["up to 5 visible operational risks or concerns, only when evidence exists"],
+            "suggested_next_steps": ["up to 5 practical next steps, phrased as suggestions only"],
+            "limitations": ["mention unclear image, no OCR feature, no identity recognition, or missing context"],
+            "unsupported_reason": None,
+            "confidence": None,
+        }
     return {
         "summary": "short operational summary of the work object",
         "current_status_explanation": "plain-language explanation grounded only in provided data",
@@ -102,7 +114,10 @@ def build_summary_messages(
                 "matching the requested output contract. For file summaries, summarize only the provided text, "
                 "mention when content was truncated, and avoid restating any secret-like values. For document "
                 "analysis, extract operational insights only from the provided text, keep related work ideas as "
-                "suggestions, and do not create tasks, projects, memories, or actions."
+                "suggestions, and do not create tasks, projects, memories, or actions. For image analysis, do not "
+                "identify people, do not infer identity or sensitive traits, do not perform biometric or emotion "
+                "analysis, do not make medical/legal/safety-critical claims, avoid OCR/transcription except for "
+                "incidental clearly visible labels, mark uncertainty, and keep related work ideas as suggestions."
             ),
         },
         {"role": "user", "content": serialized},

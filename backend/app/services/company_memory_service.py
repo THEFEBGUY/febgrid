@@ -319,6 +319,7 @@ class CompanyMemoryService:
             "file": Attachment,
             "file_summary": Attachment,
             "document_analysis": Attachment,
+            "image_analysis": Attachment,
             "event": Event,
         }
         model = model_by_source.get(source_type)
@@ -466,15 +467,16 @@ class CompanyMemoryService:
                 "source_id": job.input_entity_id,
                 "title": "Project summary memory",
             }
-        if entity_type in {"file", "attachment"} or job_type in {"file_summary_safe", "file_summary_mock", "document_analysis_safe"}:
+        if entity_type in {"file", "attachment"} or job_type in {"file_summary_safe", "file_summary_mock", "document_analysis_safe", "image_analysis_safe"}:
             is_document_analysis = job_type == "document_analysis_safe"
+            is_image_analysis = job_type == "image_analysis_safe"
             return {
                 "memory_type": "file_insight",
                 "scope_type": "file",
                 "scope_id": job.input_entity_id,
-                "source_type": "document_analysis" if is_document_analysis else "file_summary",
+                "source_type": "image_analysis" if is_image_analysis else "document_analysis" if is_document_analysis else "file_summary",
                 "source_id": job.input_entity_id,
-                "title": "Document analysis memory" if is_document_analysis else "File insight memory",
+                "title": "Image analysis memory" if is_image_analysis else "Document analysis memory" if is_document_analysis else "File insight memory",
             }
         return {
             "memory_type": "work_context",
@@ -489,7 +491,7 @@ class CompanyMemoryService:
     def content_from_ai_output(job: AIJob) -> str:
         output = metadata_dict(job.output_payload)
         lines: list[str] = []
-        primary = output.get("executive_summary") or output.get("summary") or output.get("document_overview")
+        primary = output.get("executive_summary") or output.get("summary") or output.get("document_overview") or output.get("image_overview")
         if primary:
             lines.append(str(primary))
         sections = [
@@ -499,6 +501,9 @@ class CompanyMemoryService:
             ("Action items", output.get("action_items")),
             ("Important dates", output.get("important_dates")),
             ("Important numbers", output.get("important_numbers")),
+            ("Visible objects or elements", output.get("visible_objects_or_elements")),
+            ("Possible context", output.get("possible_context")),
+            ("Operational relevance", output.get("operational_relevance")),
             ("Project overview", output.get("project_overview")),
             ("Work overview", output.get("work_overview")),
             ("People overview", output.get("people_overview")),
@@ -522,7 +527,7 @@ class CompanyMemoryService:
     @staticmethod
     def summary_from_ai_output(job: AIJob) -> str | None:
         output = metadata_dict(job.output_payload)
-        return normalize_text(str(output.get("executive_summary") or output.get("summary") or output.get("document_overview") or ""), max_chars=1000)
+        return normalize_text(str(output.get("executive_summary") or output.get("summary") or output.get("document_overview") or output.get("image_overview") or ""), max_chars=1000)
 
     @staticmethod
     def confidence_from_ai_output(job: AIJob) -> float | None:

@@ -281,6 +281,10 @@ export const api = {
     request<AIJob>(companyPath(`/files/${attachmentId}/ai-analysis`, companyId), jsonInit("POST", {})),
   latestFileAIAnalysis: (attachmentId: string, companyId: string) =>
     request<AIJob | null>(companyPath(`/files/${attachmentId}/ai-analysis/latest`, companyId)),
+  generateFileAIImageAnalysis: (attachmentId: string, companyId: string) =>
+    request<AIJob>(companyPath(`/files/${attachmentId}/ai-image-analysis`, companyId), jsonInit("POST", {})),
+  latestFileAIImageAnalysis: (attachmentId: string, companyId: string) =>
+    request<AIJob | null>(companyPath(`/files/${attachmentId}/ai-image-analysis/latest`, companyId)),
   aiCapabilities: (companyId: string) => request<AICapabilities>(companyPath("/ai/capabilities", companyId)),
   aiProviderStatus: (companyId: string) => request<AIProviderStatus>(companyPath("/ai/provider-status", companyId)),
   aiSafetySettings: (companyId: string) => request<AISafetySettings>(companyPath("/ai/safety-settings", companyId)),

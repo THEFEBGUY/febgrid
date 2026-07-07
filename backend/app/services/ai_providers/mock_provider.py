@@ -100,6 +100,23 @@ class MockAIProvider(BaseAIProvider):
                 "truncated": bool(request.entity_context.get("truncated", False)),
                 "unsupported_reason": request.entity_context.get("unsupported_reason"),
             }
+        if request.job_type == "image_analysis_safe":
+            width = request.entity_context.get("image_width")
+            height = request.entity_context.get("image_height")
+            dimensions = f"{width}x{height}" if width and height else "unknown dimensions"
+            return {
+                "image_overview": f"Mock AI image analysis. Real vision provider not connected. Image metadata passed safety checks ({dimensions}).",
+                "visible_objects_or_elements": ["Mock output only; no real image understanding was generated."],
+                "possible_context": ["This is a deterministic mock placeholder for validating FebGrid image-analysis flow."],
+                "operational_relevance": "Mock mode verified company ownership, file type, file size, dimensions, and permissions without external processing.",
+                "risks_or_concerns": ["Mock output only; no real operational visual risk assessment was generated."],
+                "suggested_next_steps": ["Enable a future vision-capable provider with explicit external processing consent to generate real image analysis."],
+                "limitations": [
+                    "Mock provider does not inspect image pixels.",
+                    "No face recognition, identity recognition, OCR, biometric, or sensitive-trait inference is performed.",
+                ],
+                "unsupported_reason": request.entity_context.get("unsupported_reason"),
+            }
         return {
             "summary": f"Mock AI summary for {entity}. Real provider not connected.",
             "key_points": ["Mock placeholder output only."],

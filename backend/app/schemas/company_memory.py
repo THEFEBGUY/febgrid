@@ -32,6 +32,7 @@ SOURCE_TYPES = {
     "project_summary",
     "file_summary",
     "document_analysis",
+    "image_analysis",
     "event",
     "manual",
 }

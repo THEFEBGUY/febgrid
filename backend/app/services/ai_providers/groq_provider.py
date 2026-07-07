@@ -20,6 +20,8 @@ class GroqAIProvider(BaseAIProvider):
         self.model_name = config.groq_model
 
     def generate(self, request: AIProviderRequest) -> AIProviderResult:
+        if request.job_type == "image_analysis_safe":
+            raise AIProviderError("provider_unsupported_capability", "Current AI provider/model does not support image analysis yet.")
         if not self.config.groq_api_key:
             raise AIProviderError("missing_api_key", "Groq API key is not configured.")
 
@@ -120,8 +122,10 @@ class GroqAIProvider(BaseAIProvider):
                     "summary",
                     "executive_summary",
                     "document_overview",
+                    "image_overview",
                     "current_status_explanation",
                     "document_type_guess",
+                    "operational_relevance",
                     "project_health",
                     "status_explanation",
                     "progress_overview",
@@ -144,6 +148,8 @@ class GroqAIProvider(BaseAIProvider):
                     "important_dates",
                     "important_dates_or_numbers",
                     "important_numbers",
+                    "visible_objects_or_elements",
+                    "possible_context",
                     "people_or_teams_mentioned",
                     "related_work_suggestions",
                     "attention_items",
@@ -179,6 +185,7 @@ class GroqAIProvider(BaseAIProvider):
             "summary": text[:4000],
             "executive_summary": text[:4000],
             "document_overview": text[:4000],
+            "image_overview": text[:4000],
             "key_points": [],
             "blockers_or_risks": [],
             "risks_or_blockers": [],
@@ -191,8 +198,11 @@ class GroqAIProvider(BaseAIProvider):
             "operational_highlights": [],
             "important_dates_or_numbers": [],
             "important_numbers": [],
+            "visible_objects_or_elements": [],
+            "possible_context": [],
             "people_or_teams_mentioned": [],
             "related_work_suggestions": [],
+            "operational_relevance": "",
             "attention_items": [],
             "limitations": ["Provider returned non-JSON text, so FebGrid wrapped the response safely."],
             "truncated": False,
