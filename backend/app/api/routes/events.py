@@ -24,6 +24,7 @@ AUDIT_EVENT_PREFIXES = (
     "auth.",
     "billing.",
     "company.",
+    "company_pulse.",
     "custom_field.",
     "department.",
     "employee.",

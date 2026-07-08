@@ -1164,6 +1164,43 @@ export interface CompanyMemoryFromAIJobPayload {
   metadata?: Record<string, unknown>;
 }
 
+export type CompanyPulseStatus = "excellent" | "healthy" | "watch" | "at_risk" | "critical";
+export type CompanyPulseTrend = "improving" | "stable" | "declining" | "unknown";
+
+export interface CompanyPulseSnapshot extends Timestamped {
+  id: string;
+  company_id: string;
+  overall_score: number;
+  pulse_status: CompanyPulseStatus | string;
+  trend: CompanyPulseTrend | string;
+  summary: string;
+  section_scores: Record<string, number>;
+  key_signals: string[];
+  risks: string[];
+  recommended_actions: string[];
+  source_counts: Record<string, unknown>;
+  generated_by_user_id: string | null;
+  generated_by_ai_job_id: string | null;
+  is_rule_based: boolean;
+  metadata: Record<string, unknown>;
+}
+
+export interface CompanyPulseSignals {
+  company_id: string;
+  overall_score: number;
+  pulse_status: CompanyPulseStatus | string;
+  trend: CompanyPulseTrend | string;
+  summary: string;
+  section_scores: Record<string, number>;
+  key_signals: string[];
+  risks: string[];
+  recommended_actions: string[];
+  source_counts: Record<string, unknown>;
+  generated_at: string;
+  is_rule_based: boolean;
+  metadata: Record<string, unknown>;
+}
+
 export interface DashboardSummary {
   company_overview: {
     company_id: string;

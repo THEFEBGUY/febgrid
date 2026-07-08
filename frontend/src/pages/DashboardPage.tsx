@@ -1,4 +1,5 @@
 import {
+  Activity,
   AlertTriangle,
   Bell,
   Brain,
@@ -10,6 +11,7 @@ import {
   Megaphone,
   Plus,
   RefreshCw,
+  Sparkles,
   Users,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
@@ -24,7 +26,7 @@ import { SectionPanel } from "../components/ui/SectionPanel";
 import { EmptyState, ErrorState, LoadingState } from "../components/ui/States";
 import { priorityTone, statusTone } from "../components/ui/tone";
 import { api } from "../services/api";
-import type { AIJob } from "../types/api";
+import type { AIJob, CompanyPulseSnapshot } from "../types/api";
 import type { Metric } from "../types/domain";
 import type { ModulePageProps } from "../types/page";
 import { compactList, formatDate, formatLabel, formatTime } from "../utils/format";
@@ -46,6 +48,11 @@ export function DashboardPage({
 }: ModulePageProps): JSX.Element {
   const summary = data.dashboardSummary;
   const canUseCompanyBrief = currentUserRole === "company_owner" || currentUserRole === "admin";
+  const canUseCompanyPulse = canUseCompanyBrief;
+  const [companyPulse, setCompanyPulse] = useState<CompanyPulseSnapshot | null>(null);
+  const [pulseError, setPulseError] = useState<string | null>(null);
+  const [isPulseLoading, setIsPulseLoading] = useState(false);
+  const [isPulseGenerating, setIsPulseGenerating] = useState(false);
   const [companyBrief, setCompanyBrief] = useState<AIJob | null>(null);
   const [briefError, setBriefError] = useState<string | null>(null);
   const [isBriefLoading, setIsBriefLoading] = useState(false);
@@ -57,6 +64,35 @@ export function DashboardPage({
     () => Object.fromEntries(data.employees.map((employee) => [employee.id, employee.full_name])),
     [data.employees],
   );
+
+  useEffect(() => {
+    const companyId = selectedCompany?.id;
+    if (!companyId || !canUseCompanyPulse) {
+      setCompanyPulse(null);
+      setPulseError(null);
+      setIsPulseLoading(false);
+      return;
+    }
+
+    let isCurrent = true;
+    setIsPulseLoading(true);
+    setPulseError(null);
+    api
+      .latestCompanyPulse(companyId)
+      .then((pulse) => {
+        if (isCurrent) setCompanyPulse(pulse);
+      })
+      .catch((error: unknown) => {
+        if (isCurrent) setPulseError(error instanceof Error ? error.message : "Unable to load Company Pulse.");
+      })
+      .finally(() => {
+        if (isCurrent) setIsPulseLoading(false);
+      });
+
+    return () => {
+      isCurrent = false;
+    };
+  }, [canUseCompanyPulse, selectedCompany?.id]);
 
   useEffect(() => {
     const companyId = selectedCompany?.id;
@@ -99,6 +135,21 @@ export function DashboardPage({
       setBriefError(error instanceof Error ? error.message : "Unable to generate the company brief.");
     } finally {
       setIsBriefGenerating(false);
+    }
+  }
+
+  async function handleGenerateCompanyPulse(): Promise<void> {
+    const companyId = selectedCompany?.id;
+    if (!companyId || !canUseCompanyPulse || isPulseGenerating) return;
+    setIsPulseGenerating(true);
+    setPulseError(null);
+    try {
+      const pulse = await api.generateCompanyPulse(companyId);
+      setCompanyPulse(pulse);
+    } catch (error) {
+      setPulseError(error instanceof Error ? error.message : "Unable to generate Company Pulse.");
+    } finally {
+      setIsPulseGenerating(false);
     }
   }
 
@@ -240,6 +291,16 @@ export function DashboardPage({
           saveToMemoryError={briefMemoryError}
           saveToMemoryLabel="Suggest Memory"
           saveToMemoryMessage={briefMemoryMessage}
+        />
+      ) : null}
+
+      {canUseCompanyPulse ? (
+        <CompanyPulsePanel
+          error={pulseError}
+          isGenerating={isPulseGenerating}
+          isLoading={isPulseLoading}
+          onGenerate={() => void handleGenerateCompanyPulse()}
+          pulse={companyPulse}
         />
       ) : null}
 
@@ -452,6 +513,167 @@ export function DashboardPage({
       </SectionPanel>
     </div>
   );
+}
+
+function CompanyPulsePanel({
+  pulse,
+  error,
+  isLoading,
+  isGenerating,
+  onGenerate,
+}: {
+  pulse: CompanyPulseSnapshot | null;
+  error: string | null;
+  isLoading: boolean;
+  isGenerating: boolean;
+  onGenerate: () => void;
+}): JSX.Element {
+  const sectionEntries = Object.entries(pulse?.section_scores ?? {});
+  const hasPulse = Boolean(pulse);
+
+  return (
+    <SectionPanel
+      eyebrow="Operational intelligence"
+      title="Company Pulse"
+      description="Rule-based company health from people, work, projects, leaves, events, AI jobs, files, and Company Memory."
+      action={
+        <Button
+          aria-label={hasPulse ? "Refresh Company Pulse" : "Generate Company Pulse"}
+          disabled={isGenerating || isLoading}
+          icon={isGenerating ? <RefreshCw className="size-4 animate-spin" aria-hidden="true" /> : <Activity className="size-4" aria-hidden="true" />}
+          onClick={onGenerate}
+          title={hasPulse ? "Refresh Company Pulse" : "Generate Company Pulse"}
+          variant={hasPulse ? "secondary" : "primary"}
+        >
+          {isGenerating ? "Generating" : hasPulse ? "Refresh Pulse" : "Generate Pulse"}
+        </Button>
+      }
+    >
+      <div className="space-y-5 p-5">
+        {isLoading ? (
+          <LoadingState label="Loading Company Pulse" />
+        ) : error ? (
+          <ErrorState message={error} onRetry={onGenerate} />
+        ) : !pulse ? (
+          <EmptyState
+            description="Generate a rule-based snapshot to see company health, risks, and recommended operational actions."
+            title="No Company Pulse yet"
+          />
+        ) : (
+          <>
+            <div className="grid gap-4 xl:grid-cols-[0.55fr_1fr]">
+              <MagicBentoCard className="p-5" tone={pulseTone(pulse.pulse_status)}>
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <p className="text-xs font-black uppercase tracking-normal text-ink-500">Overall pulse</p>
+                    <div className="mt-2 flex items-end gap-2">
+                      <span className="text-5xl font-black leading-none text-ink-950">{pulse.overall_score}</span>
+                      <span className="pb-1 text-sm font-black text-ink-500">/100</span>
+                    </div>
+                  </div>
+                  <div className="rounded-lg border border-grid-200 bg-white/70 p-3 shadow-sm">
+                    <Sparkles className="size-5 text-brand-600" aria-hidden="true" />
+                  </div>
+                </div>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <Badge label={formatLabel(pulse.pulse_status)} tone={pulseTone(pulse.pulse_status)} />
+                  <Badge label={`Trend ${formatLabel(pulse.trend)}`} tone={trendTone(pulse.trend)} />
+                  <Badge label={pulse.is_rule_based ? "Rule based" : "AI assisted"} tone="slate" />
+                </div>
+                <p className="mt-3 text-xs font-semibold text-ink-500">Generated {formatTime(pulse.created_at)}</p>
+              </MagicBentoCard>
+
+              <div className="febgrid-muted-surface rounded-lg p-4">
+                <p className="text-sm font-bold text-ink-950">{pulse.summary}</p>
+                <div className="mt-4 grid gap-3 md:grid-cols-2">
+                  {sectionEntries.map(([key, value]) => (
+                    <div key={key} className="rounded-lg border border-grid-200 bg-white/70 p-3 shadow-sm">
+                      <div className="mb-2 flex items-center justify-between gap-3">
+                        <p className="truncate text-xs font-black uppercase tracking-normal text-ink-500">{sectionLabel(key)}</p>
+                        <Badge label={`${value}/100`} tone={scoreTone(value)} />
+                      </div>
+                      <ProgressBar value={value} />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="grid gap-4 xl:grid-cols-3">
+              <PulseList title="Key signals" items={pulse.key_signals} emptyLabel="No positive or neutral signals yet." tone="green" />
+              <PulseList title="Risks" items={pulse.risks} emptyLabel="No major risks visible from current signals." tone="red" />
+              <PulseList title="Recommended actions" items={pulse.recommended_actions} emptyLabel="No recommended actions yet." tone="blue" />
+            </div>
+          </>
+        )}
+      </div>
+    </SectionPanel>
+  );
+}
+
+function PulseList({
+  title,
+  items,
+  emptyLabel,
+  tone,
+}: {
+  title: string;
+  items: string[];
+  emptyLabel: string;
+  tone: "blue" | "green" | "red";
+}): JSX.Element {
+  return (
+    <div className="rounded-lg border border-grid-200 bg-white/70 p-4 shadow-sm">
+      <div className="mb-3 flex items-center gap-2">
+        <Badge label={title} tone={tone} />
+      </div>
+      {items.length === 0 ? (
+        <p className="text-sm font-semibold text-ink-500">{emptyLabel}</p>
+      ) : (
+        <ul className="space-y-2">
+          {items.slice(0, 5).map((item) => (
+            <li key={item} className="text-sm font-semibold leading-6 text-ink-700">
+              {item}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function pulseTone(statusValue: string): "blue" | "green" | "amber" | "red" | "teal" | "slate" {
+  switch (statusValue) {
+    case "excellent":
+      return "teal";
+    case "healthy":
+      return "green";
+    case "watch":
+      return "amber";
+    case "at_risk":
+    case "critical":
+      return "red";
+    default:
+      return "slate";
+  }
+}
+
+function trendTone(trend: string): "blue" | "green" | "amber" | "red" | "teal" | "slate" {
+  if (trend === "improving") return "green";
+  if (trend === "declining") return "red";
+  if (trend === "stable") return "blue";
+  return "slate";
+}
+
+function scoreTone(value: number): "blue" | "green" | "amber" | "red" | "teal" | "slate" {
+  if (value >= 85) return "teal";
+  if (value >= 70) return "green";
+  if (value >= 50) return "amber";
+  return "red";
+}
+
+function sectionLabel(key: string): string {
+  return formatLabel(key.replace(/_health$/, ""));
 }
 
 function StatusTile({ label, value, tone }: { label: string; value: number; tone: "blue" | "green" | "amber" | "red" | "teal" | "slate" }): JSX.Element {
