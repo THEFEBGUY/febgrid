@@ -271,37 +271,41 @@ export function DashboardPage({
         </div>
       </MagicBentoCard>
 
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <section data-testid="dashboard-kpi-metrics" className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         {metrics.map((metric, index) => (
           <MetricCard key={metric.label} metric={metric} icon={metricIcons[index]} />
         ))}
       </section>
 
       {canUseCompanyBrief ? (
-        <AISummaryPanel
-          error={briefError}
-          generateLabel="Generate Company Brief"
-          isGenerating={isBriefGenerating}
-          isLoading={isBriefLoading}
-          isSavingToMemory={isSavingBriefMemory}
-          job={companyBrief}
-          kind="company"
-          onGenerate={() => void handleGenerateCompanyBrief()}
-          onSaveToMemory={() => void handleSuggestBriefMemory()}
-          saveToMemoryError={briefMemoryError}
-          saveToMemoryLabel="Suggest Memory"
-          saveToMemoryMessage={briefMemoryMessage}
-        />
+        <div data-testid="dashboard-ai-executive-brief">
+          <AISummaryPanel
+            error={briefError}
+            generateLabel="Generate Company Brief"
+            isGenerating={isBriefGenerating}
+            isLoading={isBriefLoading}
+            isSavingToMemory={isSavingBriefMemory}
+            job={companyBrief}
+            kind="company"
+            onGenerate={() => void handleGenerateCompanyBrief()}
+            onSaveToMemory={() => void handleSuggestBriefMemory()}
+            saveToMemoryError={briefMemoryError}
+            saveToMemoryLabel="Suggest Memory"
+            saveToMemoryMessage={briefMemoryMessage}
+          />
+        </div>
       ) : null}
 
       {canUseCompanyPulse ? (
-        <CompanyPulsePanel
-          error={pulseError}
-          isGenerating={isPulseGenerating}
-          isLoading={isPulseLoading}
-          onGenerate={() => void handleGenerateCompanyPulse()}
-          pulse={companyPulse}
-        />
+        <div data-testid="dashboard-company-pulse">
+          <CompanyPulsePanel
+            error={pulseError}
+            isGenerating={isPulseGenerating}
+            isLoading={isPulseLoading}
+            onGenerate={() => void handleGenerateCompanyPulse()}
+            pulse={companyPulse}
+          />
+        </div>
       ) : null}
 
       {summary.memory_summary ? (
@@ -631,8 +635,8 @@ function PulseList({
         <p className="text-sm font-semibold text-ink-500">{emptyLabel}</p>
       ) : (
         <ul className="space-y-2">
-          {items.slice(0, 5).map((item) => (
-            <li key={item} className="text-sm font-semibold leading-6 text-ink-700">
+          {items.slice(0, 5).map((item, index) => (
+            <li key={`${title}-${index}-${item}`} className="text-sm font-semibold leading-6 text-ink-700">
               {item}
             </li>
           ))}

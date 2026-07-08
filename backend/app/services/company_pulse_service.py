@@ -27,6 +27,8 @@ RISKY_PROJECT_STATUSES = {"blocked", "delayed", "at_risk", "on_hold"}
 RISKY_PROJECT_LEVELS = {"high", "critical", "blocked", "at_risk"}
 STALE_AI_LOCK_MINUTES = 10
 
+# Company Pulse v1 stays explainable: operational work/project/people signals drive most
+# of the score, while support systems shape the final health read.
 SECTION_WEIGHTS = {
     "work_health": 0.25,
     "project_health": 0.18,
@@ -679,6 +681,8 @@ class CompanyPulseService:
             target_entity_type="company_pulse_snapshot",
             target_entity_id=snapshot.id,
             metadata={
+                "company_id": str(snapshot.company_id),
+                "actor_user_id": str(current_user.id) if current_user is not None else None,
                 "pulse_snapshot_id": str(snapshot.id),
                 "overall_score": snapshot.overall_score,
                 "pulse_status": snapshot.pulse_status,
