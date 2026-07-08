@@ -12,7 +12,7 @@ from app.core.permissions import MANAGER_ROLES, ensure_company_access, ensure_ro
 from app.models.attachment import Attachment
 from app.models.company import Company
 from app.models.employee import Employee
-from app.models.project import Project
+from app.models.project import Project, ProjectMember
 from app.models.user import User
 from app.models.work_object import WorkObject
 from app.schemas.ai_job import AIJobRead
@@ -54,9 +54,35 @@ def can_view_work_object(db: Session, current_user: User | None, work_object: Wo
     return work_object.assignee_employee_id == linked_employee.id or work_object.creator_employee_id == linked_employee.id
 
 
+def can_view_project(db: Session, current_user: User | None, project: Project) -> bool:
+    if current_user is None or current_user.role in MANAGER_ROLES:
+        return True
+    if project.owner_user_id == current_user.id:
+        return True
+    linked_employee = get_linked_employee(db, current_user)
+    if linked_employee is None:
+        return False
+    if project.owner_employee_id == linked_employee.id:
+        return True
+    membership = db.scalar(
+        select(ProjectMember.id).where(
+            ProjectMember.company_id == project.company_id,
+            ProjectMember.project_id == project.id,
+            ProjectMember.employee_id == linked_employee.id,
+            ProjectMember.is_active.is_(True),
+        )
+    )
+    return membership is not None
+
+
 def ensure_work_object_visible(db: Session, current_user: User | None, work_object: WorkObject) -> None:
     if not can_view_work_object(db, current_user, work_object):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Work object not found")
+
+
+def ensure_project_visible(db: Session, current_user: User | None, project: Project) -> None:
+    if not can_view_project(db, current_user, project):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
 
 
 def attachment_visibility_conditions(db: Session, current_user: User | None, company_id: UUID) -> list[object]:
@@ -79,6 +105,27 @@ def attachment_visibility_conditions(db: Session, current_user: User | None, com
         or_(*visible_work_conditions),
     )
     conditions.append(Attachment.work_object_id.in_(visible_work_ids))
+
+    visible_project_conditions = [Project.owner_user_id == current_user.id]
+    if linked_employee is not None:
+        visible_project_conditions.extend(
+            [
+                Project.owner_employee_id == linked_employee.id,
+                Project.id.in_(
+                    select(ProjectMember.project_id).where(
+                        ProjectMember.company_id == company_id,
+                        ProjectMember.employee_id == linked_employee.id,
+                        ProjectMember.is_active.is_(True),
+                    )
+                ),
+            ]
+        )
+    visible_project_ids = select(Project.id).where(
+        Project.company_id == company_id,
+        Project.is_active.is_(True),
+        or_(*visible_project_conditions),
+    )
+    conditions.append(Attachment.project_id.in_(visible_project_ids))
     return conditions
 
 
@@ -162,6 +209,10 @@ def get_attachment_for_user(
         work_object = get_or_404(db, WorkObject, attachment.work_object_id, label="Work object")
         ensure_company(work_object, company_id, label="Work object")
         ensure_work_object_visible(db, current_user, work_object)
+    elif attachment.project_id is not None:
+        project = get_or_404(db, Project, attachment.project_id, label="Project")
+        ensure_company(project, company_id, label="Project")
+        ensure_project_visible(db, current_user, project)
     return attachment
 
 
