@@ -80,6 +80,9 @@ import type {
   WorkObjectTypeDefinition,
   WorkObjectTypeUpdatePayload,
   WorkObjectUpdatePayload,
+  WorkDNAScopeType,
+  WorkDNASignals,
+  WorkDNASnapshot,
 } from "../types/api";
 
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, "") ?? "http://127.0.0.1:8000";
@@ -165,6 +168,14 @@ function attachmentFormData(file: File, companyId: string, description?: string 
   return formData;
 }
 
+function workDNAPath(path: string, companyId: string, params: { scope_type?: WorkDNAScopeType | string; scope_id?: string | null; period_days?: number; limit?: number } = {}): string {
+  const searchParams = new URLSearchParams({ company_id: companyId });
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== "") searchParams.set(key, String(value));
+  });
+  return `${path}?${searchParams.toString()}`;
+}
+
 export const api = {
   health: () => request<{ status: string; service: string; environment: string }>("/health"),
   register: (payload: RegisterPayload) => request<AuthSession>("/auth/register", jsonInit("POST", payload)),
@@ -206,6 +217,14 @@ export const api = {
   companyPulseHistory: (companyId: string, limit = 20) =>
     request<CompanyPulseSnapshot[]>(companyPath(`/company-pulse/history?limit=${encodeURIComponent(String(limit))}`, companyId)),
   companyPulseSignals: (companyId: string) => request<CompanyPulseSignals>(companyPath("/company-pulse/signals", companyId)),
+  latestWorkDNA: (companyId: string, params: { scope_type?: WorkDNAScopeType | string; scope_id?: string | null } = {}) =>
+    request<WorkDNASnapshot | null>(workDNAPath("/work-dna/latest", companyId, params)),
+  generateWorkDNA: (companyId: string, params: { scope_type?: WorkDNAScopeType | string; scope_id?: string | null; period_days?: number } = {}) =>
+    request<WorkDNASnapshot>(workDNAPath("/work-dna/generate", companyId, params), jsonInit("POST", {})),
+  workDNAHistory: (companyId: string, params: { scope_type?: WorkDNAScopeType | string; scope_id?: string | null; limit?: number } = {}) =>
+    request<WorkDNASnapshot[]>(workDNAPath("/work-dna/history", companyId, params)),
+  workDNASignals: (companyId: string, params: { scope_type?: WorkDNAScopeType | string; scope_id?: string | null; period_days?: number } = {}) =>
+    request<WorkDNASignals>(workDNAPath("/work-dna/signals", companyId, params)),
   departments: (companyId: string) => request<Department[]>(companyPath("/departments", companyId)),
   createDepartment: (payload: DepartmentCreatePayload) => request<Department>("/departments", jsonInit("POST", payload)),
   employees: (companyId: string) => request<Employee[]>(companyPath("/employees", companyId)),

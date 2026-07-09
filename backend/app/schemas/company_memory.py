@@ -34,6 +34,7 @@ SOURCE_TYPES = {
     "document_analysis",
     "image_analysis",
     "audio_transcription",
+    "work_dna",
     "event",
     "manual",
 }

@@ -17,6 +17,7 @@ from app.models.event import Event
 from app.models.project import Project, ProjectMember
 from app.models.team import Team
 from app.models.user import User
+from app.models.work_dna import WorkDNASnapshot
 from app.models.work_object import WorkObject
 from app.schemas.company_memory import (
     MEMORY_IMPORTANCE,
@@ -321,6 +322,7 @@ class CompanyMemoryService:
             "document_analysis": Attachment,
             "image_analysis": Attachment,
             "audio_transcription": Attachment,
+            "work_dna": WorkDNASnapshot,
             "event": Event,
         }
         model = model_by_source.get(source_type)
@@ -356,6 +358,32 @@ class CompanyMemoryService:
             owner_admin_required(current_user)
         elif current_user.role not in OWNER_ADMIN_ROLES:
             requested_status = "suggested"
+        if requested_status == "suggested" and (
+            (payload.source_type and payload.source_type != "manual" and payload.source_id is not None)
+            or payload.source_ai_job_id is not None
+        ):
+            duplicate_conditions = [
+                CompanyMemory.company_id == payload.company_id,
+                CompanyMemory.status == "suggested",
+                CompanyMemory.created_by_user_id == current_user.id,
+            ]
+            if payload.source_ai_job_id is not None:
+                duplicate_conditions.append(CompanyMemory.source_ai_job_id == payload.source_ai_job_id)
+            else:
+                duplicate_conditions.extend(
+                    [
+                        CompanyMemory.source_type == payload.source_type,
+                        CompanyMemory.source_id == payload.source_id,
+                    ]
+                )
+            existing_suggestion = db.scalar(
+                select(CompanyMemory)
+                .where(*duplicate_conditions)
+                .order_by(CompanyMemory.created_at.desc())
+                .limit(1)
+            )
+            if existing_suggestion is not None:
+                return existing_suggestion
         memory = CompanyMemory(
             company_id=payload.company_id,
             title=normalize_text(payload.title, max_chars=180) or "Company memory",

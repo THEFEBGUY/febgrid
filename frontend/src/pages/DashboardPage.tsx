@@ -541,16 +541,27 @@ function CompanyPulsePanel({
       title="Company Pulse"
       description="Rule-based company health from people, work, projects, leaves, events, AI jobs, files, and Company Memory."
       action={
-        <Button
-          aria-label={hasPulse ? "Refresh Company Pulse" : "Generate Company Pulse"}
-          disabled={isGenerating || isLoading}
-          icon={isGenerating ? <RefreshCw className="size-4 animate-spin" aria-hidden="true" /> : <Activity className="size-4" aria-hidden="true" />}
-          onClick={onGenerate}
-          title={hasPulse ? "Refresh Company Pulse" : "Generate Company Pulse"}
-          variant={hasPulse ? "secondary" : "primary"}
-        >
-          {isGenerating ? "Generating" : hasPulse ? "Refresh Pulse" : "Generate Pulse"}
-        </Button>
+        <div className="flex flex-wrap justify-end gap-2">
+          <Button
+            aria-label="Open Work DNA"
+            icon={<Brain className="size-4" aria-hidden="true" />}
+            onClick={() => navigateTo("work-dna")}
+            title="Open Work DNA"
+            variant="secondary"
+          >
+            Open Work DNA
+          </Button>
+          <Button
+            aria-label={hasPulse ? "Refresh Company Pulse" : "Generate Company Pulse"}
+            disabled={isGenerating || isLoading}
+            icon={isGenerating ? <RefreshCw className="size-4 animate-spin" aria-hidden="true" /> : <Activity className="size-4" aria-hidden="true" />}
+            onClick={onGenerate}
+            title={hasPulse ? "Refresh Company Pulse" : "Generate Company Pulse"}
+            variant={hasPulse ? "secondary" : "primary"}
+          >
+            {isGenerating ? "Generating" : hasPulse ? "Refresh Pulse" : "Generate Pulse"}
+          </Button>
+        </div>
       }
     >
       <div className="space-y-5 p-5">

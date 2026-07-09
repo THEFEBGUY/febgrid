@@ -52,7 +52,10 @@ def create_company_memory(
     db: Session = Depends(db_session),
     current_user: User = Depends(get_current_user),
 ) -> CompanyMemoryRead:
-    return CompanyMemoryService.create_memory(db, payload=payload, current_user=current_user)
+    memory = CompanyMemoryService.create_memory(db, payload=payload, current_user=current_user)
+    db.commit()
+    db.refresh(memory)
+    return memory
 
 
 @router.post("/from-ai-job/{ai_job_id}", response_model=CompanyMemoryRead)
@@ -62,7 +65,10 @@ def create_company_memory_from_ai_job(
     db: Session = Depends(db_session),
     current_user: User = Depends(get_current_user),
 ) -> CompanyMemoryRead:
-    return CompanyMemoryService.create_from_ai_job(db, ai_job_id=ai_job_id, payload=payload, current_user=current_user)
+    memory = CompanyMemoryService.create_from_ai_job(db, ai_job_id=ai_job_id, payload=payload, current_user=current_user)
+    db.commit()
+    db.refresh(memory)
+    return memory
 
 
 @router.get("/sources/{source_type}/{source_id}", response_model=list[CompanyMemoryRead])
@@ -104,13 +110,16 @@ def update_company_memory(
     db: Session = Depends(db_session),
     current_user: User = Depends(get_current_user),
 ) -> CompanyMemoryRead:
-    return CompanyMemoryService.update_memory(
+    memory = CompanyMemoryService.update_memory(
         db,
         memory_id=memory_id,
         company_id=company_id,
         payload=payload,
         current_user=current_user,
     )
+    db.commit()
+    db.refresh(memory)
+    return memory
 
 
 @router.post("/{memory_id}/approve", response_model=CompanyMemoryRead)
@@ -120,7 +129,10 @@ def approve_company_memory(
     db: Session = Depends(db_session),
     current_user: User = Depends(get_current_user),
 ) -> CompanyMemoryRead:
-    return CompanyMemoryService.approve_memory(db, memory_id=memory_id, company_id=payload.company_id, current_user=current_user)
+    memory = CompanyMemoryService.approve_memory(db, memory_id=memory_id, company_id=payload.company_id, current_user=current_user)
+    db.commit()
+    db.refresh(memory)
+    return memory
 
 
 @router.post("/{memory_id}/reject", response_model=CompanyMemoryRead)
@@ -130,13 +142,16 @@ def reject_company_memory(
     db: Session = Depends(db_session),
     current_user: User = Depends(get_current_user),
 ) -> CompanyMemoryRead:
-    return CompanyMemoryService.reject_memory(
+    memory = CompanyMemoryService.reject_memory(
         db,
         memory_id=memory_id,
         company_id=payload.company_id,
         current_user=current_user,
         note=payload.note,
     )
+    db.commit()
+    db.refresh(memory)
+    return memory
 
 
 @router.post("/{memory_id}/archive", response_model=CompanyMemoryRead)
@@ -146,4 +161,7 @@ def archive_company_memory(
     db: Session = Depends(db_session),
     current_user: User = Depends(get_current_user),
 ) -> CompanyMemoryRead:
-    return CompanyMemoryService.archive_memory(db, memory_id=memory_id, company_id=payload.company_id, current_user=current_user)
+    memory = CompanyMemoryService.archive_memory(db, memory_id=memory_id, company_id=payload.company_id, current_user=current_user)
+    db.commit()
+    db.refresh(memory)
+    return memory

@@ -26,6 +26,7 @@ import { ProjectsPage } from "./pages/ProjectsPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { TeamsPage } from "./pages/TeamsPage";
 import { WorkObjectsPage } from "./pages/WorkObjectsPage";
+import { WorkDNAPage } from "./pages/WorkDNAPage";
 import type { PageKey } from "./types/domain";
 
 function getPageFromHash(): PageKey {
@@ -242,6 +243,8 @@ export function App(): JSX.Element {
         );
       case "memory":
         return <CompanyMemoryPage selectedCompany={febGrid.selectedCompany} currentUserRole={auth.user?.role ?? null} />;
+      case "work-dna":
+        return <WorkDNAPage {...withModuleError(null)} />;
       case "settings":
         return (
           <SettingsPage

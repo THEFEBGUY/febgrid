@@ -1201,6 +1201,55 @@ export interface CompanyPulseSignals {
   metadata: Record<string, unknown>;
 }
 
+export type WorkDNAScopeType = "company" | "project" | "department" | "team";
+
+export interface WorkDNASnapshot extends Timestamped {
+  id: string;
+  company_id: string;
+  scope_type: WorkDNAScopeType | string;
+  scope_id: string | null;
+  generated_by_user_id: string | null;
+  period_days: number;
+  period_start: string;
+  period_end: string;
+  overall_summary: string;
+  work_volume: Record<string, unknown>;
+  work_type_distribution: Record<string, unknown>[];
+  status_distribution: Record<string, unknown>[];
+  priority_distribution: Record<string, unknown>[];
+  completion_patterns: Record<string, unknown>[];
+  overdue_patterns: Record<string, unknown>[];
+  blocked_patterns: Record<string, unknown>[];
+  workflow_patterns: Record<string, unknown>[];
+  project_patterns: Record<string, unknown>[];
+  department_patterns: Record<string, unknown>[];
+  team_patterns: Record<string, unknown>[];
+  tag_patterns: Record<string, unknown>[];
+  recurring_patterns: Record<string, unknown>[];
+  deadline_patterns: Record<string, unknown>[];
+  bottlenecks: Record<string, unknown>[];
+  operational_strengths: string[];
+  attention_areas: string[];
+  risks: string[];
+  recommended_improvements: string[];
+  template_candidates: Record<string, unknown>[];
+  automation_candidates: Record<string, unknown>[];
+  source_counts: Record<string, unknown>;
+  data_coverage: Record<string, unknown>;
+  limitations: string[];
+  is_rule_based: boolean;
+  ai_narrative_used: boolean;
+  ai_job_id: string | null;
+  provider_mode: string | null;
+  provider_key: string | null;
+  model_name: string | null;
+  metadata: Record<string, unknown>;
+}
+
+export interface WorkDNASignals extends Omit<WorkDNASnapshot, "id" | "generated_by_user_id" | "ai_job_id" | "provider_key" | "created_at" | "updated_at"> {
+  generated_at: string;
+}
+
 export type EmployeeTwinWorkloadLevel = "light" | "balanced" | "elevated" | "overloaded" | "unknown";
 
 export interface EmployeeDigitalTwinSnapshot extends Timestamped {

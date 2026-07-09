@@ -18,6 +18,7 @@ from app.models.project import Project, ProjectMember
 from app.models.team import Team, TeamMember
 from app.models.user import User
 from app.models.work_object import WorkObject
+from app.models.work_dna import WorkDNASnapshot
 
 __all__ = [
     "AIJob",
@@ -44,5 +45,6 @@ __all__ = [
     "TeamMember",
     "User",
     "WorkObject",
+    "WorkDNASnapshot",
     "WorkObjectType",
 ]

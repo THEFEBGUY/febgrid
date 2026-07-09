@@ -22,6 +22,7 @@ from app.api.routes import (
     projects,
     search,
     teams,
+    work_dna,
     work_objects,
 )
 
@@ -57,4 +58,5 @@ api_router.include_router(ai_jobs.router)
 api_router.include_router(ai_jobs.legacy_router)
 api_router.include_router(company_memory.router)
 api_router.include_router(company_pulse.router)
+api_router.include_router(work_dna.router)
 api_router.include_router(search.router)

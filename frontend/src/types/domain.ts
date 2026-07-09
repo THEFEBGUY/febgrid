@@ -18,6 +18,7 @@ export type PageKey =
   | "announcements"
   | "notifications"
   | "memory"
+  | "work-dna"
   | "settings";
 
 export interface NavigationItem {

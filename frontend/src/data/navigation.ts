@@ -4,6 +4,7 @@ import {
   BriefcaseBusiness,
   Building2,
   CalendarDays,
+  Fingerprint,
   FolderKanban,
   LayoutDashboard,
   Megaphone,
@@ -30,6 +31,7 @@ export const adminNavigationItems: NavigationItem[] = [
   { key: "announcements", label: "Announcements", description: "Company broadcast", icon: Megaphone },
   { key: "notifications", label: "Notifications", description: "Action stream", icon: Bell },
   { key: "memory", label: "Memory", description: "Company knowledge", icon: Brain },
+  { key: "work-dna", label: "Work DNA", description: "Work patterns", icon: Fingerprint },
   { key: "settings", label: "Settings", description: "Company config", icon: Settings },
 ];
 
