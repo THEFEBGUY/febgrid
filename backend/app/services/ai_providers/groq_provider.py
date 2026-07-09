@@ -1,13 +1,16 @@
-import json
-import socket
 import time
-import urllib.error
-import urllib.request
 from datetime import UTC, datetime
 from typing import Any
 
 from app.core.ai_config import AIProviderConfig
+from app.services.ai_output_parser import parse_ai_provider_output
 from app.services.ai_providers.base import AIProviderError, AIProviderRequest, AIProviderResult, BaseAIProvider
+
+try:
+    from groq import APIConnectionError, APIStatusError, APITimeoutError, AuthenticationError, Groq, RateLimitError
+except ImportError:  # pragma: no cover - exercised only when dependencies are not installed.
+    APIConnectionError = APIStatusError = APITimeoutError = AuthenticationError = RateLimitError = None  # type: ignore[assignment]
+    Groq = None  # type: ignore[assignment]
 
 
 class GroqAIProvider(BaseAIProvider):
@@ -26,52 +29,42 @@ class GroqAIProvider(BaseAIProvider):
             raise AIProviderError("provider_unsupported_capability", "Current AI provider/model does not support image analysis yet.")
         if not self.config.groq_api_key:
             raise AIProviderError("missing_api_key", "Groq API key is not configured.")
-
-        body = {
-            "model": self.config.groq_model,
-            "messages": request.messages,
-            "temperature": self.config.default_temperature,
-            "max_tokens": self.config.default_max_tokens,
-        }
-        endpoint = f"{self.config.groq_base_url}/chat/completions"
-        encoded_body = json.dumps(body).encode("utf-8")
-        http_request = urllib.request.Request(
-            endpoint,
-            data=encoded_body,
-            method="POST",
-            headers={
-                "Authorization": f"Bearer {self.config.groq_api_key}",
-                "Content-Type": "application/json",
-                "Accept": "application/json",
-            },
-        )
+        if Groq is None:
+            raise AIProviderError("provider_unavailable", "Groq SDK dependency is not installed.")
 
         started = time.perf_counter()
         try:
-            with urllib.request.urlopen(http_request, timeout=self.config.groq_timeout_seconds) as response:
-                raw_response = response.read().decode("utf-8")
-        except TimeoutError as exc:
+            completion = self._client().chat.completions.create(
+                model=self.config.groq_model,
+                messages=request.messages,
+                temperature=self.config.default_temperature,
+                max_tokens=self.config.default_max_tokens,
+                response_format={"type": "json_object"},
+            )
+        except APITimeoutError as exc:
             raise AIProviderError("provider_timeout", "Groq request timed out.") from exc
-        except socket.timeout as exc:
-            raise AIProviderError("provider_timeout", "Groq request timed out.") from exc
-        except urllib.error.HTTPError as exc:
-            raise self._http_error(exc) from exc
-        except urllib.error.URLError as exc:
+        except AuthenticationError as exc:
+            raise AIProviderError("provider_auth_failed", "Groq credentials are missing or invalid.", self._status_metadata(exc)) from exc
+        except RateLimitError as exc:
+            raise AIProviderError("provider_rate_limited", "Groq rate limit reached.", self._status_metadata(exc)) from exc
+        except APIConnectionError as exc:
             raise AIProviderError("provider_unavailable", "Groq provider is unavailable.") from exc
+        except APIStatusError as exc:
+            raise self._api_status_error(exc) from exc
         except Exception as exc:
             raise AIProviderError("provider_unknown_error", "Groq provider failed safely.") from exc
 
         latency_ms = int((time.perf_counter() - started) * 1000)
         try:
-            parsed = json.loads(raw_response)
-            content = parsed["choices"][0]["message"]["content"]
-        except (KeyError, IndexError, TypeError, json.JSONDecodeError) as exc:
+            content = completion.choices[0].message.content or ""
+        except (AttributeError, IndexError, TypeError) as exc:
             raise AIProviderError("provider_bad_response", "Groq returned an unsupported response shape.") from exc
 
-        output = self._parse_model_content(content)
-        usage = parsed.get("usage") if isinstance(parsed, dict) else {}
-        input_tokens = self._safe_int(usage.get("prompt_tokens")) if isinstance(usage, dict) else None
-        output_tokens = self._safe_int(usage.get("completion_tokens")) if isinstance(usage, dict) else None
+        parsed_output = parse_ai_provider_output(content, request.job_type)
+        output = parsed_output.output_payload
+        usage = getattr(completion, "usage", None)
+        input_tokens = self._safe_int(getattr(usage, "prompt_tokens", None))
+        output_tokens = self._safe_int(getattr(usage, "completion_tokens", None))
         output.update(
             {
                 "provider": self.provider_key,
@@ -99,10 +92,22 @@ class GroqAIProvider(BaseAIProvider):
             output_token_estimate=output_tokens,
             safety_status="passed",
             metadata={
-                "http_status": 200,
                 "usage_available": bool(usage),
+                "custom_base_url": bool(self.config.groq_base_url),
+                "sdk_max_retries": self.config.groq_max_retries,
+                **parsed_output.metadata,
             },
         )
+
+    def _client(self) -> Groq:
+        kwargs: dict[str, Any] = {
+            "api_key": self.config.groq_api_key,
+            "timeout": float(self.config.groq_timeout_seconds),
+            "max_retries": self.config.groq_max_retries,
+        }
+        if self.config.groq_base_url:
+            kwargs["base_url"] = self.config.groq_base_url
+        return Groq(**kwargs)
 
     @staticmethod
     def _safe_int(value: Any) -> int | None:
@@ -114,120 +119,20 @@ class GroqAIProvider(BaseAIProvider):
             return None
 
     @staticmethod
-    def _parse_model_content(content: str) -> dict[str, Any]:
-        text = content.strip()
-        try:
-            parsed = json.loads(text)
-            if isinstance(parsed, dict):
-                output: dict[str, Any] = {}
-                text_keys = [
-                    "summary",
-                    "executive_summary",
-                    "document_overview",
-                    "image_overview",
-                    "transcript",
-                    "transcript_summary",
-                    "current_status_explanation",
-                    "document_type_guess",
-                    "operational_relevance",
-                    "language_detected",
-                    "project_health",
-                    "status_explanation",
-                    "progress_overview",
-                    "open_work_overview",
-                    "work_overview",
-                    "project_overview",
-                    "people_overview",
-                    "leave_overview",
-                ]
-                list_keys = [
-                    "key_points",
-                    "blockers_or_risks",
-                    "risks_or_blockers",
-                    "risks_or_concerns",
-                    "suggested_next_steps",
-                    "suggested_next_actions",
-                    "operational_highlights",
-                    "decisions_or_commitments",
-                    "action_items",
-                    "important_dates",
-                    "important_dates_or_numbers",
-                    "important_numbers",
-                    "visible_objects_or_elements",
-                    "possible_context",
-                    "people_or_teams_mentioned",
-                    "related_work_suggestions",
-                    "attention_items",
-                    "limitations",
-                    "risks",
-                    "next_actions",
-                ]
-                for key in text_keys:
-                    if key in parsed and parsed.get(key) is not None:
-                        output[key] = str(parsed.get(key)).strip()[:4000]
-                for key in list_keys:
-                    value = parsed.get(key)
-                    if isinstance(value, list):
-                        output[key] = [str(item).strip()[:800] for item in value[:8] if str(item).strip()]
-                if "suggested_next_steps" not in output and isinstance(output.get("next_actions"), list):
-                    output["suggested_next_steps"] = output["next_actions"]
-                if "suggested_next_actions" not in output and isinstance(output.get("next_actions"), list):
-                    output["suggested_next_actions"] = output["next_actions"]
-                if "blockers_or_risks" not in output and isinstance(output.get("risks"), list):
-                    output["blockers_or_risks"] = output["risks"]
-                if "risks_or_blockers" not in output and isinstance(output.get("risks"), list):
-                    output["risks_or_blockers"] = output["risks"]
-                output["truncated"] = bool(parsed.get("truncated", False))
-                unsupported_reason = parsed.get("unsupported_reason")
-                output["unsupported_reason"] = str(unsupported_reason).strip()[:500] if unsupported_reason else None
-                if parsed.get("duration_seconds") is not None:
-                    output["duration_seconds"] = parsed.get("duration_seconds")
-                output["confidence"] = parsed.get("confidence")
-                if "summary" not in output and "executive_summary" not in output:
-                    output["summary"] = ""
-                return output
-        except json.JSONDecodeError:
-            pass
-        return {
-            "summary": text[:4000],
-            "executive_summary": text[:4000],
-            "document_overview": text[:4000],
-            "image_overview": text[:4000],
-            "transcript": text[:4000],
-            "transcript_summary": text[:4000],
-            "key_points": [],
-            "blockers_or_risks": [],
-            "risks_or_blockers": [],
-            "risks_or_concerns": [],
-            "decisions_or_commitments": [],
-            "action_items": [],
-            "important_dates": [],
-            "suggested_next_steps": [],
-            "suggested_next_actions": [],
-            "operational_highlights": [],
-            "important_dates_or_numbers": [],
-            "important_numbers": [],
-            "visible_objects_or_elements": [],
-            "possible_context": [],
-            "people_or_teams_mentioned": [],
-            "related_work_suggestions": [],
-            "operational_relevance": "",
-            "attention_items": [],
-            "limitations": ["Provider returned non-JSON text, so FebGrid wrapped the response safely."],
-            "truncated": False,
-            "unsupported_reason": None,
-            "confidence": None,
-        }
+    def _status_metadata(exc: Any) -> dict[str, Any]:
+        status_code = getattr(exc, "status_code", None)
+        return {"http_status": status_code} if status_code else {}
 
-    @staticmethod
-    def _http_error(exc: urllib.error.HTTPError) -> AIProviderError:
-        status_code = exc.code
+    @classmethod
+    def _api_status_error(cls, exc: Any) -> AIProviderError:
+        status_code = getattr(exc, "status_code", None)
+        metadata = cls._status_metadata(exc)
         if status_code == 429:
-            return AIProviderError("provider_rate_limited", "Groq rate limit reached.", {"http_status": status_code})
+            return AIProviderError("provider_rate_limited", "Groq rate limit reached.", metadata)
         if status_code == 400:
-            return AIProviderError("provider_bad_request", "Groq rejected the safe request.", {"http_status": status_code})
+            return AIProviderError("provider_bad_request", "Groq rejected the safe request.", metadata)
         if status_code in {401, 403}:
-            return AIProviderError("provider_auth_failed", "Groq credentials are missing or invalid.", {"http_status": status_code})
-        if status_code >= 500:
-            return AIProviderError("provider_unavailable", "Groq provider is unavailable.", {"http_status": status_code})
-        return AIProviderError("provider_unknown_error", "Groq provider failed safely.", {"http_status": status_code})
+            return AIProviderError("provider_auth_failed", "Groq credentials are missing or invalid.", metadata)
+        if isinstance(status_code, int) and status_code >= 500:
+            return AIProviderError("provider_unavailable", "Groq provider is unavailable.", metadata)
+        return AIProviderError("provider_unknown_error", "Groq provider failed safely.", metadata)
