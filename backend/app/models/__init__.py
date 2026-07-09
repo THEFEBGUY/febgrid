@@ -8,6 +8,7 @@ from app.models.communication import Announcement, Comment, CommentMention
 from app.models.configuration import CustomFieldDefinition, WorkObjectType
 from app.models.department import Department
 from app.models.employee import Employee
+from app.models.employee_digital_twin import EmployeeDigitalTwinSnapshot
 from app.models.employee_invitation import EmployeeInvitation
 from app.models.event import Event
 from app.models.leave_request import LeaveRequest
@@ -31,6 +32,7 @@ __all__ = [
     "CustomFieldDefinition",
     "Department",
     "Employee",
+    "EmployeeDigitalTwinSnapshot",
     "EmployeeInvitation",
     "Event",
     "LeaveRequest",

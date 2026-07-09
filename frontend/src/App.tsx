@@ -17,6 +17,7 @@ import { EventsPage } from "./pages/EventsPage";
 import { InviteAcceptPage } from "./pages/InviteAcceptPage";
 import { LeavesPage } from "./pages/LeavesPage";
 import { MyLeavePage } from "./pages/MyLeavePage";
+import { MyDigitalTwinPage } from "./pages/MyDigitalTwinPage";
 import { MyProfilePage } from "./pages/MyProfilePage";
 import { MyProjectsPage } from "./pages/MyProjectsPage";
 import { MyWorkPage } from "./pages/MyWorkPage";
@@ -136,6 +137,12 @@ export function App(): JSX.Element {
         );
       case "my-projects":
         return <MyProjectsPage {...withModuleError(febGrid.moduleErrors.projects ?? null)} />;
+      case "my-digital-twin":
+        return (
+          <MyDigitalTwinPage
+            {...withModuleError(febGrid.moduleErrors.employees ?? febGrid.moduleErrors.workObjects ?? febGrid.moduleErrors.projects ?? null)}
+          />
+        );
       case "my-leave":
         return (
           <MyLeavePage

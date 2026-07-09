@@ -5,6 +5,7 @@ export type PageKey =
   | "my-dashboard"
   | "my-work"
   | "my-projects"
+  | "my-digital-twin"
   | "my-leave"
   | "my-profile"
   | "companies"

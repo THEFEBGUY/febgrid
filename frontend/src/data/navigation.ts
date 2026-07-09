@@ -12,6 +12,7 @@ import {
   UserCircle,
   Users,
   Zap,
+  Sparkles,
 } from "lucide-react";
 
 import type { AuthUser } from "../types/api";
@@ -47,6 +48,7 @@ export const employeeNavigationItems: NavigationItem[] = [
   { key: "my-dashboard", label: "My Dashboard", description: "Personal overview", icon: LayoutDashboard },
   { key: "my-work", label: "My Work", description: "Assigned work", icon: BriefcaseBusiness },
   { key: "my-projects", label: "My Projects", description: "Assigned projects", icon: FolderKanban },
+  { key: "my-digital-twin", label: "My Digital Twin", description: "Workload profile", icon: Sparkles },
   { key: "my-leave", label: "My Leave", description: "My availability", icon: CalendarDays },
   { key: "notifications", label: "Notifications", description: "My action stream", icon: Bell },
   { key: "announcements", label: "Announcements", description: "Company broadcast", icon: Megaphone },

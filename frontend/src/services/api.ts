@@ -39,6 +39,8 @@ import type {
   DepartmentCreatePayload,
   Employee,
   EmployeeCreatePayload,
+  EmployeeDigitalTwinSignals,
+  EmployeeDigitalTwinSnapshot,
   EmployeeInvitation,
   EmployeeInvitationActionResult,
   EmployeeInvitationCreatePayload,
@@ -210,6 +212,14 @@ export const api = {
   createEmployee: (payload: EmployeeCreatePayload) => request<Employee>("/employees", jsonInit("POST", payload)),
   employeeMe: () => request<Employee>("/employees/me"),
   updateEmployeeMe: (payload: EmployeeSelfUpdatePayload) => request<Employee>("/employees/me", jsonInit("PATCH", payload)),
+  latestEmployeeDigitalTwin: (employeeId: string, companyId: string) =>
+    request<EmployeeDigitalTwinSnapshot | null>(companyPath(`/employees/${employeeId}/digital-twin/latest`, companyId)),
+  generateEmployeeDigitalTwin: (employeeId: string, companyId: string, periodDays = 30) =>
+    request<EmployeeDigitalTwinSnapshot>(companyPath(`/employees/${employeeId}/digital-twin/generate?period_days=${encodeURIComponent(String(periodDays))}`, companyId), jsonInit("POST", {})),
+  employeeDigitalTwinHistory: (employeeId: string, companyId: string, limit = 20) =>
+    request<EmployeeDigitalTwinSnapshot[]>(companyPath(`/employees/${employeeId}/digital-twin/history?limit=${encodeURIComponent(String(limit))}`, companyId)),
+  employeeDigitalTwinSignals: (employeeId: string, companyId: string, periodDays = 30) =>
+    request<EmployeeDigitalTwinSignals>(companyPath(`/employees/${employeeId}/digital-twin/signals?period_days=${encodeURIComponent(String(periodDays))}`, companyId)),
   updateEmployee: (employeeId: string, companyId: string, payload: EmployeeUpdatePayload) => request<Employee>(companyPath(`/employees/${employeeId}`, companyId), jsonInit("PUT", payload)),
   deactivateEmployee: (employeeId: string, companyId: string) => request<void>(companyPath(`/employees/${employeeId}`, companyId), { method: "DELETE" }),
   updateEmployeeStatus: (employeeId: string, payload: { company_id: string; current_status: string }) => request<Employee>(`/employees/${employeeId}/status`, jsonInit("PATCH", payload)),

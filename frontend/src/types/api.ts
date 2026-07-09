@@ -1201,6 +1201,65 @@ export interface CompanyPulseSignals {
   metadata: Record<string, unknown>;
 }
 
+export type EmployeeTwinWorkloadLevel = "light" | "balanced" | "elevated" | "overloaded" | "unknown";
+
+export interface EmployeeDigitalTwinSnapshot extends Timestamped {
+  id: string;
+  company_id: string;
+  employee_id: string;
+  generated_by_user_id: string | null;
+  period_days: number;
+  period_start: string;
+  period_end: string;
+  workload_level: EmployeeTwinWorkloadLevel | string;
+  summary: string;
+  profile: Record<string, unknown>;
+  work_metrics: Record<string, unknown>;
+  project_metrics: Record<string, unknown>;
+  availability: Record<string, unknown>;
+  skills: string[];
+  strengths: string[];
+  attention_areas: string[];
+  risks: string[];
+  recommended_actions: string[];
+  source_counts: Record<string, unknown>;
+  data_coverage: Record<string, unknown>;
+  limitations: string[];
+  is_rule_based: boolean;
+  ai_narrative_used: boolean;
+  ai_job_id: string | null;
+  provider_mode: string | null;
+  provider_key: string | null;
+  model_name: string | null;
+  metadata: Record<string, unknown>;
+}
+
+export interface EmployeeDigitalTwinSignals {
+  company_id: string;
+  employee_id: string;
+  period_days: number;
+  period_start: string;
+  period_end: string;
+  workload_level: EmployeeTwinWorkloadLevel | string;
+  summary: string;
+  profile: Record<string, unknown>;
+  work_metrics: Record<string, unknown>;
+  project_metrics: Record<string, unknown>;
+  availability: Record<string, unknown>;
+  skills: string[];
+  strengths: string[];
+  attention_areas: string[];
+  risks: string[];
+  recommended_actions: string[];
+  source_counts: Record<string, unknown>;
+  data_coverage: Record<string, unknown>;
+  limitations: string[];
+  is_rule_based: boolean;
+  ai_narrative_used: boolean;
+  generated_at: string;
+  metadata: Record<string, unknown>;
+}
+
 export interface DashboardSummary {
   company_overview: {
     company_id: string;

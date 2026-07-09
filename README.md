@@ -95,6 +95,8 @@ The Phase 1 frontend includes the main dashboard shell, sidebar navigation, reus
 
 Phase 2 begins with operational search/filtering and the configuration foundation. The Settings page lets owner/admin users update company settings, apply built-in industry templates, manage company-specific work object types, define simple custom fields for work object forms, review billing/file foundations, and run tenant-safe AI foundation jobs. AI defaults to mock mode; Groq can be enabled only with local environment configuration plus explicit company-level external-processing consent. Existing work objects keep their string `object_type`, while new configurable type records provide company-specific labels and defaults.
 
+Layer 2 starts with rule-based operational intelligence. Company Pulse gives owner/admin users an explainable company health snapshot. Employee Digital Twin v1 gives permitted users a privacy-safe operational work profile for one employee at a time. It summarizes assigned work, project involvement, safe availability context, skills/tags, attention areas, risks, and recommended planning actions for 7, 30, or 90 day periods. It is deliberately not a performance score, ranking, surveillance tool, personality profile, or employment-decision system. Employees can access only their own Digital Twin, managers can access direct-report or permitted shared-project context, and owner/admin access remains tenant-scoped. The core is deterministic and rule-based; no Groq key or external AI call is required.
+
 Local uploaded files are stored under `backend/storage/uploads/` for development. That folder is ignored by Git and should not be committed.
 
 ## Alembic
@@ -123,6 +125,7 @@ All Phase 1 endpoints are mounted under `/api/v1`.
 - `/dashboard/summary`
 - `/departments`
 - `/employees`
+- `/employees/{employee_id}/digital-twin`
 - `/invitations`
 - `/teams`
 - `/projects`

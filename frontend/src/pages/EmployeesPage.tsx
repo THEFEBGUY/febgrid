@@ -13,8 +13,9 @@ import {
   UserRoundCheck,
   XCircle,
 } from "lucide-react";
-import { type FormEvent, useMemo, useState } from "react";
+import { type FormEvent, useEffect, useMemo, useState } from "react";
 
+import { DigitalTwinPanel } from "../components/employee/DigitalTwinPanel";
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
 import { DataTable, type DataTableColumn } from "../components/ui/DataTable";
@@ -25,9 +26,11 @@ import { ModuleBoundary } from "../components/ui/ModuleBoundary";
 import { SectionPanel } from "../components/ui/SectionPanel";
 import { EmptyState, LoadingState } from "../components/ui/States";
 import { statusTone } from "../components/ui/tone";
+import { api } from "../services/api";
 import type {
   Employee,
   EmployeeCreatePayload,
+  EmployeeDigitalTwinSnapshot,
   EmployeeInvitation,
   EmployeeInvitationActionResult,
   EmployeeInvitationCreatePayload,
@@ -170,6 +173,12 @@ export function EmployeesPage({
   const [inviteError, setInviteError] = useState<string | null>(null);
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
   const [profileEmployee, setProfileEmployee] = useState<Employee | null>(null);
+  const [profileTwin, setProfileTwin] = useState<EmployeeDigitalTwinSnapshot | null>(null);
+  const [profileTwinHistory, setProfileTwinHistory] = useState<EmployeeDigitalTwinSnapshot[]>([]);
+  const [profileTwinPeriodDays, setProfileTwinPeriodDays] = useState(30);
+  const [isProfileTwinLoading, setIsProfileTwinLoading] = useState(false);
+  const [isProfileTwinGenerating, setIsProfileTwinGenerating] = useState(false);
+  const [profileTwinError, setProfileTwinError] = useState<string | null>(null);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isInviteOpen, setIsInviteOpen] = useState(false);
   const [isConfirmInviteOpen, setIsConfirmInviteOpen] = useState(false);
@@ -187,6 +196,8 @@ export function EmployeesPage({
   );
   const teamNames = useMemo(() => Object.fromEntries(data.teams.map((team) => [team.id, team.name])), [data.teams]);
   const employeeNames = useMemo(() => Object.fromEntries(data.employees.map((employee) => [employee.id, employee.full_name])), [data.employees]);
+  const profileEmployeeId = profileEmployee?.id ?? null;
+  const selectedCompanyId = selectedCompany?.id ?? null;
   const pendingApprovals = useMemo(
     () => data.invitations.filter((invitation) => invitation.status === "submitted_for_approval"),
     [data.invitations],
@@ -223,6 +234,57 @@ export function EmployeesPage({
     });
   }, [data.employees, departmentFilter, departmentNames, searchFilter, statusFilter, teamFilter, teamNames]);
   const hasActiveFilters = Boolean(searchFilter || statusFilter || departmentFilter || teamFilter);
+
+  useEffect(() => {
+    if (!profileEmployeeId || !selectedCompanyId) {
+      setProfileTwin(null);
+      setProfileTwinHistory([]);
+      setProfileTwinError(null);
+      return;
+    }
+
+    let isActive = true;
+    setIsProfileTwinLoading(true);
+    setProfileTwinError(null);
+    Promise.all([
+      api.latestEmployeeDigitalTwin(profileEmployeeId, selectedCompanyId),
+      api.employeeDigitalTwinHistory(profileEmployeeId, selectedCompanyId, 8),
+    ])
+      .then(([latest, history]) => {
+        if (!isActive) return;
+        setProfileTwin(latest);
+        setProfileTwinHistory(history);
+      })
+      .catch(() => {
+        if (!isActive) return;
+        setProfileTwin(null);
+        setProfileTwinHistory([]);
+        setProfileTwinError("Unable to load this employee's Digital Twin snapshot.");
+      })
+      .finally(() => {
+        if (isActive) setIsProfileTwinLoading(false);
+      });
+
+    return () => {
+      isActive = false;
+    };
+  }, [profileEmployeeId, selectedCompanyId]);
+
+  async function handleGenerateProfileTwin(): Promise<void> {
+    if (!profileEmployee || !selectedCompany) return;
+    setIsProfileTwinGenerating(true);
+    setProfileTwinError(null);
+    try {
+      const nextTwin = await api.generateEmployeeDigitalTwin(profileEmployee.id, selectedCompany.id, profileTwinPeriodDays);
+      setProfileTwin(nextTwin);
+      const history = await api.employeeDigitalTwinHistory(profileEmployee.id, selectedCompany.id, 8);
+      setProfileTwinHistory(history);
+    } catch {
+      setProfileTwinError("Unable to generate this employee's Digital Twin snapshot.");
+    } finally {
+      setIsProfileTwinGenerating(false);
+    }
+  }
 
   const columns: DataTableColumn<Employee>[] = [
     {
@@ -904,22 +966,35 @@ export function EmployeesPage({
         </div>
       </Modal>
 
-      <Modal description="Employee profile foundation for Sprint 3." isOpen={Boolean(profileEmployee)} title={profileEmployee?.full_name ?? "Employee profile"} onClose={() => setProfileEmployee(null)}>
+      <Modal description="Employee profile foundation with safe operational context." isOpen={Boolean(profileEmployee)} title={profileEmployee?.full_name ?? "Employee profile"} onClose={() => setProfileEmployee(null)}>
         {profileEmployee ? (
-          <div className="grid gap-4 p-5 sm:grid-cols-2">
-            <ProfileItem label="Role" value={profileEmployee.role_title} />
-            <ProfileItem label="Status" value={formatLabel(profileEmployee.current_status)} badgeTone={statusTone(profileEmployee.current_status)} />
-            <ProfileItem label="Account" value={formatLabel(profileEmployee.account_status)} badgeTone={accountStatusTone(profileEmployee.account_status)} />
-            <ProfileItem label="Activation" value={formatLabel(profileEmployee.activation_status)} />
-            <ProfileItem label="Profile completion" value={formatLabel(profileEmployee.profile_completion_status)} />
-            <ProfileItem label="Department" value={profileEmployee.department_id ? departmentNames[profileEmployee.department_id] : profileEmployee.department ?? "Not assigned"} />
-            <ProfileItem label="Team" value={profileEmployee.team_id ? teamNames[profileEmployee.team_id] : "Not assigned"} />
-            <ProfileItem label="Manager" value={profileEmployee.manager_id ? employeeNames[profileEmployee.manager_id] ?? "Assigned" : "No manager"} />
-            <ProfileItem label="Employment" value={formatLabel(profileEmployee.employment_type)} />
-            <ProfileItem label="Joined" value={formatDate(profileEmployee.joined_at)} />
-            <ProfileItem label="Linked user" value={profileEmployee.user_id ? "Linked" : "Not linked"} />
-            <ProfileItem label="Phone" value={profileEmployee.phone ?? "Not set"} />
-            <ProfileItem label="Location" value={profileEmployee.location ?? "Not set"} />
+          <div className="space-y-5 p-5">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <ProfileItem label="Role" value={profileEmployee.role_title} />
+              <ProfileItem label="Status" value={formatLabel(profileEmployee.current_status)} badgeTone={statusTone(profileEmployee.current_status)} />
+              <ProfileItem label="Account" value={formatLabel(profileEmployee.account_status)} badgeTone={accountStatusTone(profileEmployee.account_status)} />
+              <ProfileItem label="Activation" value={formatLabel(profileEmployee.activation_status)} />
+              <ProfileItem label="Profile completion" value={formatLabel(profileEmployee.profile_completion_status)} />
+              <ProfileItem label="Department" value={profileEmployee.department_id ? departmentNames[profileEmployee.department_id] : profileEmployee.department ?? "Not assigned"} />
+              <ProfileItem label="Team" value={profileEmployee.team_id ? teamNames[profileEmployee.team_id] : "Not assigned"} />
+              <ProfileItem label="Manager" value={profileEmployee.manager_id ? employeeNames[profileEmployee.manager_id] ?? "Assigned" : "No manager"} />
+              <ProfileItem label="Employment" value={formatLabel(profileEmployee.employment_type)} />
+              <ProfileItem label="Joined" value={formatDate(profileEmployee.joined_at)} />
+              <ProfileItem label="Linked user" value={profileEmployee.user_id ? "Linked" : "Not linked"} />
+              <ProfileItem label="Phone" value={profileEmployee.phone ?? "Not set"} />
+              <ProfileItem label="Location" value={profileEmployee.location ?? "Not set"} />
+            </div>
+            <DigitalTwinPanel
+              title={`${profileEmployee.full_name}'s Digital Twin`}
+              twin={profileTwin}
+              history={profileTwinHistory}
+              isLoading={isProfileTwinLoading}
+              isGenerating={isProfileTwinGenerating}
+              error={profileTwinError}
+              onGenerate={handleGenerateProfileTwin}
+              periodDays={profileTwinPeriodDays}
+              onPeriodChange={setProfileTwinPeriodDays}
+            />
           </div>
         ) : null}
       </Modal>

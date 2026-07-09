@@ -12,6 +12,7 @@ from app.api.routes import (
     communication,
     dashboard,
     departments,
+    employee_digital_twin,
     employees,
     events,
     health,
@@ -36,6 +37,7 @@ api_router.include_router(configuration.custom_fields_router)
 api_router.include_router(dashboard.router)
 api_router.include_router(departments.router)
 api_router.include_router(employees.router)
+api_router.include_router(employee_digital_twin.router)
 api_router.include_router(invitations.router)
 api_router.include_router(teams.router)
 api_router.include_router(projects.router)
