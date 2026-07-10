@@ -1,0 +1,19 @@
+{
+  "name": "febgrid-secure-chat-crypto-spike",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Isolated Phase 4.5 Step 0 cryptography feasibility probe. Not production code.",
+  "scripts": {
+    "probe": "node probe.mjs",
+    "exercise:openmls": "node exercise-openmls-wasm.mjs",
+    "browser:build": "vite build"
+  },
+  "dependencies": {
+    "@signalapp/libsignal-client": "0.96.4",
+    "openmls-wasm": "0.1.0"
+  },
+  "devDependencies": {
+    "vite": "6.4.3"
+  }
+}

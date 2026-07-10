@@ -1,0 +1,26 @@
+database:
+  name: psycopg2
+  args:
+    user: synapse
+    database: synapse
+    host: postgres-b
+    port: 5432
+    cp_min: 1
+    cp_max: 5
+
+enable_registration: true
+enable_registration_without_verification: true
+enable_registration_captcha: false
+allow_guest_access: false
+trusted_key_servers: []
+federation_domain_whitelist:
+  - company-b.test
+
+listeners:
+  - port: 8008
+    tls: false
+    type: http
+    x_forwarded: false
+    resources:
+      - names: [client]
+        compress: false

@@ -1,0 +1,18 @@
+{
+  "name": "febgrid-matrix-e2ee-spike",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Isolated Phase 4.5 Step 0.1 Matrix feasibility spike. Not production code.",
+  "scripts": {
+    "browser:build": "vite build",
+    "browser:serve": "vite preview --host 127.0.0.1 --port 4174"
+  },
+  "dependencies": {
+    "@matrix-org/matrix-sdk-crypto-wasm": "18.3.1",
+    "matrix-js-sdk": "41.9.0"
+  },
+  "devDependencies": {
+    "vite": "6.4.3"
+  }
+}

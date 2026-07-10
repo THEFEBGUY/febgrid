@@ -1,0 +1,68 @@
+name: febgrid-matrix-step02
+
+services:
+  postgres-a:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: synapse
+      POSTGRES_USER: synapse
+      POSTGRES_HOST_AUTH_METHOD: trust
+      POSTGRES_INITDB_ARGS: --locale=C --encoding=UTF8
+      LANG: C
+      LC_ALL: C
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U synapse -d synapse"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    networks: [company-a]
+
+  synapse-a:
+    image: matrixdotorg/synapse:latest
+    depends_on:
+      postgres-a:
+        condition: service_healthy
+    environment:
+      SYNAPSE_CONFIG_PATH: /data/homeserver.yaml
+    command: ["run", "-c", "/data/homeserver.yaml", "-c", "/data/step02.yaml"]
+    ports:
+      - "127.0.0.1:18008:8008"
+    volumes:
+      - ./data/company-a:/data
+      - ./config/company-a.yaml:/data/step02.yaml:ro
+    networks: [company-a]
+
+  postgres-b:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: synapse
+      POSTGRES_USER: synapse
+      POSTGRES_HOST_AUTH_METHOD: trust
+      POSTGRES_INITDB_ARGS: --locale=C --encoding=UTF8
+      LANG: C
+      LC_ALL: C
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U synapse -d synapse"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    networks: [company-b]
+
+  synapse-b:
+    image: matrixdotorg/synapse:latest
+    depends_on:
+      postgres-b:
+        condition: service_healthy
+    environment:
+      SYNAPSE_CONFIG_PATH: /data/homeserver.yaml
+    command: ["run", "-c", "/data/homeserver.yaml", "-c", "/data/step02.yaml"]
+    ports:
+      - "127.0.0.1:18009:8008"
+    volumes:
+      - ./data/company-b:/data
+      - ./config/company-b.yaml:/data/step02.yaml:ro
+    networks: [company-b]
+
+networks:
+  company-a: {}
+  company-b: {}
