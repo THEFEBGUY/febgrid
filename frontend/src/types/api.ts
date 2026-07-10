@@ -1368,6 +1368,19 @@ export interface DashboardSummary {
     pending_suggestions: number;
     important_memories: number;
   };
+  intelligence_summary?: {
+    latest_work_dna_scope: string | null;
+    latest_work_dna_generated_at: string | null;
+    latest_work_dna_bottlenecks: number;
+    latest_work_dna_recurring_patterns: number;
+    latest_work_dna_template_candidates: number;
+    employee_twins_recent_count: number;
+    employee_twins_missing_recent_count: number;
+    ai_queued_jobs: number;
+    ai_running_jobs: number;
+    ai_failed_jobs: number;
+    ai_cancelled_jobs: number;
+  } | null;
   recent_events: Event[];
   recent_notifications: Notification[];
   recent_announcements: Announcement[];

@@ -23,7 +23,9 @@ class DummyDB:
         self.committed = False
         self.refreshed = None
         self.scalar_result = scalar_result
+        self.records = {}
         self.added = None
+        self.flushed = False
 
     def commit(self) -> None:
         self.committed = True
@@ -36,6 +38,12 @@ class DummyDB:
 
     def add(self, value) -> None:
         self.added = value
+
+    def flush(self) -> None:
+        self.flushed = True
+
+    def get(self, model, value):
+        return self.records.get((model, value))
 
 
 class CompanyMemoryRouteTests(unittest.TestCase):
@@ -136,9 +144,61 @@ class CompanyMemoryRouteTests(unittest.TestCase):
             "image_analysis",
             "audio_transcription",
             "work_dna",
+            "employee_digital_twin",
         }
 
         self.assertTrue(expected_sources.issubset(SOURCE_TYPES))
+
+    def test_employee_digital_twin_source_type_is_validated_and_preserved(self) -> None:
+        from app.models.employee_digital_twin import EmployeeDigitalTwinSnapshot
+
+        user = SimpleNamespace(id=uuid4(), company_id=uuid4(), role="company_owner")
+        source_id = uuid4()
+        db = DummyDB()
+        db.records[(EmployeeDigitalTwinSnapshot, source_id)] = SimpleNamespace(id=source_id, company_id=user.company_id)
+        payload = CompanyMemoryCreate(
+            company_id=user.company_id,
+            title="Digital Twin insight",
+            memory_type="operational_fact",
+            scope_type="company",
+            source_type="employee_digital_twin",
+            source_id=source_id,
+            content="Digital Twin planning insight",
+            status="suggested",
+        )
+
+        with patch.object(CompanyMemoryService, "validate_scope_entity") as validate_scope:
+            with patch.object(CompanyMemoryService, "record_memory_event") as record_event:
+                with patch.object(CompanyMemoryService, "notify_suggestion_reviewers") as notify_reviewers:
+                    result = CompanyMemoryService.create_memory(db, payload=payload, current_user=user)
+
+        self.assertEqual(result.status, "suggested")
+        self.assertEqual(result.source_type, "employee_digital_twin")
+        self.assertEqual(result.source_id, source_id)
+        self.assertIs(db.added, result)
+        self.assertTrue(db.flushed)
+        validate_scope.assert_called_once()
+        self.assertGreaterEqual(record_event.call_count, 2)
+        notify_reviewers.assert_called_once()
+
+    def test_employee_digital_twin_source_rejects_cross_company_snapshot(self) -> None:
+        from app.models.employee_digital_twin import EmployeeDigitalTwinSnapshot
+
+        company_id = uuid4()
+        source_id = uuid4()
+        db = DummyDB()
+        db.records[(EmployeeDigitalTwinSnapshot, source_id)] = SimpleNamespace(id=source_id, company_id=uuid4())
+
+        with self.assertRaises(HTTPException) as raised:
+            CompanyMemoryService.validate_source(
+                db,
+                company_id=company_id,
+                source_type="employee_digital_twin",
+                source_id=source_id,
+                source_ai_job_id=None,
+            )
+
+        self.assertEqual(raised.exception.status_code, 404)
 
     def test_list_endpoint_propagates_cross_company_rejection_from_service(self) -> None:
         db = DummyDB()

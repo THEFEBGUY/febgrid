@@ -13,6 +13,7 @@ from app.models.attachment import Attachment
 from app.models.company_memory import CompanyMemory
 from app.models.department import Department
 from app.models.employee import Employee
+from app.models.employee_digital_twin import EmployeeDigitalTwinSnapshot
 from app.models.event import Event
 from app.models.project import Project, ProjectMember
 from app.models.team import Team
@@ -323,6 +324,7 @@ class CompanyMemoryService:
             "image_analysis": Attachment,
             "audio_transcription": Attachment,
             "work_dna": WorkDNASnapshot,
+            "employee_digital_twin": EmployeeDigitalTwinSnapshot,
             "event": Event,
         }
         model = model_by_source.get(source_type)

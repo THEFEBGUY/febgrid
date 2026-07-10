@@ -77,6 +77,20 @@ class DashboardMemorySummary(FebGridModel):
     important_memories: int
 
 
+class DashboardIntelligenceSummary(FebGridModel):
+    latest_work_dna_scope: str | None
+    latest_work_dna_generated_at: datetime | None
+    latest_work_dna_bottlenecks: int
+    latest_work_dna_recurring_patterns: int
+    latest_work_dna_template_candidates: int
+    employee_twins_recent_count: int
+    employee_twins_missing_recent_count: int
+    ai_queued_jobs: int
+    ai_running_jobs: int
+    ai_failed_jobs: int
+    ai_cancelled_jobs: int
+
+
 class DashboardSummaryRead(FebGridModel):
     company_overview: DashboardCompanyOverview
     employee_summary: DashboardEmployeeSummary
@@ -87,6 +101,7 @@ class DashboardSummaryRead(FebGridModel):
     notification_summary: DashboardNotificationSummary
     announcement_summary: DashboardAnnouncementSummary
     memory_summary: DashboardMemorySummary
+    intelligence_summary: DashboardIntelligenceSummary | None = None
     recent_events: list[EventRead]
     recent_notifications: list[NotificationRead]
     recent_announcements: list[AnnouncementRead]

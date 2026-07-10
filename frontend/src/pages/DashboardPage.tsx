@@ -26,7 +26,7 @@ import { SectionPanel } from "../components/ui/SectionPanel";
 import { EmptyState, ErrorState, LoadingState } from "../components/ui/States";
 import { priorityTone, statusTone } from "../components/ui/tone";
 import { api } from "../services/api";
-import type { AIJob, CompanyPulseSnapshot } from "../types/api";
+import type { AIJob, CompanyPulseSnapshot, DashboardSummary } from "../types/api";
 import type { Metric } from "../types/domain";
 import type { ModulePageProps } from "../types/page";
 import { compactList, formatDate, formatLabel, formatTime } from "../utils/format";
@@ -308,6 +308,10 @@ export function DashboardPage({
         </div>
       ) : null}
 
+      {canUseCompanyBrief && summary.intelligence_summary ? (
+        <IntelligenceReadinessPanel summary={summary} />
+      ) : null}
+
       {summary.memory_summary ? (
         <SectionPanel
           eyebrow="Company Memory"
@@ -516,6 +520,124 @@ export function DashboardPage({
         </div>
       </SectionPanel>
     </div>
+  );
+}
+
+function IntelligenceReadinessPanel({ summary }: { summary: DashboardSummary }): JSX.Element | null {
+  const intelligence = summary.intelligence_summary;
+  if (!intelligence) return null;
+
+  const aiOpenJobs = intelligence.ai_queued_jobs + intelligence.ai_running_jobs + intelligence.ai_failed_jobs;
+  const workDnaLabel = intelligence.latest_work_dna_scope
+    ? `${formatLabel(intelligence.latest_work_dna_scope)} DNA`
+    : "No Work DNA yet";
+  const memorySuggestions = summary.memory_summary?.pending_suggestions ?? 0;
+
+  return (
+    <SectionPanel
+      eyebrow="Layer 2 readiness"
+      title="Operational intelligence links"
+      description="A compact owner/admin view of Pulse, Work DNA, Digital Twin coverage, AI queue health, and Company Memory review state."
+      action={
+        <div className="flex flex-wrap justify-end gap-2">
+          <Button
+            aria-label="Open Company Memory"
+            icon={<Brain className="size-4" aria-hidden="true" />}
+            onClick={() => navigateTo("memory")}
+            title="Open Company Memory"
+          >
+            Memory
+          </Button>
+          <Button
+            aria-label="Open AI Foundation settings"
+            icon={<Sparkles className="size-4" aria-hidden="true" />}
+            onClick={() => navigateTo("settings")}
+            title="Open AI Foundation settings"
+            variant="secondary"
+          >
+            AI Foundation
+          </Button>
+        </div>
+      }
+    >
+      <div className="grid gap-3 p-5 md:grid-cols-2 xl:grid-cols-4">
+        <IntelligenceTile
+          description={
+            intelligence.latest_work_dna_generated_at
+              ? `Last generated ${formatTime(intelligence.latest_work_dna_generated_at)}`
+              : "Generate Work DNA to inspect repeatable work patterns."
+          }
+          icon={<Brain className="size-4" aria-hidden="true" />}
+          label="Work DNA"
+          metric={workDnaLabel}
+          secondary={`${intelligence.latest_work_dna_bottlenecks} bottlenecks / ${intelligence.latest_work_dna_template_candidates} templates`}
+          tone={intelligence.latest_work_dna_bottlenecks > 0 ? "amber" : "blue"}
+          onClick={() => navigateTo("work-dna")}
+        />
+        <IntelligenceTile
+          description="Recent safe employee context snapshots; no ranking or surveillance score."
+          icon={<Users className="size-4" aria-hidden="true" />}
+          label="Digital Twin coverage"
+          metric={`${intelligence.employee_twins_recent_count}/${summary.employee_summary.active_employees}`}
+          secondary={`${intelligence.employee_twins_missing_recent_count} active employees without a recent snapshot`}
+          tone={intelligence.employee_twins_missing_recent_count > 0 ? "amber" : "green"}
+          onClick={() => navigateTo("employees")}
+        />
+        <IntelligenceTile
+          description="Queue visibility for summaries, analysis jobs, memory suggestions, and provider readiness."
+          icon={<Activity className="size-4" aria-hidden="true" />}
+          label="AI job queue"
+          metric={`${aiOpenJobs} open`}
+          secondary={`${intelligence.ai_failed_jobs} failed / ${intelligence.ai_running_jobs} running / ${intelligence.ai_queued_jobs} queued`}
+          tone={intelligence.ai_failed_jobs > 0 ? "red" : aiOpenJobs > 0 ? "amber" : "green"}
+          onClick={() => navigateTo("settings")}
+        />
+        <IntelligenceTile
+          description="Review AI-suggested and manually captured operational knowledge before approval."
+          icon={<Sparkles className="size-4" aria-hidden="true" />}
+          label="Memory review"
+          metric={`${memorySuggestions} pending`}
+          secondary={`${summary.memory_summary?.approved_memories ?? 0} approved / ${summary.memory_summary?.important_memories ?? 0} important`}
+          tone={memorySuggestions > 0 ? "amber" : "green"}
+          onClick={() => navigateTo("memory")}
+        />
+      </div>
+    </SectionPanel>
+  );
+}
+
+function IntelligenceTile({
+  description,
+  icon,
+  label,
+  metric,
+  onClick,
+  secondary,
+  tone,
+}: {
+  description: string;
+  icon: JSX.Element;
+  label: string;
+  metric: string;
+  onClick: () => void;
+  secondary: string;
+  tone: "blue" | "green" | "amber" | "red";
+}): JSX.Element {
+  return (
+    <button
+      className="group rounded-lg border border-grid-200 bg-white/70 p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-brand-300 hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
+      onClick={onClick}
+      title={`Open ${label}`}
+      type="button"
+    >
+      <div className="flex items-center justify-between gap-3">
+        <Badge label={label} tone={tone} />
+        <span className="rounded-lg border border-grid-200 bg-white/80 p-2 text-ink-500 transition group-hover:text-brand-600">{icon}</span>
+      </div>
+      <p className="mt-4 text-2xl font-black text-ink-950">{metric}</p>
+      <p className="mt-1 text-xs font-black uppercase tracking-normal text-ink-500">{secondary}</p>
+      <p className="mt-3 text-sm font-semibold leading-6 text-ink-500">{description}</p>
+    </button>
   );
 }
 

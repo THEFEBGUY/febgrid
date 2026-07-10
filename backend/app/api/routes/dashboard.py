@@ -10,21 +10,25 @@ from app.api.serializers import serialize_events
 from app.api.utils import get_or_404
 from app.core.permissions import OWNER_ADMIN_ROLES, ensure_company_access
 from app.models.attachment import Attachment
+from app.models.ai_job import AIJob
 from app.models.communication import Announcement
 from app.models.company import Company
 from app.models.company_memory import CompanyMemory
 from app.models.employee import Employee
+from app.models.employee_digital_twin import EmployeeDigitalTwinSnapshot
 from app.models.event import Event
 from app.models.leave_request import LeaveRequest
 from app.models.notification import Notification
 from app.models.project import Project
 from app.models.user import User
+from app.models.work_dna import WorkDNASnapshot
 from app.models.work_object import WorkObject
 from app.schemas.dashboard import (
     DashboardAnnouncementSummary,
     DashboardCompanyOverview,
     DashboardEmployeeSummary,
     DashboardFileSummary,
+    DashboardIntelligenceSummary,
     DashboardLeaveSummary,
     DashboardMemorySummary,
     DashboardNotificationSummary,
@@ -297,6 +301,42 @@ def get_dashboard_summary(
         ),
     )
 
+    intelligence_summary: DashboardIntelligenceSummary | None = None
+    if current_user is not None and current_user.role in OWNER_ADMIN_ROLES:
+        latest_work_dna = db.scalar(
+            select(WorkDNASnapshot)
+            .where(WorkDNASnapshot.company_id == company_id)
+            .order_by(WorkDNASnapshot.created_at.desc())
+            .limit(1)
+        )
+        recent_twin_employee_count = int(
+            db.scalar(
+                select(func.count(func.distinct(EmployeeDigitalTwinSnapshot.employee_id)))
+                .join(Employee, Employee.id == EmployeeDigitalTwinSnapshot.employee_id)
+                .where(
+                    EmployeeDigitalTwinSnapshot.company_id == company_id,
+                    Employee.company_id == company_id,
+                    Employee.is_active.is_(True),
+                    EmployeeDigitalTwinSnapshot.created_at >= now - timedelta(days=30),
+                )
+            )
+            or 0
+        )
+        active_employee_count = employee_summary.active_employees
+        intelligence_summary = DashboardIntelligenceSummary(
+            latest_work_dna_scope=latest_work_dna.scope_type if latest_work_dna is not None else None,
+            latest_work_dna_generated_at=latest_work_dna.created_at if latest_work_dna is not None else None,
+            latest_work_dna_bottlenecks=len(latest_work_dna.bottlenecks_json or []) if latest_work_dna is not None else 0,
+            latest_work_dna_recurring_patterns=len(latest_work_dna.recurring_patterns_json or []) if latest_work_dna is not None else 0,
+            latest_work_dna_template_candidates=len(latest_work_dna.template_candidates_json or []) if latest_work_dna is not None else 0,
+            employee_twins_recent_count=recent_twin_employee_count,
+            employee_twins_missing_recent_count=max(active_employee_count - recent_twin_employee_count, 0),
+            ai_queued_jobs=count_rows(db, AIJob, AIJob.company_id == company_id, AIJob.status == "queued"),
+            ai_running_jobs=count_rows(db, AIJob, AIJob.company_id == company_id, AIJob.status == "running"),
+            ai_failed_jobs=count_rows(db, AIJob, AIJob.company_id == company_id, AIJob.status == "failed"),
+            ai_cancelled_jobs=count_rows(db, AIJob, AIJob.company_id == company_id, AIJob.status == "cancelled"),
+        )
+
     recent_events = serialize_events(
         db.scalars(
             select(Event)
@@ -379,6 +419,7 @@ def get_dashboard_summary(
         notification_summary=notification_summary,
         announcement_summary=announcement_summary,
         memory_summary=memory_summary,
+        intelligence_summary=intelligence_summary,
         recent_events=recent_events,
         recent_notifications=list(db.scalars(recent_notifications_statement).all()),
         recent_announcements=list(recent_announcements),
