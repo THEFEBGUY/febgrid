@@ -1,0 +1,4 @@
+bulk-invite:
+  internal-service-key: test-service-key
+  max-rows: 3
+  max-file-bytes: 2097152

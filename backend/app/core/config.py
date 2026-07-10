@@ -24,6 +24,11 @@ class Settings(BaseSettings):
     groq_max_input_chars: int = Field(default=12_000, validation_alias="GROQ_MAX_INPUT_CHARS")
     ai_default_temperature: float = Field(default=0.2, validation_alias="AI_DEFAULT_TEMPERATURE")
     ai_default_max_tokens: int = Field(default=800, validation_alias="AI_DEFAULT_MAX_TOKENS")
+    java_bulk_invite_base_url: str = Field(default="", validation_alias="JAVA_BULK_INVITE_BASE_URL")
+    java_bulk_invite_service_key: SecretStr | None = Field(default=None, validation_alias="JAVA_BULK_INVITE_SERVICE_KEY")
+    java_bulk_invite_timeout_seconds: int = Field(default=20, validation_alias="JAVA_BULK_INVITE_TIMEOUT_SECONDS")
+    bulk_invite_max_rows: int = Field(default=500, validation_alias="BULK_INVITE_MAX_ROWS")
+    bulk_invite_max_file_bytes: int = Field(default=2_097_152, validation_alias="BULK_INVITE_MAX_FILE_BYTES")
     jwt_secret_key: SecretStr | None = Field(default=None, validation_alias="JWT_SECRET_KEY")
 
     model_config = SettingsConfigDict(

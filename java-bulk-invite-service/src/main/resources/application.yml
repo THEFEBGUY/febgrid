@@ -1,0 +1,20 @@
+server:
+  port: ${SERVER_PORT:8080}
+
+spring:
+  application:
+    name: febgrid-bulk-invite-validation
+  servlet:
+    multipart:
+      max-file-size: ${BULK_INVITE_MAX_FILE_BYTES:2097152}
+      max-request-size: ${BULK_INVITE_MAX_FILE_BYTES:2097152}
+
+bulk-invite:
+  internal-service-key: ${FEBGRID_INTERNAL_SERVICE_KEY:}
+  max-rows: ${BULK_INVITE_MAX_ROWS:500}
+  max-file-bytes: ${BULK_INVITE_MAX_FILE_BYTES:2097152}
+
+logging:
+  level:
+    root: INFO
+    com.febgrid.bulkinvite: INFO

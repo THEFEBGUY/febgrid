@@ -16,6 +16,7 @@ TOKEN_ALGORITHM = "HS256"
 PASSWORD_ALGORITHM = "pbkdf2_sha256"
 PASSWORD_ITERATIONS = 210_000
 ACCESS_TOKEN_EXPIRE_HOURS = 12
+BULK_INVITE_PREVIEW_TOKEN_TYPE = "bulk_invite_preview"
 _DEV_TOKEN_SECRET = secrets.token_urlsafe(48)
 
 
@@ -106,3 +107,49 @@ def decode_access_token(token: str) -> dict[str, Any]:
         return payload
     except (TypeError, ValueError, json.JSONDecodeError):
         raise credentials_error from None
+
+
+def create_bulk_invite_preview_token(
+    *,
+    company_id: UUID,
+    user_id: UUID,
+    normalized_rows_hash: str,
+    expires_in_minutes: int = 20,
+) -> str:
+    now = datetime.now(timezone.utc)
+    payload: dict[str, Any] = {
+        "typ": BULK_INVITE_PREVIEW_TOKEN_TYPE,
+        "company_id": str(company_id),
+        "sub": str(user_id),
+        "rows_hash": normalized_rows_hash,
+        "iat": int(now.timestamp()),
+        "exp": int((now + timedelta(minutes=expires_in_minutes)).timestamp()),
+    }
+    header = {"alg": TOKEN_ALGORITHM, "typ": "JWT"}
+    encoded_header = _base64url_encode(json.dumps(header, separators=(",", ":")).encode("utf-8"))
+    encoded_payload = _base64url_encode(json.dumps(payload, separators=(",", ":")).encode("utf-8"))
+    signature = hmac.new(_token_secret().encode("utf-8"), f"{encoded_header}.{encoded_payload}".encode("ascii"), hashlib.sha256).digest()
+    return f"{encoded_header}.{encoded_payload}.{_base64url_encode(signature)}"
+
+
+def decode_bulk_invite_preview_token(token: str) -> dict[str, Any]:
+    token_error = HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired bulk invite preview")
+    try:
+        encoded_header, encoded_payload, encoded_signature = token.split(".", 2)
+        expected_signature = hmac.new(
+            _token_secret().encode("utf-8"),
+            f"{encoded_header}.{encoded_payload}".encode("ascii"),
+            hashlib.sha256,
+        ).digest()
+        if not hmac.compare_digest(_base64url_encode(expected_signature), encoded_signature):
+            raise token_error
+        payload = json.loads(_base64url_decode(encoded_payload))
+        if payload.get("typ") != BULK_INVITE_PREVIEW_TOKEN_TYPE or int(payload.get("exp", 0)) < int(datetime.now(timezone.utc).timestamp()):
+            raise token_error
+        UUID(str(payload["company_id"]))
+        UUID(str(payload["sub"]))
+        if not isinstance(payload.get("rows_hash"), str) or len(payload["rows_hash"]) != 64:
+            raise token_error
+        return payload
+    except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+        raise token_error from None
