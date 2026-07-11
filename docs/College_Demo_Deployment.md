@@ -8,12 +8,13 @@ behavior. It does not deploy anything automatically.
 ```text
 Browser -> Vercel (React/Vite) -> Render web service (FastAPI) -> Supabase
                                       |
-                                      +-> Render private service (Java CSV validator)
+                                      +-> Render public web service (Java CSV validator)
 ```
 
-The Java service has no public URL. Keep the FastAPI and Java Render services
-in the same workspace and region, then use the Java service's **Internal**
-address from Render's Connect panel for `JAVA_BULK_INVITE_BASE_URL`.
+For this temporary free demo, the Java validator is a public Render web
+service. Its validation endpoint remains protected by the required
+`X-FebGrid-Service-Key`; do not publish the service key, and do not put it in
+Vercel. FastAPI calls the validator over its HTTPS `onrender.com` URL.
 
 ## Environment variables
 
@@ -41,7 +42,7 @@ CORS_ORIGINS=https://<your-vercel-production-domain>,http://localhost:5173
 SUPABASE_URL=https://<your-project-ref>.supabase.co
 SUPABASE_ANON_KEY=<Supabase publishable/anon key>
 SUPABASE_AUTH_TIMEOUT_SECONDS=10
-JAVA_BULK_INVITE_BASE_URL=http://<Render Java Internal address>
+JAVA_BULK_INVITE_BASE_URL=https://<your-java-validator-service>.onrender.com
 JAVA_BULK_INVITE_SERVICE_KEY=<random value shared only with Java>
 JAVA_BULK_INVITE_TIMEOUT_SECONDS=20
 BULK_INVITE_MAX_ROWS=500
@@ -53,7 +54,7 @@ AI_EXTERNAL_PROCESSING_ENABLED=false
 `PUBLIC_APP_URL` is the sole source of generated acceptance links. Its local
 default remains `http://localhost:5173`, so local invite links keep working.
 
-### Render Java private service
+### Render Java validator web service
 
 ```text
 FEBGRID_INTERNAL_SERVICE_KEY=<same random value as FastAPI>
@@ -61,8 +62,10 @@ BULK_INVITE_MAX_ROWS=500
 BULK_INVITE_MAX_FILE_BYTES=2097152
 ```
 
-Render injects `PORT`; the Java service now respects it. Do not publish the
-Java validator as a public web service.
+Render injects `PORT`; the Java service respects it. The service key protects
+the validation route, but this public-service arrangement is for a temporary
+college demo only. Rotate the shared key after the demo and use a private
+service for any paid or long-lived deployment.
 
 ## Vercel setup
 
@@ -84,19 +87,31 @@ workspace, and region:
 
 1. **FastAPI**: deploy as a Docker **Web Service** using
    `backend/Dockerfile`; health path is `/api/v1/health`.
-2. Set the FastAPI environment values above. The included Blueprint uses
-   `backend` as its root directory and runs `python -m alembic upgrade head`
-   as its pre-deploy command. Render documents pre-deploy commands as the
-   supported migration path for paid web/private services.
-3. **Java validator**: deploy as a Docker **Private Service** using
-   `java-bulk-invite-service/Dockerfile`. Set its service key, then copy the
-   private HTTP address into the FastAPI environment.
-4. Verify FastAPI `GET /api/v1/health` and Java
-   `GET /internal/v1/health` from the FastAPI private network only.
+2. Set the FastAPI environment values above. Free web services cannot use a
+   paid-only pre-deploy command or Render shell access, so run the migration
+   manually from a secure local backend environment before this deploy:
 
-Render private services require a paid instance type. If the demo budget cannot
-use one, do not expose the Java validator publicly; leave bulk invite disabled
-and use existing single employee invitations instead.
+   ```powershell
+   cd backend
+   # Provide the production DATABASE_URL only through your secure shell/session.
+   python -m alembic upgrade head
+   ```
+
+   Do not add the production URL to `.env`, source control, or frontend
+   variables.
+3. **Java validator**: deploy as a Docker **Web Service** using
+   `java-bulk-invite-service/Dockerfile`, choose the **Free** instance type,
+   and set its service key. Copy its public HTTPS URL into
+   `JAVA_BULK_INVITE_BASE_URL` on FastAPI.
+4. Verify FastAPI `GET /api/v1/health` and Java
+   `GET /internal/v1/health`. The Java health response must not reveal keys or
+   configuration; the validation endpoint must reject a missing/wrong service
+   key.
+
+Both services use Render's Free web-service tier. They can spin down after
+idle time and can take about a minute to wake, so the first bulk-preview or API
+request may be slow. Free instances have no persistent disk or Render shell
+access; FebGrid continues to use Supabase for persistent data.
 
 ## Supabase magic-link configuration
 
@@ -125,9 +140,10 @@ result. It is never persisted in invitation metadata or returned by list APIs.
 
 ## Deployment order
 
-1. Run migrations against the existing Supabase database from the FastAPI
-   deployment configuration.
-2. Deploy the Java private validator and copy its internal address to FastAPI.
+1. Run the manual Alembic migration against the existing Supabase database
+   from a secure local backend environment.
+2. Deploy the Java validator as a free public web service and copy its HTTPS
+   URL to FastAPI.
 3. Deploy FastAPI, verify health and CORS from the Vercel domain.
 4. Configure Supabase Site URL/redirect URLs.
 5. Set Vercel public variables and deploy frontend.
@@ -138,7 +154,8 @@ result. It is never persisted in invitation metadata or returned by list APIs.
 
 - `PUBLIC_APP_URL` is the Vercel production URL, not the Render API URL.
 - `CORS_ORIGINS` includes only intended frontend origins.
-- The Java service has an Internal address and no public endpoint.
+- The Java public validator URL is configured only in FastAPI, never Vercel.
+- A request without the Java service key is rejected before CSV validation.
 - Supabase redirect URLs include the exact invite path.
 - The backend and Java service keys are distinct random values and are set only
   in Render.

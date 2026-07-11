@@ -4,11 +4,10 @@ services:
   - type: web
     runtime: docker
     name: febgrid-demo-api
-    plan: starter
+    plan: free
     rootDir: backend
     dockerfilePath: Dockerfile
     dockerContext: .
-    preDeployCommand: python -m alembic upgrade head
     healthCheckPath: /api/v1/health
     autoDeployTrigger: "off"
     envVars:
@@ -35,13 +34,14 @@ services:
       - key: AI_EXTERNAL_PROCESSING_ENABLED
         value: "false"
 
-  - type: pserv
+  - type: web
     runtime: docker
     name: febgrid-bulk-invite-validator
-    plan: starter
+    plan: free
     rootDir: java-bulk-invite-service
     dockerfilePath: Dockerfile
     dockerContext: .
+    healthCheckPath: /internal/v1/health
     autoDeployTrigger: "off"
     envVars:
       - key: FEBGRID_INTERNAL_SERVICE_KEY

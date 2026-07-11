@@ -133,12 +133,13 @@ download, drag-and-drop CSV preview, explicit confirmation, partial outcomes,
 formula-safe result export, and idempotency-safe retry. Existing single-invite
 and manual activation flows remain unchanged.
 
-Production deployment must keep the Java validator on an internal Docker or
-private service network. Do not publish its port to the public internet. It
-accepts only a short-lived CSV validation request protected by a dedicated
-internal service key; it has no database, token, email, or FebGrid-user access.
-The Python service should call it through `JAVA_BULK_INVITE_BASE_URL` with a
-matching `JAVA_BULK_INVITE_SERVICE_KEY`. Local loopback exposure is suitable for
+For normal production deployment, keep the Java validator on an internal Docker
+or private service network. The temporary free college-demo setup documented in
+[College Demo Deployment](docs/College_Demo_Deployment.md) uses a public Render
+web service instead, protected by the same dedicated service key. In either
+case, it has no database, token, email, or FebGrid-user access. The Python
+service calls it through `JAVA_BULK_INVITE_BASE_URL` with a matching
+`JAVA_BULK_INVITE_SERVICE_KEY`. Local loopback exposure is suitable for
 development only.
 
 CSV limits are 2 MiB and 500 data rows. Required columns are `email`,
