@@ -330,8 +330,8 @@ export function InviteAcceptPage({ token }: InviteAcceptPageProps): JSX.Element 
         {!terminalStatusMessage && !accepted && !canCompletePendingProfile && !completionMessage ? (
           <section className="febgrid-surface animate-fade-up overflow-hidden rounded-lg">
             <div className="border-b border-grid-200 bg-white/60 px-5 py-4">
-              <h2 className="text-lg font-black text-ink-950">Accept invitation</h2>
-              <p className="mt-1 text-sm font-medium text-ink-500">The email, company, and role are locked by the invite.</p>
+              <h2 className="text-lg font-black text-ink-950">Create a password and accept invitation</h2>
+              <p className="mt-1 text-sm font-medium text-ink-500">The email, company, and role are locked by the invite. This option creates a FebGrid password.</p>
             </div>
             <form className="space-y-4 p-5" onSubmit={acceptInvite}>
               <FieldShell label="Email">
@@ -358,14 +358,14 @@ export function InviteAcceptPage({ token }: InviteAcceptPageProps): JSX.Element 
               {error ? <p className="text-sm font-semibold text-rose-700">{error}</p> : null}
               <div className="flex justify-end border-t border-grid-200 pt-4">
                 <Button disabled={isSubmitting} type="submit" variant="primary" icon={<ArrowRight className="size-4" aria-hidden="true" />}>
-                  {isSubmitting ? "Accepting..." : "Accept with this email"}
+                  {isSubmitting ? "Accepting..." : "Create password and accept"}
                 </Button>
               </div>
             </form>
             {isSupabaseMagicLinkAvailable ? (
-              <div className="border-t border-grid-200 bg-grid-50/40 px-5 py-4">
+              <div className="febgrid-auth-alternative border-t border-grid-200 px-5 py-4">
                 <p className="text-sm font-bold text-ink-900">Prefer passwordless sign-in?</p>
-                <p className="mt-1 text-sm text-ink-500">FebGrid will only accept a Supabase magic-link session for the locked invited email.</p>
+                <p className="mt-1 text-sm text-ink-500">A secure email link signs in the locked invited email without creating a password. FebGrid still verifies the invite, company, status, and expiry.</p>
                 {magicLinkMessage ? <p className="mt-3 text-sm font-semibold text-green-700">{magicLinkMessage}</p> : null}
                 <Button
                   className="mt-3"

@@ -7,6 +7,7 @@ import httpx
 from pydantic import ValidationError
 
 from app.core.config import Settings, get_settings
+from app.core.performance import measure_external
 from app.schemas.bulk_invite import JavaBulkInviteValidationResponse
 
 
@@ -58,15 +59,16 @@ class JavaBulkInviteClient:
         timeout_seconds = max(1, min(self.settings.java_bulk_invite_timeout_seconds, 60))
         timeout = httpx.Timeout(timeout_seconds, connect=min(3, timeout_seconds), read=timeout_seconds, write=timeout_seconds)
         try:
-            with httpx.Client(timeout=timeout) as client:
-                response = client.post(
-                    f"{base_url}/internal/v1/bulk-invites/validate",
-                    headers={
-                        "X-FebGrid-Service-Key": key_value,
-                        "X-Request-ID": str(request_id),
-                    },
-                    files={"file": (file_name, content, "text/csv")},
-                )
+            with measure_external("java_validator"):
+                with httpx.Client(timeout=timeout) as client:
+                    response = client.post(
+                        f"{base_url}/internal/v1/bulk-invites/validate",
+                        headers={
+                            "X-FebGrid-Service-Key": key_value,
+                            "X-Request-ID": str(request_id),
+                        },
+                        files={"file": (file_name, content, "text/csv")},
+                    )
         except (httpx.TimeoutException, httpx.NetworkError, httpx.HTTPError):
             raise JavaBulkInviteClientError(
                 code="BULK_INVITE_SERVICE_UNAVAILABLE",

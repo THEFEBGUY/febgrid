@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 
 import { AppLayout } from "./components/layout/AppLayout";
+import { BackendWakeNotice } from "./components/system/BackendWakeNotice";
 import { ErrorState, LoadingState } from "./components/ui/States";
 import { allNavigationItems, getDefaultPageForRole, getNavigationItemsForRole, isPageAllowedForRole } from "./data/navigation";
 import { useAuth } from "./hooks/useAuth";
@@ -296,23 +297,23 @@ export function App(): JSX.Element {
   }
 
   if (inviteToken) {
-    return <InviteAcceptPage token={inviteToken} />;
+    return <><BackendWakeNotice /><InviteAcceptPage token={inviteToken} /></>;
   }
 
   if (!auth.isAuthenticated) {
     return (
-      <AuthPage
+      <><BackendWakeNotice /><AuthPage
         error={auth.error}
         isSubmitting={auth.isSubmitting}
         onClearError={auth.clearError}
         onLogin={auth.login}
         onRegister={auth.register}
-      />
+      /></>
     );
   }
 
   return (
-    <AppLayout
+    <><BackendWakeNotice /><AppLayout
       activePage={activePage}
       navigationItems={navigationItems}
       isSidebarOpen={isSidebarOpen}
@@ -329,6 +330,6 @@ export function App(): JSX.Element {
       selectedCompanyId={febGrid.selectedCompanyId}
     >
       {renderPage()}
-    </AppLayout>
+    </AppLayout></>
   );
 }

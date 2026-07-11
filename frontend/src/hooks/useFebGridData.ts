@@ -519,7 +519,10 @@ export function useFebGridData({ enabled = true, role = null }: UseFebGridDataOp
     setError(null);
     try {
       const result = await api.createInvitation({ ...payload, company_id: selectedCompanyId });
-      await refreshModules();
+      setData((current) => ({
+        ...current,
+        invitations: [result.invitation, ...current.invitations.filter((item) => item.id !== result.invitation.id)],
+      }));
       return result;
     } finally {
       setIsMutating(false);
@@ -533,7 +536,10 @@ export function useFebGridData({ enabled = true, role = null }: UseFebGridDataOp
     setError(null);
     try {
       const result = await api.resendInvitation(invitationId, selectedCompanyId);
-      await refreshModules();
+      setData((current) => ({
+        ...current,
+        invitations: current.invitations.map((item) => (item.id === result.invitation.id ? result.invitation : item)),
+      }));
       return result;
     } finally {
       setIsMutating(false);
@@ -543,24 +549,35 @@ export function useFebGridData({ enabled = true, role = null }: UseFebGridDataOp
   async function revokeInvitation(invitationId: string): Promise<void> {
     if (!selectedCompanyId) return;
     await runMutation(async () => {
-      await api.revokeInvitation(invitationId, selectedCompanyId);
-      await refreshModules();
+      const invitation = await api.revokeInvitation(invitationId, selectedCompanyId);
+      setData((current) => ({
+        ...current,
+        invitations: current.invitations.map((item) => (item.id === invitation.id ? invitation : item)),
+      }));
     });
   }
 
   async function approveInvitation(invitationId: string): Promise<void> {
     if (!selectedCompanyId) return;
     await runMutation(async () => {
-      await api.approveInvitation(invitationId, selectedCompanyId);
-      await refreshModules();
+      const invitation = await api.approveInvitation(invitationId, selectedCompanyId);
+      const employees = await api.employees(selectedCompanyId);
+      setData((current) => ({
+        ...current,
+        employees,
+        invitations: current.invitations.map((item) => (item.id === invitation.id ? invitation : item)),
+      }));
     });
   }
 
   async function rejectInvitation(invitationId: string, rejectionReason?: string | null): Promise<void> {
     if (!selectedCompanyId) return;
     await runMutation(async () => {
-      await api.rejectInvitation(invitationId, selectedCompanyId, rejectionReason);
-      await refreshModules();
+      const invitation = await api.rejectInvitation(invitationId, selectedCompanyId, rejectionReason);
+      setData((current) => ({
+        ...current,
+        invitations: current.invitations.map((item) => (item.id === invitation.id ? invitation : item)),
+      }));
     });
   }
 
@@ -743,16 +760,22 @@ export function useFebGridData({ enabled = true, role = null }: UseFebGridDataOp
   async function markNotificationRead(notificationId: string): Promise<void> {
     if (!selectedCompanyId) return;
     await runMutation(async () => {
-      await api.markNotificationRead(notificationId, selectedCompanyId);
-      await refreshModules();
+      const notification = await api.markNotificationRead(notificationId, selectedCompanyId);
+      setData((current) => ({
+        ...current,
+        notifications: current.notifications.map((item) => (item.id === notification.id ? notification : item)),
+      }));
     });
   }
 
   async function markNotificationUnread(notificationId: string): Promise<void> {
     if (!selectedCompanyId) return;
     await runMutation(async () => {
-      await api.markNotificationUnread(notificationId, selectedCompanyId);
-      await refreshModules();
+      const notification = await api.markNotificationUnread(notificationId, selectedCompanyId);
+      setData((current) => ({
+        ...current,
+        notifications: current.notifications.map((item) => (item.id === notification.id ? notification : item)),
+      }));
     });
   }
 
@@ -760,15 +783,22 @@ export function useFebGridData({ enabled = true, role = null }: UseFebGridDataOp
     if (!selectedCompanyId) return;
     await runMutation(async () => {
       await api.markAllNotificationsRead(selectedCompanyId);
-      await refreshModules();
+      const readAt = new Date().toISOString();
+      setData((current) => ({
+        ...current,
+        notifications: current.notifications.map((item) => ({ ...item, is_read: true, read_at: item.read_at ?? readAt })),
+      }));
     });
   }
 
   async function dismissNotification(notificationId: string): Promise<void> {
     if (!selectedCompanyId) return;
     await runMutation(async () => {
-      await api.dismissNotification(notificationId, selectedCompanyId);
-      await refreshModules();
+      const notification = await api.dismissNotification(notificationId, selectedCompanyId);
+      setData((current) => ({
+        ...current,
+        notifications: current.notifications.map((item) => (item.id === notification.id ? notification : item)),
+      }));
     });
   }
 

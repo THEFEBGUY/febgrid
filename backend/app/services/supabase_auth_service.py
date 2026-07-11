@@ -11,6 +11,7 @@ import httpx
 from fastapi import HTTPException, status
 
 from app.core.config import get_settings
+from app.core.performance import measure_external
 
 
 @dataclass(frozen=True)
@@ -39,11 +40,12 @@ class SupabaseAuthService:
 
         base_url, api_key, timeout = cls._configuration()
         try:
-            response = httpx.get(
-                f"{base_url}/auth/v1/user",
-                headers={"apikey": api_key, "Authorization": f"Bearer {access_token}"},
-                timeout=timeout,
-            )
+            with measure_external("supabase_auth"):
+                response = httpx.get(
+                    f"{base_url}/auth/v1/user",
+                    headers={"apikey": api_key, "Authorization": f"Bearer {access_token}"},
+                    timeout=timeout,
+                )
         except httpx.TimeoutException as exc:
             raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Supabase authentication is temporarily unavailable") from exc
         except httpx.HTTPError as exc:

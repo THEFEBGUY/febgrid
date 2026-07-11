@@ -63,6 +63,14 @@ textarea {
   font: inherit;
 }
 
+.febgrid-auth-alternative {
+  background: color-mix(in srgb, var(--febgrid-surface-muted) 68%, transparent);
+}
+
+html.dark .febgrid-auth-alternative {
+  background: color-mix(in srgb, var(--febgrid-surface-raised) 78%, transparent);
+}
+
 .febgrid-button-icon {
   width: 1.125rem;
   height: 1.125rem;

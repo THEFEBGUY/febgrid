@@ -12,6 +12,10 @@ class Settings(BaseSettings):
         default="postgresql+psycopg://postgres:postgres@localhost:5432/febgrid",
         validation_alias="DATABASE_URL",
     )
+    database_pool_size: int = Field(default=5, validation_alias="DATABASE_POOL_SIZE")
+    database_max_overflow: int = Field(default=5, validation_alias="DATABASE_MAX_OVERFLOW")
+    database_pool_timeout_seconds: int = Field(default=10, validation_alias="DATABASE_POOL_TIMEOUT_SECONDS")
+    database_pool_recycle_seconds: int = Field(default=300, validation_alias="DATABASE_POOL_RECYCLE_SECONDS")
     cors_origins: str = Field(default="http://localhost:5173", validation_alias="CORS_ORIGINS")
     public_app_url: str = Field(default="http://localhost:5173", validation_alias="PUBLIC_APP_URL")
     supabase_url: str = Field(default="", validation_alias="SUPABASE_URL")

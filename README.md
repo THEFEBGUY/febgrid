@@ -93,8 +93,13 @@ VITE_API_BASE_URL=http://localhost:8000
 
 For a temporary Vercel + Render + Supabase college-demo deployment, follow
 [College Demo Deployment](docs/College_Demo_Deployment.md). It preserves the
-existing localhost flow, keeps the Java bulk-invite validator private, and
-documents the optional exact-email Supabase magic-link onboarding path.
+existing localhost flow, keeps the public demo Java validation endpoint behind
+its server-only service key, and documents the optional exact-email Supabase
+magic-link onboarding path.
+
+Public-beta timing, safe request correlation, free-tier wake behavior, and the
+small Supabase connection-pool defaults are documented in
+[Production Stabilization](docs/FebGrid_Production_Stabilization.md).
 
 The Phase 1 frontend includes the main dashboard shell, sidebar navigation, reusable table/card/badge UI, and pages for Dashboard, Companies, Employees, Teams, Projects, Work Objects, Leaves, Events, Announcements, and Notifications. Sprint 3 adds authenticated employee directory management, employee profile modals, status controls, department creation, and team creation. The project foundation adds create/edit project workflows, status and priority controls, project members, detail view, timeline, and linked work object readiness. Sprint 4 adds real work object CRUD, assignment, status and priority controls, project linkage, and detail timeline. Sprint 5 adds real leave submission, pending edits, approval/rejection/cancel decisions, and leave detail timeline. Sprint 6 adds work-object attachment upload, attachment list/download/delete actions, description edits, and file activity events. Notification v1 adds unread counts, mark read/unread, mark all read, dismiss, action links, and event timeline filtering. The Phase 1 communication layer adds comments to work-object/project detail views, simple employee mentions, internal announcements, communication events, and communication notifications. Sprint 9 turns the Dashboard into a real operational overview backed by `/api/v1/dashboard/summary`, with live cards, priority work, project health, leave attention, recent events, unread notifications, announcements, and quick actions.
 

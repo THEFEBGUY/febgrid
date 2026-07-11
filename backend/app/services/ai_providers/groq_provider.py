@@ -3,6 +3,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from app.core.ai_config import AIProviderConfig
+from app.core.performance import measure_external
 from app.services.ai_output_parser import parse_ai_provider_output
 from app.services.ai_providers.base import AIProviderError, AIProviderRequest, AIProviderResult, BaseAIProvider
 
@@ -34,13 +35,14 @@ class GroqAIProvider(BaseAIProvider):
 
         started = time.perf_counter()
         try:
-            completion = self._client().chat.completions.create(
-                model=self.config.groq_model,
-                messages=request.messages,
-                temperature=self.config.default_temperature,
-                max_tokens=self.config.default_max_tokens,
-                response_format={"type": "json_object"},
-            )
+            with measure_external("groq"):
+                completion = self._client().chat.completions.create(
+                    model=self.config.groq_model,
+                    messages=request.messages,
+                    temperature=self.config.default_temperature,
+                    max_tokens=self.config.default_max_tokens,
+                    response_format={"type": "json_object"},
+                )
         except APITimeoutError as exc:
             raise AIProviderError("provider_timeout", "Groq request timed out.") from exc
         except AuthenticationError as exc:

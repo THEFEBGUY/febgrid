@@ -91,6 +91,28 @@ import type {
 
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, "") ?? "http://127.0.0.1:8000";
 let authToken: string | null = null;
+let requestSequence = 0;
+const activeRequestCounts = new Map<string, number>();
+const slowRequestIds = new Set<number>();
+const apiTimingHistory: ApiTimingDetail[] = [];
+
+export const API_TIMING_EVENT = "febgrid:api-timing";
+export const API_WAKE_EVENT = "febgrid:service-wake";
+
+export interface ApiTimingDetail {
+  requestId: string;
+  method: string;
+  endpoint: string;
+  durationMs: number;
+  status: number;
+  duplicateInFlight: boolean;
+  retried: boolean;
+  serverTiming: string | null;
+}
+
+export function getApiTimingSnapshot(): ApiTimingDetail[] {
+  return [...apiTimingHistory];
+}
 
 export function setApiAuthToken(token: string | null): void {
   authToken = token;
@@ -105,15 +127,108 @@ export class ApiError extends Error {
   }
 }
 
+function dispatchBrowserEvent(name: string, detail: object): void {
+  if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent(name, { detail }));
+}
+
+function safeEndpoint(path: string): string {
+  const pathname = path.split("?", 1)[0] || "/";
+  if (/^\/invitations\/preview\/[^/]+$/.test(pathname)) return "/invitations/preview/:token";
+  return pathname.replace(
+    /\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b/gi,
+    ":id",
+  );
+}
+
+function wait(durationMs: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, durationMs));
+}
+
+async function fetchWithTelemetry(path: string, init?: RequestInit): Promise<Response> {
+  const method = (init?.method ?? "GET").toUpperCase();
+  const endpoint = safeEndpoint(path);
+  const requestKey = `${method}:${endpoint}`;
+  const duplicateInFlight = (activeRequestCounts.get(requestKey) ?? 0) > 0;
+  activeRequestCounts.set(requestKey, (activeRequestCounts.get(requestKey) ?? 0) + 1);
+
+  const sequence = ++requestSequence;
+  const requestId = typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `febgrid-${Date.now()}-${sequence}`;
+  const started = performance.now();
+  let response: Response | null = null;
+  let retried = false;
+  let wakeTimer: number | null = window.setTimeout(() => {
+    slowRequestIds.add(sequence);
+    dispatchBrowserEvent(API_WAKE_EVENT, { state: "waking", endpoint });
+  }, 6_000);
+
+  try {
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        response = await fetch(`${API_BASE_URL}/api/v1${path}`, {
+          ...init,
+          headers: {
+            ...(init?.body instanceof FormData ? {} : { "Content-Type": "application/json" }),
+            ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+            "X-Request-ID": requestId,
+            ...init?.headers,
+          },
+        });
+      } catch (error) {
+        if (method !== "GET" || attempt > 0) throw error;
+        retried = true;
+        await wait(1_200);
+        continue;
+      }
+
+      if (method === "GET" && attempt === 0 && [502, 503, 504].includes(response.status)) {
+        retried = true;
+        await response.body?.cancel();
+        await wait(1_200);
+        continue;
+      }
+      break;
+    }
+
+    if (response === null) throw new Error("No response received");
+    return response;
+  } catch (error) {
+    if (error instanceof ApiError) throw error;
+    throw new ApiError("FebGrid could not reach the service. It may still be waking up; please retry shortly.", 0);
+  } finally {
+    if (wakeTimer !== null) {
+      window.clearTimeout(wakeTimer);
+      wakeTimer = null;
+    }
+    slowRequestIds.delete(sequence);
+    if (slowRequestIds.size === 0) dispatchBrowserEvent(API_WAKE_EVENT, { state: "ready" });
+
+    const timing: ApiTimingDetail = {
+      requestId,
+      method,
+      endpoint,
+      durationMs: Math.round((performance.now() - started) * 100) / 100,
+      status: response?.status ?? 0,
+      duplicateInFlight,
+      retried,
+      serverTiming: response?.headers.get("Server-Timing") ?? null,
+    };
+    apiTimingHistory.push(timing);
+    if (apiTimingHistory.length > 100) apiTimingHistory.shift();
+    dispatchBrowserEvent(API_TIMING_EVENT, timing);
+
+    const remaining = (activeRequestCounts.get(requestKey) ?? 1) - 1;
+    if (remaining > 0) activeRequestCounts.set(requestKey, remaining);
+    else activeRequestCounts.delete(requestKey);
+  }
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const isFormData = init?.body instanceof FormData;
-  const response = await fetch(`${API_BASE_URL}/api/v1${path}`, {
-    headers: {
-      ...(isFormData ? {} : { "Content-Type": "application/json" }),
-      ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
-      ...init?.headers,
-    },
+  const response = await fetchWithTelemetry(path, {
     ...init,
+    headers: {
+      ...(isFormData ? {} : init?.headers),
+    },
   });
 
   if (!response.ok) {
@@ -137,13 +252,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 async function requestBlob(path: string, init?: RequestInit): Promise<Blob> {
-  const response = await fetch(`${API_BASE_URL}/api/v1${path}`, {
-    headers: {
-      ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
-      ...init?.headers,
-    },
-    ...init,
-  });
+  const response = await fetchWithTelemetry(path, init);
 
   if (!response.ok) {
     throw new ApiError(response.statusText || `Request failed for ${path}`, response.status);

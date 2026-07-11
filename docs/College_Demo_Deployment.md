@@ -36,6 +36,10 @@ service-role keys, Groq keys, or any other backend secret to Vercel.
 ```text
 ENVIRONMENT=production
 DATABASE_URL=<existing Supabase Postgres connection string>
+DATABASE_POOL_SIZE=5
+DATABASE_MAX_OVERFLOW=5
+DATABASE_POOL_TIMEOUT_SECONDS=10
+DATABASE_POOL_RECYCLE_SECONDS=300
 JWT_SECRET_KEY=<new random server-only value>
 PUBLIC_APP_URL=https://<your-vercel-production-domain>
 CORS_ORIGINS=https://<your-vercel-production-domain>,http://localhost:5173
@@ -112,6 +116,12 @@ Both services use Render's Free web-service tier. They can spin down after
 idle time and can take about a minute to wake, so the first bulk-preview or API
 request may be slow. Free instances have no persistent disk or Render shell
 access; FebGrid continues to use Supabase for persistent data.
+
+FebGrid shows a non-blocking wake message when a request exceeds six seconds.
+Safe GET requests may retry once after a transient network/502/503/504 response;
+mutations are never retried automatically. Use the response `Server-Timing` and
+`X-Request-ID` headers to separate Render wake time from application/database
+time without exposing request data.
 
 ## Supabase magic-link configuration
 
