@@ -5,6 +5,7 @@ import type { AuthUser, Company } from "../../types/api";
 import type { NavigationItem, PageKey } from "../../types/domain";
 import type { ThemeMode } from "../../hooks/useTheme";
 import { Button } from "../ui/Button";
+import { DotGrid } from "../premium/DotGrid";
 import { Sidebar } from "./Sidebar";
 import { Topbar } from "./Topbar";
 
@@ -46,46 +47,60 @@ export function AppLayout({
   const activeNavigation = navigationItems.find((item) => item.key === activePage) ?? navigationItems[0];
 
   return (
-    <div className="febgrid-app-bg min-h-screen text-ink-900">
-      <div className="hidden lg:fixed lg:inset-y-0 lg:left-0 lg:block lg:w-72">
-        <Sidebar activePage={activePage} items={navigationItems} onNavigate={onNavigate} />
-      </div>
-
-      {isSidebarOpen ? (
-        <div className="fixed inset-0 z-40 lg:hidden" role="dialog" aria-modal="true">
-          <button className="absolute inset-0 bg-ink-950/40" type="button" title="Close navigation" aria-label="Close navigation" onClick={onCloseSidebar} />
-          <div className="relative h-full w-80 max-w-[86vw] bg-white shadow-soft">
-            <div className="absolute right-3 top-3 z-10">
-              <Button
-                aria-label="Close navigation"
-                className="size-10 px-0"
-                icon={<X className="size-4" aria-hidden="true" />}
-                onClick={onCloseSidebar}
-              >
-                <span className="sr-only">Close navigation</span>
-              </Button>
-            </div>
-            <Sidebar activePage={activePage} items={navigationItems} onNavigate={onNavigate} />
-          </div>
+    <div className="febgrid-app-bg relative min-h-screen overflow-x-clip text-ink-900">
+      <DotGrid
+        className="febgrid-dot-grid"
+        baseColor="#2F293A"
+        activeColor="#5227FF"
+        dotSize={5}
+        gap={15}
+        proximity={120}
+        shockRadius={250}
+        shockStrength={5}
+        resistance={750}
+        returnDuration={1.5}
+      />
+      <div className="relative z-10">
+        <div className="hidden lg:fixed lg:inset-y-0 lg:left-0 lg:block lg:w-72">
+          <Sidebar activePage={activePage} items={navigationItems} onNavigate={onNavigate} />
         </div>
-      ) : null}
 
-      <div className="lg:pl-72">
-        <Topbar
-          title={activeNavigation.label}
-          description={activeNavigation.description}
-          companies={companies}
-          selectedCompanyId={selectedCompanyId}
-          currentUser={currentUser}
-          theme={theme}
-          unreadNotificationCount={unreadNotificationCount}
-          onOpenSidebar={onOpenSidebar}
-          onSelectCompany={onSelectCompany}
-          onOpenNotifications={() => onNavigate("notifications")}
-          onToggleTheme={onToggleTheme}
-          onLogout={onLogout}
-        />
-        <main className="mx-auto w-full max-w-7xl px-4 py-7 lg:px-8">{children}</main>
+        {isSidebarOpen ? (
+          <div className="fixed inset-0 z-40 lg:hidden" role="dialog" aria-modal="true">
+            <button className="absolute inset-0 bg-ink-950/40" type="button" title="Close navigation" aria-label="Close navigation" onClick={onCloseSidebar} />
+            <div className="relative h-full w-80 max-w-[86vw] bg-white shadow-soft">
+              <div className="absolute right-3 top-3 z-10">
+                <Button
+                  aria-label="Close navigation"
+                  className="size-10 px-0"
+                  icon={<X className="size-4" aria-hidden="true" />}
+                  onClick={onCloseSidebar}
+                >
+                  <span className="sr-only">Close navigation</span>
+                </Button>
+              </div>
+              <Sidebar activePage={activePage} items={navigationItems} onNavigate={onNavigate} />
+            </div>
+          </div>
+        ) : null}
+
+        <div className="lg:pl-72">
+          <Topbar
+            title={activeNavigation.label}
+            description={activeNavigation.description}
+            companies={companies}
+            selectedCompanyId={selectedCompanyId}
+            currentUser={currentUser}
+            theme={theme}
+            unreadNotificationCount={unreadNotificationCount}
+            onOpenSidebar={onOpenSidebar}
+            onSelectCompany={onSelectCompany}
+            onOpenNotifications={() => onNavigate("notifications")}
+            onToggleTheme={onToggleTheme}
+            onLogout={onLogout}
+          />
+          <main className="mx-auto w-full max-w-7xl px-4 py-7 lg:px-8">{children}</main>
+        </div>
       </div>
     </div>
   );

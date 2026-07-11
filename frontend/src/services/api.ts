@@ -53,6 +53,7 @@ import type {
   ApplyIndustryTemplateResult,
   IndustryTemplate,
   InvitationAcceptPayload,
+  InvitationMagicLinkAcceptPayload,
   InvitationAcceptResult,
   InvitationPreview,
   InvitationProfileCompletePayload,
@@ -269,6 +270,8 @@ export const api = {
     request<EmployeeInvitation>(`/invitations/${invitationId}/reject`, jsonInit("POST", { company_id: companyId, rejection_reason: rejectionReason ?? null })),
   previewInvitation: (token: string) => request<InvitationPreview>(`/invitations/preview/${encodeURIComponent(token)}`),
   acceptInvitation: (payload: InvitationAcceptPayload) => request<InvitationAcceptResult>("/invitations/accept", jsonInit("POST", payload)),
+  acceptInvitationWithMagicLink: (payload: InvitationMagicLinkAcceptPayload) =>
+    request<InvitationAcceptResult>("/invitations/accept-magic-link", jsonInit("POST", payload)),
   completeInvitationProfile: (payload: InvitationProfileCompletePayload) =>
     request<InvitationProfileCompleteResult>("/invitations/complete-profile", jsonInit("POST", payload)),
   teams: (companyId: string) => request<Team[]>(companyPath("/teams", companyId)),

@@ -1,6 +1,7 @@
 import { ArrowRight, Building2, Layers3, LogIn, ShieldCheck, Sparkles, UserPlus, Zap } from "lucide-react";
 import { type FormEvent, useState } from "react";
 
+import { DotGrid } from "../components/premium/DotGrid";
 import { MagicBentoCard, MagicBentoGrid } from "../components/premium/MagicBento";
 import { Button } from "../components/ui/Button";
 import { FieldShell, TextInput } from "../components/ui/FormControls";
@@ -85,8 +86,20 @@ export function AuthPage({ error, isSubmitting, onClearError, onLogin, onRegiste
   }
 
   return (
-    <main className="febgrid-auth-bg min-h-screen text-ink-900">
-      <div className="mx-auto grid min-h-screen w-full max-w-7xl items-center gap-8 px-4 py-8 lg:grid-cols-[1.02fr_0.98fr] lg:px-8">
+    <main className="febgrid-auth-bg relative min-h-screen overflow-x-clip text-ink-900">
+      <DotGrid
+        className="febgrid-dot-grid"
+        baseColor="#2F293A"
+        activeColor="#5227FF"
+        dotSize={5}
+        gap={15}
+        proximity={120}
+        shockRadius={250}
+        shockStrength={5}
+        resistance={750}
+        returnDuration={1.5}
+      />
+      <div className="relative z-10 mx-auto grid min-h-screen w-full max-w-7xl items-center gap-8 px-4 py-8 lg:grid-cols-[1.02fr_0.98fr] lg:px-8">
         <section className="animate-fade-up space-y-7">
           <div className="flex items-center gap-3">
             <span className="flex size-12 items-center justify-center rounded-lg bg-brand-600 text-white shadow-button">

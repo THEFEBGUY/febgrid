@@ -9,6 +9,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.permissions import ALL_ROLES, OWNER_ADMIN_ROLES
+from app.core.config import get_settings
 from app.core.security import hash_password, verify_password
 from app.models.company import Company
 from app.models.department import Department
@@ -66,7 +67,10 @@ class InvitationService:
 
     @staticmethod
     def acceptance_url(token: str) -> str:
-        return f"/accept-invite/{token}"
+        # The token is returned only to the authorized invitation action caller.
+        # Keep local development on localhost unless PUBLIC_APP_URL is configured.
+        base_url = get_settings().public_app_url.strip().rstrip("/") or "http://localhost:5173"
+        return f"{base_url}/accept-invite/{token}"
 
     @staticmethod
     def invited_name_from_email(email: str) -> str:
@@ -452,6 +456,79 @@ class InvitationService:
             db.add(user)
             db.flush()
 
+        return cls._finalize_acceptance(
+            db,
+            invitation=invitation,
+            employee=employee,
+            user=user,
+            normalized_email=normalized_email,
+            full_name=full_name,
+        )
+
+    @classmethod
+    def accept_with_supabase(
+        cls,
+        db: Session,
+        *,
+        token: str,
+        verified_email: str,
+        supabase_user_id: str,
+    ) -> tuple[EmployeeInvitation, Employee, User]:
+        """Accept an invitation only after Supabase has verified the exact email."""
+        invitation = cls._invitation_by_token(db, token)
+        if invitation.status not in {INVITATION_PENDING, INVITATION_ACTIVATION_SENT}:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Invitation cannot be accepted in its current state")
+        normalized_email = cls._ensure_invited_email(invitation, verified_email)
+        employee = db.get(Employee, invitation.employee_id) if invitation.employee_id else None
+        if employee is None or employee.company_id != invitation.company_id:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Employee profile not found")
+
+        user = db.scalar(select(User).where(User.email == normalized_email))
+        if user is not None:
+            if user.company_id != invitation.company_id:
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invitation email does not match this company")
+            if user.role != invitation.invited_role:
+                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Existing account role does not match this invitation")
+            if user.supabase_user_id not in {None, supabase_user_id}:
+                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Existing Supabase account does not match this invitation")
+            if user.auth_provider not in {"supabase", ""}:
+                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Use the existing FebGrid account to accept this invitation")
+            user.auth_provider = "supabase"
+            user.supabase_user_id = supabase_user_id
+        else:
+            user = User(
+                company_id=invitation.company_id,
+                full_name=employee.full_name,
+                email=normalized_email,
+                password_hash=None,
+                role=invitation.invited_role,
+                auth_provider="supabase",
+                supabase_user_id=supabase_user_id,
+                is_active=False,
+            )
+            db.add(user)
+            db.flush()
+
+        return cls._finalize_acceptance(
+            db,
+            invitation=invitation,
+            employee=employee,
+            user=user,
+            normalized_email=normalized_email,
+            full_name=None,
+        )
+
+    @classmethod
+    def _finalize_acceptance(
+        cls,
+        db: Session,
+        *,
+        invitation: EmployeeInvitation,
+        employee: Employee,
+        user: User,
+        normalized_email: str,
+        full_name: str | None,
+    ) -> tuple[EmployeeInvitation, Employee, User]:
         if employee.user_id is not None and employee.user_id != user.id:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Employee already has a linked user account")
 

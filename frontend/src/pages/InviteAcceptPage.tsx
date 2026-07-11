@@ -1,10 +1,12 @@
-import { AlertTriangle, ArrowRight, CheckCircle2, Lock, ShieldCheck, UserRoundCheck } from "lucide-react";
-import { type FormEvent, useEffect, useState } from "react";
+import { AlertTriangle, ArrowRight, CheckCircle2, Lock, MailCheck, ShieldCheck, UserRoundCheck } from "lucide-react";
+import { type FormEvent, type ReactNode, useEffect, useRef, useState } from "react";
 
+import { DotGrid } from "../components/premium/DotGrid";
 import { Button } from "../components/ui/Button";
 import { FieldShell, TextArea, TextInput } from "../components/ui/FormControls";
 import { ErrorState, LoadingState } from "../components/ui/States";
 import { api, ApiError, setApiAuthToken } from "../services/api";
+import { getSupabaseClient, isSupabaseMagicLinkAvailable } from "../services/supabase";
 import type { InvitationAcceptResult, InvitationPreview } from "../types/api";
 import { compactList, formatDate, formatLabel } from "../utils/format";
 
@@ -32,6 +34,26 @@ const initialProfileForm = {
 
 type AccountForm = typeof initialAccountForm;
 type ProfileForm = typeof initialProfileForm;
+
+function OnboardingShell({ children }: { children: ReactNode }): JSX.Element {
+  return (
+    <div className="febgrid-auth-bg relative min-h-screen overflow-x-clip text-ink-900">
+      <DotGrid
+        className="febgrid-dot-grid"
+        baseColor="#2F293A"
+        activeColor="#5227FF"
+        dotSize={5}
+        gap={15}
+        proximity={120}
+        shockRadius={250}
+        shockStrength={5}
+        resistance={750}
+        returnDuration={1.5}
+      />
+      <div className="relative z-10 min-h-screen">{children}</div>
+    </div>
+  );
+}
 
 function storeSessionToken(token: string): void {
   try {
@@ -70,6 +92,9 @@ export function InviteAcceptPage({ token }: InviteAcceptPageProps): JSX.Element 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [completionMessage, setCompletionMessage] = useState<string | null>(null);
+  const [magicLinkMessage, setMagicLinkMessage] = useState<string | null>(null);
+  const [isMagicLinkSubmitting, setIsMagicLinkSubmitting] = useState(false);
+  const magicSessionHandled = useRef(false);
 
   useEffect(() => {
     let isActive = true;
@@ -101,6 +126,65 @@ export function InviteAcceptPage({ token }: InviteAcceptPageProps): JSX.Element 
       isActive = false;
     };
   }, [token]);
+
+  useEffect(() => {
+    if (!preview || accepted || magicSessionHandled.current || !isSupabaseMagicLinkAvailable) return;
+    if (preview.status !== "pending" && preview.status !== "activation_sent") return;
+    const client = getSupabaseClient();
+    if (!client) return;
+    const supabaseClient = client;
+    const expectedEmail = preview.invited_email.trim().toLowerCase();
+    let isActive = true;
+
+    async function acceptVerifiedSession(): Promise<void> {
+      const { data, error: sessionError } = await supabaseClient.auth.getSession();
+      const accessToken = data.session?.access_token;
+      const sessionEmail = data.session?.user.email?.trim().toLowerCase();
+      if (!accessToken || sessionError || sessionEmail !== expectedEmail) return;
+      magicSessionHandled.current = true;
+      setIsMagicLinkSubmitting(true);
+      setError(null);
+      try {
+        const result = await api.acceptInvitationWithMagicLink({ token, access_token: accessToken });
+        if (!isActive) return;
+        setAccepted(result);
+        setProfileForm((current) => ({ ...current, full_name: result.employee.full_name }));
+        setMagicLinkMessage("Email verified. Complete your profile to finish onboarding.");
+      } catch (caughtError) {
+        if (!isActive) return;
+        setError(caughtError instanceof ApiError ? caughtError.message : "Unable to verify this magic-link session.");
+      } finally {
+        if (isActive) setIsMagicLinkSubmitting(false);
+      }
+    }
+
+    void acceptVerifiedSession();
+    return () => {
+      isActive = false;
+    };
+  }, [accepted, preview, token]);
+
+  async function sendMagicLink(): Promise<void> {
+    if (!preview) return;
+    const client = getSupabaseClient();
+    if (!client) return;
+    setError(null);
+    setMagicLinkMessage(null);
+    setIsMagicLinkSubmitting(true);
+    try {
+      const redirectTo = `${window.location.origin}/accept-invite/${encodeURIComponent(token)}`;
+      const { error: magicError } = await client.auth.signInWithOtp({
+        email: preview.invited_email,
+        options: { emailRedirectTo: redirectTo },
+      });
+      if (magicError) throw magicError;
+      setMagicLinkMessage(`A sign-in link was sent to ${preview.invited_email}. Open it in this browser to verify the invite.`);
+    } catch {
+      setError("Unable to send a magic link. Check the deployment's Supabase redirect configuration or use password onboarding.");
+    } finally {
+      setIsMagicLinkSubmitting(false);
+    }
+  }
 
   async function acceptInvite(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
@@ -166,29 +250,35 @@ export function InviteAcceptPage({ token }: InviteAcceptPageProps): JSX.Element 
 
   if (isLoading) {
     return (
-      <div className="febgrid-auth-bg min-h-screen px-4 py-10">
-        <LoadingState label="Loading invitation" />
-      </div>
+      <OnboardingShell>
+        <div className="min-h-screen px-4 py-10">
+          <LoadingState label="Loading invitation" />
+        </div>
+      </OnboardingShell>
     );
   }
 
   if (error && !preview) {
     return (
-      <div className="febgrid-auth-bg min-h-screen px-4 py-10">
-        <div className="febgrid-surface mx-auto max-w-2xl rounded-lg">
-          <ErrorState message={error} onRetry={() => window.location.reload()} />
+      <OnboardingShell>
+        <div className="min-h-screen px-4 py-10">
+          <div className="febgrid-surface mx-auto max-w-2xl rounded-lg">
+            <ErrorState message={error} onRetry={() => window.location.reload()} />
+          </div>
         </div>
-      </div>
+      </OnboardingShell>
     );
   }
 
   if (!preview) {
     return (
-      <div className="febgrid-auth-bg min-h-screen px-4 py-10">
-        <div className="febgrid-surface mx-auto max-w-2xl rounded-lg p-6">
-          <p className="text-sm font-bold text-ink-950">Invite not found.</p>
+      <OnboardingShell>
+        <div className="min-h-screen px-4 py-10">
+          <div className="febgrid-surface mx-auto max-w-2xl rounded-lg p-6">
+            <p className="text-sm font-bold text-ink-950">Invite not found.</p>
+          </div>
         </div>
-      </div>
+      </OnboardingShell>
     );
   }
 
@@ -197,8 +287,8 @@ export function InviteAcceptPage({ token }: InviteAcceptPageProps): JSX.Element 
   const assignment = compactList([preview.department_name, preview.team_name, preview.manager_name ? `Manager: ${preview.manager_name}` : null]) || "No org assignment";
 
   return (
-    <div className="febgrid-auth-bg min-h-screen px-4 py-10">
-      <main className="mx-auto max-w-3xl space-y-4">
+    <OnboardingShell>
+      <main className="mx-auto max-w-3xl space-y-4 px-4 py-10">
         <section className="febgrid-surface animate-fade-up overflow-hidden rounded-lg">
           <div className="border-b border-grid-200 bg-white/60 px-5 py-4">
             <div className="flex items-start gap-3">
@@ -272,6 +362,23 @@ export function InviteAcceptPage({ token }: InviteAcceptPageProps): JSX.Element 
                 </Button>
               </div>
             </form>
+            {isSupabaseMagicLinkAvailable ? (
+              <div className="border-t border-grid-200 bg-grid-50/40 px-5 py-4">
+                <p className="text-sm font-bold text-ink-900">Prefer passwordless sign-in?</p>
+                <p className="mt-1 text-sm text-ink-500">FebGrid will only accept a Supabase magic-link session for the locked invited email.</p>
+                {magicLinkMessage ? <p className="mt-3 text-sm font-semibold text-green-700">{magicLinkMessage}</p> : null}
+                <Button
+                  className="mt-3"
+                  disabled={isMagicLinkSubmitting || isSubmitting}
+                  onClick={() => void sendMagicLink()}
+                  type="button"
+                  variant="secondary"
+                  icon={<MailCheck className="size-4" aria-hidden="true" />}
+                >
+                  {isMagicLinkSubmitting ? "Verifying..." : "Send magic link"}
+                </Button>
+              </div>
+            ) : null}
           </section>
         ) : null}
 
@@ -327,7 +434,7 @@ export function InviteAcceptPage({ token }: InviteAcceptPageProps): JSX.Element 
           </section>
         ) : null}
       </main>
-    </div>
+    </OnboardingShell>
   );
 }
 

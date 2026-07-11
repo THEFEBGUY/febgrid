@@ -427,39 +427,19 @@ html.dark textarea:focus-visible {
 
 @layer components {
   .febgrid-app-bg {
-    background:
-      linear-gradient(rgba(15, 23, 42, 0.024) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(15, 23, 42, 0.024) 1px, transparent 1px),
-      linear-gradient(180deg, #fbfdff 0%, #f8fafc 46%, #eef2f7 100%);
-    background-size: 36px 36px, 36px 36px, auto;
+    background: var(--febgrid-app-bg);
   }
 
   html.dark .febgrid-app-bg {
-    background:
-      linear-gradient(rgba(148, 163, 184, 0.045) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(148, 163, 184, 0.035) 1px, transparent 1px),
-      linear-gradient(180deg, #0c1424 0%, #070b14 58%, #050814 100%);
-    background-size: 40px 40px, 40px 40px, auto;
+    background: var(--febgrid-app-bg);
   }
 
   .febgrid-auth-bg {
-    background:
-      linear-gradient(rgba(15, 23, 42, 0.026) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(15, 23, 42, 0.022) 1px, transparent 1px),
-      radial-gradient(circle at 15% 22%, rgba(37, 99, 235, 0.15), transparent 30rem),
-      radial-gradient(circle at 82% 78%, rgba(13, 148, 136, 0.12), transparent 32rem),
-      linear-gradient(180deg, #fbfdff 0%, #eef2f7 100%);
-    background-size: 34px 34px, 34px 34px, auto, auto, auto;
+    background: var(--febgrid-app-bg);
   }
 
   html.dark .febgrid-auth-bg {
-    background:
-      linear-gradient(rgba(148, 163, 184, 0.04) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(148, 163, 184, 0.032) 1px, transparent 1px),
-      radial-gradient(circle at 16% 20%, rgba(37, 99, 235, 0.22), transparent 34rem),
-      radial-gradient(circle at 82% 78%, rgba(20, 184, 166, 0.14), transparent 34rem),
-      linear-gradient(180deg, #0c1424 0%, #050814 100%);
-    background-size: 40px 40px, 40px 40px, auto, auto, auto;
+    background: var(--febgrid-app-bg);
   }
 
   .febgrid-surface {

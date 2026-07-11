@@ -1,0 +1,36 @@
+.dot-grid {
+  position: relative;
+  display: flex;
+  width: 100%;
+  height: 100%;
+  align-items: center;
+  justify-content: center;
+}
+
+.dot-grid__wrap {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.dot-grid__canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.febgrid-dot-grid {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+  /* Keep the operational UI readable in light mode while retaining motion. */
+  opacity: 0.14;
+}
+
+html.dark .febgrid-dot-grid {
+  opacity: 0.88;
+}

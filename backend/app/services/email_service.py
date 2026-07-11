@@ -66,8 +66,8 @@ class EmailService:
     ) -> dict[str, Any]:
         """Prepare invite/activation email metadata without sending email.
 
-        The raw action path is returned only to the caller response for local
-        development. Persisted metadata records that a link was prepared without
+        The raw action URL is returned only in the authorized invitation-action
+        response. Persisted metadata records that a link was prepared without
         storing the token-bearing URL.
         """
 

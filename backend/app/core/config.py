@@ -13,6 +13,10 @@ class Settings(BaseSettings):
         validation_alias="DATABASE_URL",
     )
     cors_origins: str = Field(default="http://localhost:5173", validation_alias="CORS_ORIGINS")
+    public_app_url: str = Field(default="http://localhost:5173", validation_alias="PUBLIC_APP_URL")
+    supabase_url: str = Field(default="", validation_alias="SUPABASE_URL")
+    supabase_anon_key: SecretStr | None = Field(default=None, validation_alias="SUPABASE_ANON_KEY")
+    supabase_auth_timeout_seconds: int = Field(default=10, validation_alias="SUPABASE_AUTH_TIMEOUT_SECONDS")
     ai_provider: str = Field(default="mock", validation_alias="AI_PROVIDER")
     ai_provider_mode: str = Field(default="mock", validation_alias="AI_PROVIDER_MODE")
     ai_external_processing_enabled: bool = Field(default=False, validation_alias="AI_EXTERNAL_PROCESSING_ENABLED")

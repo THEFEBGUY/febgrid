@@ -370,6 +370,11 @@ export interface InvitationAcceptPayload {
   full_name?: string | null;
 }
 
+export interface InvitationMagicLinkAcceptPayload {
+  token: string;
+  access_token: string;
+}
+
 export interface InvitationAcceptResult {
   invitation: EmployeeInvitation;
   employee: Employee;

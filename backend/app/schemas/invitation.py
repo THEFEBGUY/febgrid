@@ -96,6 +96,11 @@ class InvitationAcceptRequest(FebGridModel):
     full_name: str | None = Field(default=None, min_length=1, max_length=160)
 
 
+class InvitationMagicLinkAcceptRequest(FebGridModel):
+    token: str = Field(min_length=20, max_length=512)
+    access_token: str = Field(min_length=20, max_length=8192)
+
+
 class InvitationAcceptRead(FebGridModel):
     invitation: EmployeeInvitationRead
     employee: EmployeeRead

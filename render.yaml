@@ -1,0 +1,52 @@
+# Deployment blueprint only. Every sensitive value is entered in the Render
+# dashboard; this file deliberately contains no credentials or concrete URLs.
+services:
+  - type: web
+    runtime: docker
+    name: febgrid-demo-api
+    plan: starter
+    rootDir: backend
+    dockerfilePath: Dockerfile
+    dockerContext: .
+    preDeployCommand: python -m alembic upgrade head
+    healthCheckPath: /api/v1/health
+    autoDeployTrigger: "off"
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: DATABASE_URL
+        sync: false
+      - key: JWT_SECRET_KEY
+        sync: false
+      - key: PUBLIC_APP_URL
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_ANON_KEY
+        sync: false
+      - key: JAVA_BULK_INVITE_BASE_URL
+        sync: false
+      - key: JAVA_BULK_INVITE_SERVICE_KEY
+        sync: false
+      - key: AI_PROVIDER_MODE
+        value: mock
+      - key: AI_EXTERNAL_PROCESSING_ENABLED
+        value: "false"
+
+  - type: pserv
+    runtime: docker
+    name: febgrid-bulk-invite-validator
+    plan: starter
+    rootDir: java-bulk-invite-service
+    dockerfilePath: Dockerfile
+    dockerContext: .
+    autoDeployTrigger: "off"
+    envVars:
+      - key: FEBGRID_INTERNAL_SERVICE_KEY
+        sync: false
+      - key: BULK_INVITE_MAX_ROWS
+        value: "500"
+      - key: BULK_INVITE_MAX_FILE_BYTES
+        value: "2097152"

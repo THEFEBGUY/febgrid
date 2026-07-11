@@ -16,6 +16,7 @@ from app.schemas.invitation import (
     EmployeeInvitationRead,
     InvitationAcceptRead,
     InvitationAcceptRequest,
+    InvitationMagicLinkAcceptRequest,
     InvitationDecisionRequest,
     InvitationPreviewRead,
     InvitationProfileCompleteRead,
@@ -23,6 +24,7 @@ from app.schemas.invitation import (
     InvitationRejectRequest,
 )
 from app.services.invitation_service import InvitationService, metadata_dict
+from app.services.supabase_auth_service import SupabaseAuthService
 
 router = APIRouter(prefix="/invitations", tags=["employee onboarding"])
 
@@ -65,6 +67,7 @@ def preview_invitation(token: str, db: Session = Depends(db_session)) -> Invitat
     try:
         invitation = InvitationService.preview(db, token=token)
     except HTTPException:
+        # Preview can safely persist an expired invitation status.
         db.commit()
         raise
     return preview_response(invitation)
@@ -94,6 +97,41 @@ def accept_invitation(payload: InvitationAcceptRequest, db: Session = Depends(db
         requires_profile=True,
         approval_required=invitation.approval_required,
         message="Invitation accepted. Complete your employee profile to continue.",
+    )
+
+
+@router.post("/accept-magic-link", response_model=InvitationAcceptRead)
+def accept_invitation_magic_link(
+    payload: InvitationMagicLinkAcceptRequest,
+    db: Session = Depends(db_session),
+) -> InvitationAcceptRead:
+    # Validate the invitation before contacting Supabase, then use only the
+    # verified identity returned by Supabase Auth. The frontend email is never trusted.
+    try:
+        InvitationService.preview(db, token=payload.token)
+        identity = SupabaseAuthService.verify_access_token(payload.access_token)
+        invitation, employee, user = InvitationService.accept_with_supabase(
+            db,
+            token=payload.token,
+            verified_email=identity.email,
+            supabase_user_id=identity.user_id,
+        )
+    except HTTPException:
+        # No partial local account or invitation update should survive a failed
+        # Supabase identity/email check.
+        db.rollback()
+        raise
+    db.commit()
+    db.refresh(invitation)
+    db.refresh(employee)
+    db.refresh(user)
+    return InvitationAcceptRead(
+        invitation=invitation,
+        employee=employee,
+        user=user,
+        requires_profile=True,
+        approval_required=invitation.approval_required,
+        message="Email verified with Supabase. Complete your employee profile to continue.",
     )
 
 
