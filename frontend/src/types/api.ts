@@ -325,7 +325,6 @@ export interface BulkInviteConfirmRowResult {
   status: string;
   message: string;
   invitation_id: string | null;
-  acceptance_url: string | null;
 }
 
 export interface BulkInviteConfirmResult {

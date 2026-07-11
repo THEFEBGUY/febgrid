@@ -101,6 +101,13 @@ class BulkInviteValidationControllerTest {
             .andExpect(status().isUnsupportedMediaType())
             .andExpect(jsonPath("$.code").value("BULK_INVITE_UNSUPPORTED_FILE"));
 
+        MockMultipartFile binaryContentType = new MockMultipartFile(
+            "file", "employees.csv", "application/octet-stream", "email,full_name,job_title,role\na@example.com,A,Dev,employee\n".getBytes()
+        );
+        mockMvc.perform(multipart("/internal/v1/bulk-invites/validate").file(binaryContentType).header("X-FebGrid-Service-Key", "test-service-key"))
+            .andExpect(status().isUnsupportedMediaType())
+            .andExpect(jsonPath("$.code").value("BULK_INVITE_UNSUPPORTED_FILE"));
+
         MockMultipartFile malformed = new MockMultipartFile(
             "file", "employees.csv", "text/csv", "email,full_name,job_title,role\na@example.com,\"Unclosed,Developer,employee\n".getBytes()
         );

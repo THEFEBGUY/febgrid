@@ -114,12 +114,40 @@ company access, invitation creation, onboarding links, delivery preparation,
 events, and notifications. The isolated Java service only parses and validates
 CSV files during preview.
 
+The flow is intentionally split:
+
+```text
+Employees page -> Python FastAPI (auth, tenant checks, invitation service)
+               -> Java validator (CSV parsing and structural validation only)
+```
+
 For local development, start `java-bulk-invite-service` with a development-only
 internal service key, then configure the matching runtime values described in
 `.env.example` without committing them. The Employees page supports template
-download, CSV preview, explicit confirmation, partial outcomes, and an
-idempotency-safe retry path. Existing single-invite and manual activation flows
-remain unchanged.
+download, drag-and-drop CSV preview, explicit confirmation, partial outcomes,
+formula-safe result export, and idempotency-safe retry. Existing single-invite
+and manual activation flows remain unchanged.
+
+Production deployment must keep the Java validator on an internal Docker or
+private service network. Do not publish its port to the public internet. It
+accepts only a short-lived CSV validation request protected by a dedicated
+internal service key; it has no database, token, email, or FebGrid-user access.
+The Python service should call it through `JAVA_BULK_INVITE_BASE_URL` with a
+matching `JAVA_BULK_INVITE_SERVICE_KEY`. Local loopback exposure is suitable for
+development only.
+
+CSV limits are 2 MiB and 500 data rows. Required columns are `email`,
+`full_name`, `job_title`, and `role`; the supported optional columns are
+`department`, `team`, `manager_email`, `employment_type`, `phone`, and
+`employee_code`. Download the current template from the Employees page rather
+than maintaining a copied template.
+
+College explanation: FebGrid is a polyglot application. Python FastAPI owns
+authentication, permissions, tenant-aware employee data, invitation tokens,
+email preparation, events, notifications, and transactions. The Java Spring
+Boot service has one isolated responsibility: normalize and validate CSV rows
+before Python rechecks live company data and invokes the same invitation service
+used for an individual employee.
 
 Create future migrations after model changes:
 
@@ -141,6 +169,9 @@ All Phase 1 endpoints are mounted under `/api/v1`.
 - `/employees`
 - `/employees/{employee_id}/digital-twin`
 - `/invitations`
+- `/companies/{company_id}/bulk-invites/template`
+- `/companies/{company_id}/bulk-invites/preview`
+- `/companies/{company_id}/bulk-invites/confirm`
 - `/teams`
 - `/projects`
 - `/work-objects`

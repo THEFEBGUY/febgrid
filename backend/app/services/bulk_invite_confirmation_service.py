@@ -181,7 +181,7 @@ class BulkInviteConfirmationService:
         )
         try:
             with db.begin_nested():
-                invitation, acceptance_url, _ = InvitationService.create_invitation(db, payload=invite_payload, actor_user=actor_user)
+                invitation, _, _ = InvitationService.create_invitation(db, payload=invite_payload, actor_user=actor_user)
                 EventService.record_event(
                     db,
                     company_id=company_id,
@@ -207,7 +207,6 @@ class BulkInviteConfirmationService:
             status="INVITED",
             message="Invitation prepared using the standard onboarding flow",
             invitation_id=invitation.id,
-            acceptance_url=acceptance_url,
         )
 
     @staticmethod

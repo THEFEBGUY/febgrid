@@ -44,6 +44,7 @@ function errorMessage(error: unknown): string {
     BULK_INVITE_SERVICE_ERROR: "The CSV validation service could not validate this file. Please try again.",
     BULK_INVITE_PREVIEW_MISMATCH: "This preview is no longer valid. Upload the CSV again to refresh it.",
     BULK_INVITE_CONFIRMATION_IN_PROGRESS: "This CSV confirmation is already being processed. Please wait a moment.",
+    BULK_INVITE_INTERNAL_ERROR: "FebGrid could not safely finish this bulk invite request. No result was confirmed; please try again.",
     BULK_INVITE_FILE_TOO_LARGE: "This CSV is larger than the supported upload limit.",
     BULK_INVITE_UNSUPPORTED_FILE: "Upload a UTF-8 CSV file using the FebGrid template.",
   };

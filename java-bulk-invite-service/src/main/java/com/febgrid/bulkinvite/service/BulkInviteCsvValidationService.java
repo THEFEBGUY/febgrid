@@ -40,6 +40,9 @@ public class BulkInviteCsvValidationService {
     );
     private static final Pattern EMAIL = Pattern.compile("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$");
     private static final Pattern PHONE = Pattern.compile("^\\+?[0-9 ()-]{7,40}$");
+    private static final Set<String> SUPPORTED_CONTENT_TYPES = Set.of(
+        "text/csv", "application/csv", "text/plain", "application/vnd.ms-excel"
+    );
     private static final Map<String, Integer> MAX_LENGTHS = Map.of(
         "email", 255,
         "full_name", 160,
@@ -112,6 +115,10 @@ public class BulkInviteCsvValidationService {
         }
         String name = safeFileName(file.getOriginalFilename()).toLowerCase(Locale.ROOT);
         if (!name.endsWith(".csv")) {
+            throw error("BULK_INVITE_UNSUPPORTED_FILE", "Only CSV files are supported", HttpStatus.UNSUPPORTED_MEDIA_TYPE);
+        }
+        String contentType = file.getContentType();
+        if (contentType != null && !contentType.isBlank() && !SUPPORTED_CONTENT_TYPES.contains(contentType.toLowerCase(Locale.ROOT))) {
             throw error("BULK_INVITE_UNSUPPORTED_FILE", "Only CSV files are supported", HttpStatus.UNSUPPORTED_MEDIA_TYPE);
         }
     }

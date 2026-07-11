@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 from uuid import uuid4
 
+import httpx
 from fastapi import HTTPException, UploadFile
 from starlette.datastructures import Headers
 
@@ -138,6 +139,21 @@ class BulkInviteFoundationTests(unittest.TestCase):
         self.assertEqual(raised.exception.code, "BULK_INVITE_SERVICE_UNAVAILABLE")
         self.assertEqual(raised.exception.status_code, 503)
 
+    def test_java_client_timeout_returns_safe_unavailable_error(self) -> None:
+        settings = SimpleNamespace(
+            java_bulk_invite_base_url="http://validator.internal",
+            java_bulk_invite_service_key=SimpleNamespace(get_secret_value=lambda: "test-only-key"),
+            java_bulk_invite_timeout_seconds=20,
+        )
+        with patch("app.services.java_bulk_invite_client.httpx.Client") as client_class:
+            client_class.return_value.__enter__.return_value.post.side_effect = httpx.TimeoutException("timeout")
+            with self.assertRaises(JavaBulkInviteClientError) as raised:
+                JavaBulkInviteClient(settings).validate_csv(
+                    file_name="employees.csv", content=b"email,full_name,job_title,role\n", request_id=uuid4()
+                )
+        self.assertEqual(raised.exception.code, "BULK_INVITE_SERVICE_UNAVAILABLE")
+        self.assertEqual(raised.exception.status_code, 503)
+
     def test_preview_enrichment_is_tenant_scoped_and_checks_existing_records(self) -> None:
         company_id = uuid4()
         department = SimpleNamespace(id=uuid4(), name="Engineering")
@@ -266,6 +282,7 @@ class BulkInviteFoundationTests(unittest.TestCase):
         self.assertEqual(raised.exception.status_code, 503)
         self.assertEqual(raised.exception.detail, "BULK_INVITE_SERVICE_UNAVAILABLE")
         self.assertFalse(db.committed)
+        self.assertTrue(upload.file.closed)
 
     def test_single_invitation_service_remains_the_only_creation_path(self) -> None:
         import inspect
@@ -291,6 +308,7 @@ class BulkInviteFoundationTests(unittest.TestCase):
                     )
         self.assertEqual(result.invited_rows, 1)
         self.assertEqual(result.rows[0].status, "INVITED")
+        self.assertNotIn("acceptance_url", result.rows[0].model_dump())
         create.assert_called_once()
         self.assertIsNotNone(db.operation)
         self.assertEqual(db.operation.status, "completed")

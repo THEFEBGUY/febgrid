@@ -3,6 +3,7 @@ from __future__ import annotations
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile, status
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.api.deps import db_session, get_current_user
@@ -72,25 +73,31 @@ def preview_bulk_invites(
 ) -> BulkInvitePreviewRead:
     ensure_bulk_invite_access(db, company_id=company_id, current_user=current_user)
     settings = get_settings()
-    file_name, content = validate_upload(file, max_bytes=settings.bulk_invite_max_file_bytes)
     try:
-        validation = JavaBulkInviteClient(settings).validate_csv(
-            file_name=file_name,
-            content=content,
-            request_id=uuid4(),
-        )
-    except JavaBulkInviteClientError as error:
-        raise HTTPException(status_code=error.status_code, detail=error.code) from None
+        file_name, content = validate_upload(file, max_bytes=settings.bulk_invite_max_file_bytes)
+        try:
+            validation = JavaBulkInviteClient(settings).validate_csv(
+                file_name=file_name,
+                content=content,
+                request_id=uuid4(),
+            )
+        except JavaBulkInviteClientError as error:
+            raise HTTPException(status_code=error.status_code, detail=error.code) from None
 
-    preview = BulkInvitePreviewService.build_preview(
-        db,
-        company_id=company_id,
-        actor_user=current_user,
-        validation=validation,
-    )
-    BulkInvitePreviewService.record_preview_event(db, preview=preview, actor_user=current_user)
-    db.commit()
-    return preview
+        preview = BulkInvitePreviewService.build_preview(
+            db,
+            company_id=company_id,
+            actor_user=current_user,
+            validation=validation,
+        )
+        BulkInvitePreviewService.record_preview_event(db, preview=preview, actor_user=current_user)
+        db.commit()
+        return preview
+    except SQLAlchemyError:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="BULK_INVITE_INTERNAL_ERROR") from None
+    finally:
+        file.file.close()
 
 
 @router.post("/confirm", response_model=BulkInviteConfirmRead)
@@ -101,11 +108,15 @@ def confirm_bulk_invites(
     current_user: User = Depends(get_current_user),
 ) -> BulkInviteConfirmRead:
     ensure_bulk_invite_access(db, company_id=company_id, current_user=current_user)
-    result = BulkInviteConfirmationService.confirm(
-        db,
-        company_id=company_id,
-        actor_user=current_user,
-        payload=payload,
-    )
-    db.commit()
-    return result
+    try:
+        result = BulkInviteConfirmationService.confirm(
+            db,
+            company_id=company_id,
+            actor_user=current_user,
+            payload=payload,
+        )
+        db.commit()
+        return result
+    except SQLAlchemyError:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="BULK_INVITE_INTERNAL_ERROR") from None

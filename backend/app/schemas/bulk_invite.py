@@ -99,7 +99,6 @@ class BulkInviteConfirmRowResult(FebGridModel):
     ]
     message: str
     invitation_id: UUID | None = None
-    acceptance_url: str | None = None
 
 
 class BulkInviteConfirmRead(FebGridModel):
