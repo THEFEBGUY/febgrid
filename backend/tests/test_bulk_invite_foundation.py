@@ -1,4 +1,5 @@
 import unittest
+from contextlib import nullcontext
 from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -10,11 +11,14 @@ from starlette.datastructures import Headers
 from app.api.routes import bulk_invites
 from app.core.security import create_bulk_invite_preview_token, decode_bulk_invite_preview_token
 from app.schemas.bulk_invite import (
+    BulkInviteConfirmRequest,
     BulkInviteNormalizedRow,
     BulkInvitePreviewRead,
+    BulkInvitePreviewRow,
     JavaBulkInviteValidationResponse,
     JavaBulkInviteValidationRow,
 )
+from app.services.bulk_invite_confirmation_service import BulkInviteConfirmationService
 from app.services.bulk_invite_preview_service import BulkInvitePreviewService
 from app.services.java_bulk_invite_client import JavaBulkInviteClient, JavaBulkInviteClientError
 
@@ -29,6 +33,29 @@ class FakeDB:
 
     def commit(self):
         self.committed = True
+
+
+class ConfirmationDB(FakeDB):
+    def __init__(self) -> None:
+        super().__init__()
+        self.operation = None
+        self.added = []
+
+    def scalar(self, _statement):
+        return self.operation
+
+    def add(self, value):
+        if getattr(value, "id", None) is None:
+            value.id = uuid4()
+        self.added.append(value)
+        if value.__class__.__name__ == "BulkInviteOperation":
+            self.operation = value
+
+    def flush(self):
+        return None
+
+    def begin_nested(self):
+        return nullcontext()
 
 
 def owner(company_id):
@@ -55,6 +82,33 @@ def validation_response() -> JavaBulkInviteValidationResponse:
                 ),
             )
         ],
+    )
+
+
+def preview_row() -> BulkInvitePreviewRow:
+    return BulkInvitePreviewRow(
+        row_number=2,
+        status="VALID",
+        normalized=BulkInviteNormalizedRow(
+            email="new.employee@example.com",
+            fullName="New Employee",
+            jobTitle="Developer",
+            role="employee",
+        ),
+    )
+
+
+def confirmation_request(company_id, user_id, rows: list[BulkInvitePreviewRow]) -> BulkInviteConfirmRequest:
+    return BulkInviteConfirmRequest(
+        preview_token=create_bulk_invite_preview_token(
+            company_id=company_id,
+            user_id=user_id,
+            normalized_rows_hash=BulkInvitePreviewService.normalized_rows_hash(rows),
+        ),
+        idempotency_key="bulk-confirmation-key-0001",
+        file_name="employees.csv",
+        approval_required=False,
+        rows=rows,
     )
 
 
@@ -147,6 +201,14 @@ class BulkInviteFoundationTests(unittest.TestCase):
             )
         self.assertEqual(raised.exception.status_code, 403)
 
+        with self.assertRaises(HTTPException) as raised:
+            bulk_invites.download_bulk_invite_template(
+                company_id=company_id,
+                db=db,
+                current_user=SimpleNamespace(id=uuid4(), company_id=company_id, role="manager"),
+            )
+        self.assertEqual(raised.exception.status_code, 403)
+
     def test_template_rejects_cross_company_access(self) -> None:
         company_id = uuid4()
         db = FakeDB(company=SimpleNamespace(id=company_id, is_active=True))
@@ -212,3 +274,61 @@ class BulkInviteFoundationTests(unittest.TestCase):
         source = inspect.getsource(bulk_invite_preview_service)
         self.assertNotIn("create_invitation(", source)
         self.assertNotIn("EmployeeInvitation(", source)
+
+    def test_confirmation_uses_existing_invitation_service_and_replays_idempotently(self) -> None:
+        company_id = uuid4()
+        actor = owner(company_id)
+        rows = [preview_row()]
+        payload = confirmation_request(company_id, actor.id, rows)
+        db = ConfirmationDB()
+        context = {"employees": {}, "managers": {}, "employee_codes": {}, "departments": {}, "teams": {}, "invitations": {}}
+        invitation = SimpleNamespace(id=uuid4(), employee_id=uuid4())
+        with patch.object(BulkInvitePreviewService, "_load_context", return_value=context):
+            with patch("app.services.bulk_invite_confirmation_service.InvitationService.create_invitation", return_value=(invitation, "/join/dev", {})) as create:
+                with patch("app.services.bulk_invite_confirmation_service.EventService.record_event"):
+                    result = BulkInviteConfirmationService.confirm(
+                        db, company_id=company_id, actor_user=actor, payload=payload
+                    )
+        self.assertEqual(result.invited_rows, 1)
+        self.assertEqual(result.rows[0].status, "INVITED")
+        create.assert_called_once()
+        self.assertIsNotNone(db.operation)
+        self.assertEqual(db.operation.status, "completed")
+
+        with patch("app.services.bulk_invite_confirmation_service.InvitationService.create_invitation") as create:
+            replay = BulkInviteConfirmationService.confirm(db, company_id=company_id, actor_user=actor, payload=payload)
+        self.assertTrue(replay.idempotent_replay)
+        self.assertEqual(replay.invited_rows, 1)
+        create.assert_not_called()
+
+    def test_confirmation_rejects_preview_for_another_company_before_creation(self) -> None:
+        company_id = uuid4()
+        actor = owner(company_id)
+        payload = confirmation_request(uuid4(), actor.id, [preview_row()])
+        with self.assertRaises(HTTPException) as raised:
+            BulkInviteConfirmationService.confirm(
+                ConfirmationDB(), company_id=company_id, actor_user=actor, payload=payload
+            )
+        self.assertEqual(raised.exception.status_code, 409)
+
+    def test_confirmation_keeps_valid_rows_when_another_row_fails_validation(self) -> None:
+        company_id = uuid4()
+        actor = owner(company_id)
+        invalid = preview_row().model_copy(update={"row_number": 3, "status": "INVALID"})
+        rows = [preview_row(), invalid]
+        db = ConfirmationDB()
+        context = {"employees": {}, "managers": {}, "employee_codes": {}, "departments": {}, "teams": {}, "invitations": {}}
+        invitation = SimpleNamespace(id=uuid4(), employee_id=uuid4())
+        with patch.object(BulkInvitePreviewService, "_load_context", return_value=context):
+            with patch("app.services.bulk_invite_confirmation_service.InvitationService.create_invitation", return_value=(invitation, "/join/dev", {})):
+                with patch("app.services.bulk_invite_confirmation_service.EventService.record_event"):
+                    result = BulkInviteConfirmationService.confirm(
+                        db,
+                        company_id=company_id,
+                        actor_user=actor,
+                        payload=confirmation_request(company_id, actor.id, rows),
+                    )
+        self.assertEqual(result.status, "partially_failed")
+        self.assertEqual(result.invited_rows, 1)
+        self.assertEqual(result.failed_rows, 1)
+        self.assertEqual([row.status for row in result.rows], ["INVITED", "FAILED_VALIDATION"])

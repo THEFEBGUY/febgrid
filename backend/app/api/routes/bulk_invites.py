@@ -7,10 +7,11 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import db_session, get_current_user
 from app.core.config import get_settings
-from app.core.permissions import OWNER_ADMIN_ROLES, ensure_company_access, ensure_role
+from app.core.permissions import ensure_company_access, ensure_invite_capability
 from app.models.company import Company
 from app.models.user import User
-from app.schemas.bulk_invite import BulkInvitePreviewRead
+from app.schemas.bulk_invite import BulkInviteConfirmRead, BulkInviteConfirmRequest, BulkInvitePreviewRead
+from app.services.bulk_invite_confirmation_service import BulkInviteConfirmationService
 from app.services.bulk_invite_preview_service import BulkInvitePreviewService
 from app.services.java_bulk_invite_client import JavaBulkInviteClient, JavaBulkInviteClientError
 
@@ -27,7 +28,7 @@ ALLOWED_CSV_CONTENT_TYPES = {"text/csv", "application/csv", "text/plain", "appli
 
 def ensure_bulk_invite_access(db: Session, *, company_id: UUID, current_user: User) -> Company:
     ensure_company_access(current_user, company_id)
-    ensure_role(current_user, OWNER_ADMIN_ROLES)
+    ensure_invite_capability(current_user)
     company = db.get(Company, company_id)
     if company is None or not company.is_active:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Company not found")
@@ -90,3 +91,21 @@ def preview_bulk_invites(
     BulkInvitePreviewService.record_preview_event(db, preview=preview, actor_user=current_user)
     db.commit()
     return preview
+
+
+@router.post("/confirm", response_model=BulkInviteConfirmRead)
+def confirm_bulk_invites(
+    company_id: UUID,
+    payload: BulkInviteConfirmRequest,
+    db: Session = Depends(db_session),
+    current_user: User = Depends(get_current_user),
+) -> BulkInviteConfirmRead:
+    ensure_bulk_invite_access(db, company_id=company_id, current_user=current_user)
+    result = BulkInviteConfirmationService.confirm(
+        db,
+        company_id=company_id,
+        actor_user=current_user,
+        payload=payload,
+    )
+    db.commit()
+    return result

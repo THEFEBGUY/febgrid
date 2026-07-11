@@ -1,6 +1,7 @@
 from app.models.ai_job import AIJob
 from app.models.attachment import Attachment
 from app.models.billing import CompanyBillingPlan
+from app.models.bulk_invite_operation import BulkInviteOperation
 from app.models.company import Company
 from app.models.company_memory import CompanyMemory
 from app.models.company_pulse import CompanyPulseSnapshot
@@ -24,6 +25,7 @@ __all__ = [
     "AIJob",
     "Attachment",
     "CompanyBillingPlan",
+    "BulkInviteOperation",
     "Announcement",
     "Comment",
     "CommentMention",

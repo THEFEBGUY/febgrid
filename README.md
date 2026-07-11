@@ -107,6 +107,20 @@ Run migrations from the `backend` directory:
 python -m alembic upgrade head
 ```
 
+## Bulk Employee Invite CSV
+
+Bulk employee invitations keep FebGrid's Python backend as the authority for
+company access, invitation creation, onboarding links, delivery preparation,
+events, and notifications. The isolated Java service only parses and validates
+CSV files during preview.
+
+For local development, start `java-bulk-invite-service` with a development-only
+internal service key, then configure the matching runtime values described in
+`.env.example` without committing them. The Employees page supports template
+download, CSV preview, explicit confirmation, partial outcomes, and an
+idempotency-safe retry path. Existing single-invite and manual activation flows
+remain unchanged.
+
 Create future migrations after model changes:
 
 ```powershell

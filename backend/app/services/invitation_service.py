@@ -203,6 +203,10 @@ class InvitationService:
         actor_user: User,
     ) -> tuple[EmployeeInvitation, str, dict[str, Any]]:
         company = cls._company(db, payload.company_id)
+        payload_metadata = metadata_dict(payload.metadata)
+        employee_code = payload_metadata.get("employee_code")
+        if not isinstance(employee_code, str) or not employee_code.strip():
+            employee_code = None
         invited_email = normalize_email(str(payload.invited_email))
         invited_role = cls._validate_role(payload.invited_role)
         department, team, manager = cls._validate_refs(
@@ -238,7 +242,10 @@ class InvitationService:
                 employment_type=payload.employment_type or "full_time",
                 status="offline",
                 skills=[],
-                metadata_json={"invite_source": "invite"},
+                metadata_json={
+                    "invite_source": "invite",
+                    **({"employee_code": employee_code.strip()} if employee_code else {}),
+                },
                 is_active=True,
                 account_status="pending_activation",
                 activation_status="invitation_sent",
@@ -262,6 +269,8 @@ class InvitationService:
                 employee.role = payload.job_title
             if payload.employment_type:
                 employee.employment_type = payload.employment_type
+            if employee_code:
+                employee.metadata_json = {**metadata_dict(employee.metadata_json), "employee_code": employee_code.strip()}
             employee.account_status = "pending_activation"
             employee.activation_status = "invitation_sent"
             employee.profile_completion_status = "prefill_pending"
@@ -288,7 +297,7 @@ class InvitationService:
             expires_at=expires_at,
             sent_at=issued_at,
             invited_by_user_id=actor_user.id,
-            metadata_json={**metadata_dict(payload.metadata), "note": payload.note},
+            metadata_json={**payload_metadata, "note": payload.note},
         )
         db.add(invitation)
         db.flush()

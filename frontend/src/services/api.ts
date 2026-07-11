@@ -17,6 +17,9 @@ import type {
   AuthMe,
   AuthSession,
   BillingSummary,
+  BulkInviteConfirmPayload,
+  BulkInviteConfirmResult,
+  BulkInvitePreview,
   Company,
   CompanyCreatePayload,
   CompanyMemory,
@@ -247,6 +250,14 @@ export const api = {
     if (statusFilter) searchParams.set("status", statusFilter);
     return request<EmployeeInvitation[]>(`/invitations?${searchParams.toString()}`);
   },
+  bulkInviteTemplate: (companyId: string) => requestBlob(`/companies/${companyId}/bulk-invites/template`),
+  previewBulkInvites: (companyId: string, file: File) => {
+    const formData = new FormData();
+    formData.append("file", file);
+    return request<BulkInvitePreview>(`/companies/${companyId}/bulk-invites/preview`, { method: "POST", body: formData });
+  },
+  confirmBulkInvites: (companyId: string, payload: BulkInviteConfirmPayload) =>
+    request<BulkInviteConfirmResult>(`/companies/${companyId}/bulk-invites/confirm`, jsonInit("POST", payload)),
   createInvitation: (payload: EmployeeInvitationCreatePayload) => request<EmployeeInvitationActionResult>("/invitations", jsonInit("POST", payload)),
   resendInvitation: (invitationId: string, companyId: string) =>
     request<EmployeeInvitationActionResult>(`/invitations/${invitationId}/resend`, jsonInit("POST", { company_id: companyId })),

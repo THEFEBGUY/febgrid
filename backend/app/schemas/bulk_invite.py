@@ -75,3 +75,40 @@ class BulkInvitePreviewRead(FebGridModel):
     preview_token: str
     preview_expires_at: datetime
     rows: list[BulkInvitePreviewRow] = Field(default_factory=list)
+
+
+class BulkInviteConfirmRequest(FebGridModel):
+    preview_token: str = Field(min_length=20, max_length=2048)
+    idempotency_key: str = Field(min_length=16, max_length=128)
+    file_name: str = Field(min_length=1, max_length=255)
+    approval_required: bool = False
+    rows: list[BulkInvitePreviewRow] = Field(min_length=1, max_length=500)
+
+
+class BulkInviteConfirmRowResult(FebGridModel):
+    row_number: int = Field(ge=2)
+    email: str
+    status: Literal[
+        "INVITED",
+        "SKIPPED_EXISTING_EMPLOYEE",
+        "SKIPPED_ACTIVE_INVITATION",
+        "SKIPPED_DUPLICATE_CSV_ROW",
+        "FAILED_VALIDATION",
+        "FAILED_EMAIL",
+        "FAILED_INTERNAL",
+    ]
+    message: str
+    invitation_id: UUID | None = None
+    acceptance_url: str | None = None
+
+
+class BulkInviteConfirmRead(FebGridModel):
+    operation_id: UUID
+    company_id: UUID
+    status: str
+    total_rows: int = Field(ge=0)
+    invited_rows: int = Field(ge=0)
+    skipped_rows: int = Field(ge=0)
+    failed_rows: int = Field(ge=0)
+    idempotent_replay: bool = False
+    rows: list[BulkInviteConfirmRowResult] = Field(default_factory=list)

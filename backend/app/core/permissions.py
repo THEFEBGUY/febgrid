@@ -14,6 +14,11 @@ OWNER_ADMIN_ROLES = {ROLE_COMPANY_OWNER, ROLE_ADMIN}
 MANAGER_ROLES = {ROLE_COMPANY_OWNER, ROLE_ADMIN, ROLE_MANAGER}
 ALL_ROLES = {ROLE_COMPANY_OWNER, ROLE_ADMIN, ROLE_MANAGER, ROLE_EMPLOYEE}
 
+# Invite capability is intentionally centralized. The current role model grants
+# it to owner/admin only; future HR or manager capabilities belong here after
+# they are represented by the existing authorization model.
+INVITE_CAPABLE_ROLES = OWNER_ADMIN_ROLES
+
 
 def ensure_valid_role(role: str) -> str:
     if role not in ALL_ROLES:
@@ -33,3 +38,7 @@ def ensure_role(user: User | None, allowed_roles: Iterable[str]) -> None:
         return
     if user.role not in set(allowed_roles):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission for this action")
+
+
+def ensure_invite_capability(user: User | None) -> None:
+    ensure_role(user, INVITE_CAPABLE_ROLES)

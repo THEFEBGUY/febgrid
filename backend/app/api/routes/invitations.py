@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import db_session, get_current_user
-from app.core.permissions import OWNER_ADMIN_ROLES, ensure_company_access, ensure_role
+from app.core.permissions import OWNER_ADMIN_ROLES, ensure_company_access, ensure_invite_capability, ensure_role
 from app.core.security import create_access_token
 from app.models.company import Company
 from app.models.employee_invitation import EmployeeInvitation
@@ -136,7 +136,7 @@ def list_invitations(
     offset: int = Query(default=0, ge=0),
 ) -> list[EmployeeInvitation]:
     ensure_company_access(current_user, company_id)
-    ensure_role(current_user, OWNER_ADMIN_ROLES)
+    ensure_invite_capability(current_user)
     return InvitationService.list_company_invitations(
         db,
         company_id=company_id,
@@ -153,7 +153,7 @@ def create_invitation(
     current_user: User = Depends(get_current_user),
 ) -> EmployeeInvitationActionRead:
     ensure_company_access(current_user, payload.company_id)
-    ensure_role(current_user, OWNER_ADMIN_ROLES)
+    ensure_invite_capability(current_user)
     invitation, acceptance_url, delivery = InvitationService.create_invitation(db, payload=payload, actor_user=current_user)
     db.commit()
     db.refresh(invitation)
@@ -168,7 +168,7 @@ def resend_invitation(
     current_user: User = Depends(get_current_user),
 ) -> EmployeeInvitationActionRead:
     ensure_company_access(current_user, payload.company_id)
-    ensure_role(current_user, OWNER_ADMIN_ROLES)
+    ensure_invite_capability(current_user)
     invitation = InvitationService.get_company_invitation(db, company_id=payload.company_id, invitation_id=invitation_id)
     invitation, acceptance_url, delivery = InvitationService.resend(db, invitation=invitation, actor_user=current_user)
     db.commit()
@@ -184,7 +184,7 @@ def revoke_invitation(
     current_user: User = Depends(get_current_user),
 ) -> EmployeeInvitation:
     ensure_company_access(current_user, payload.company_id)
-    ensure_role(current_user, OWNER_ADMIN_ROLES)
+    ensure_invite_capability(current_user)
     invitation = InvitationService.get_company_invitation(db, company_id=payload.company_id, invitation_id=invitation_id)
     invitation = InvitationService.revoke(db, invitation=invitation, actor_user=current_user)
     db.commit()
@@ -200,7 +200,7 @@ def approve_invitation(
     current_user: User = Depends(get_current_user),
 ) -> EmployeeInvitation:
     ensure_company_access(current_user, payload.company_id)
-    ensure_role(current_user, OWNER_ADMIN_ROLES)
+    ensure_invite_capability(current_user)
     invitation = InvitationService.get_company_invitation(db, company_id=payload.company_id, invitation_id=invitation_id)
     invitation, _, _ = InvitationService.approve(db, invitation=invitation, actor_user=current_user)
     db.commit()

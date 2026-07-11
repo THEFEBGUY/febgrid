@@ -73,7 +73,7 @@ class BulkInvitePreviewService:
             )
             for row in validation.rows
         ]
-        row_hash = cls._normalized_rows_hash(rows)
+        row_hash = cls.normalized_rows_hash(rows)
         expires_at = datetime.now(timezone.utc) + timedelta(minutes=PREVIEW_EXPIRY_MINUTES)
         preview_token = create_bulk_invite_preview_token(
             company_id=company_id,
@@ -210,7 +210,7 @@ class BulkInvitePreviewService:
         )
 
     @staticmethod
-    def _normalized_rows_hash(rows: list[BulkInvitePreviewRow]) -> str:
+    def normalized_rows_hash(rows: list[BulkInvitePreviewRow]) -> str:
         safe_rows = [
             {
                 "row_number": row.row_number,

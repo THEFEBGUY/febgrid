@@ -266,6 +266,80 @@ export interface EmployeeInvitationActionResult {
   email_delivery: Record<string, unknown>;
 }
 
+export type BulkInviteRowStatus = "VALID" | "INVALID" | "DUPLICATE" | "EXISTING_EMPLOYEE" | "EXISTING_INVITATION";
+
+export interface BulkInviteValidationIssue {
+  code: string;
+  message: string;
+}
+
+export interface BulkInviteNormalizedRow {
+  email: string;
+  full_name: string;
+  job_title: string;
+  role: string;
+  department: string;
+  team: string;
+  manager_email: string;
+  employment_type: string;
+  phone: string;
+  employee_code: string;
+}
+
+export interface BulkInvitePreviewRow {
+  row_number: number;
+  status: BulkInviteRowStatus;
+  normalized: BulkInviteNormalizedRow;
+  errors: BulkInviteValidationIssue[];
+  warnings: BulkInviteValidationIssue[];
+  department_id: string | null;
+  team_id: string | null;
+  manager_employee_id: string | null;
+}
+
+export interface BulkInvitePreview {
+  company_id: string;
+  file_name: string;
+  total_rows: number;
+  valid_row_count: number;
+  invalid_row_count: number;
+  duplicate_row_count: number;
+  existing_employee_count: number;
+  existing_invitation_count: number;
+  preview_token: string;
+  preview_expires_at: string;
+  rows: BulkInvitePreviewRow[];
+}
+
+export interface BulkInviteConfirmPayload {
+  preview_token: string;
+  idempotency_key: string;
+  file_name: string;
+  approval_required: boolean;
+  rows: BulkInvitePreviewRow[];
+}
+
+export interface BulkInviteConfirmRowResult {
+  row_number: number;
+  email: string;
+  status: string;
+  message: string;
+  invitation_id: string | null;
+  acceptance_url: string | null;
+}
+
+export interface BulkInviteConfirmResult {
+  operation_id: string;
+  company_id: string;
+  status: string;
+  total_rows: number;
+  invited_rows: number;
+  skipped_rows: number;
+  failed_rows: number;
+  idempotent_replay: boolean;
+  rows: BulkInviteConfirmRowResult[];
+}
+
 export interface InvitationPreview {
   company_id: string;
   company_name: string;

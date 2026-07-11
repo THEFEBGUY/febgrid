@@ -16,6 +16,7 @@ import {
 import { type FormEvent, useEffect, useMemo, useState } from "react";
 
 import { DigitalTwinPanel } from "../components/employee/DigitalTwinPanel";
+import { BulkInviteModal } from "../components/employee/BulkInviteModal";
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
 import { DataTable, type DataTableColumn } from "../components/ui/DataTable";
@@ -166,6 +167,7 @@ export function EmployeesPage({
   onApproveInvitation,
   onRejectInvitation,
   isMutating,
+  currentUserRole,
 }: EmployeesPageProps): JSX.Element {
   const [form, setForm] = useState<EmployeeForm>(initialForm);
   const [inviteForm, setInviteForm] = useState<InviteForm>(initialInviteForm);
@@ -181,6 +183,7 @@ export function EmployeesPage({
   const [profileTwinError, setProfileTwinError] = useState<string | null>(null);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isInviteOpen, setIsInviteOpen] = useState(false);
+  const [isBulkInviteOpen, setIsBulkInviteOpen] = useState(false);
   const [isConfirmInviteOpen, setIsConfirmInviteOpen] = useState(false);
   const [linkResult, setLinkResult] = useState<LinkResult | null>(null);
   const [rejectingInvitation, setRejectingInvitation] = useState<EmployeeInvitation | null>(null);
@@ -198,6 +201,10 @@ export function EmployeesPage({
   const employeeNames = useMemo(() => Object.fromEntries(data.employees.map((employee) => [employee.id, employee.full_name])), [data.employees]);
   const profileEmployeeId = profileEmployee?.id ?? null;
   const selectedCompanyId = selectedCompany?.id ?? null;
+  // Mirrors the backend's current centralized invite capability. When the
+  // authorization model grants this capability to HR/manager, the backend
+  // remains authoritative and this presentation check can be broadened.
+  const canBulkInvite = currentUserRole === "company_owner" || currentUserRole === "admin";
   const pendingApprovals = useMemo(
     () => data.invitations.filter((invitation) => invitation.status === "submitted_for_approval"),
     [data.invitations],
@@ -713,8 +720,14 @@ export function EmployeesPage({
           eyebrow="Onboarding"
           title="Pending invitations and activations"
           action={
-            <Button disabled icon={<Clipboard className="size-4" aria-hidden="true" />} title="Bulk invite CSV later" aria-label="Bulk invite CSV later">
-              Bulk invite CSV later
+            <Button
+              disabled={!selectedCompanyId || !canBulkInvite}
+              icon={<Clipboard className="size-4" aria-hidden="true" />}
+              title={canBulkInvite ? "Bulk invite employees from CSV" : "Your current role cannot send invitations"}
+              aria-label="Bulk invite employees from CSV"
+              onClick={() => setIsBulkInviteOpen(true)}
+            >
+              Bulk invite CSV
             </Button>
           }
         >
@@ -824,6 +837,13 @@ export function EmployeesPage({
           </div>
         </form>
       </Modal>
+
+      <BulkInviteModal
+        companyId={selectedCompanyId}
+        isOpen={isBulkInviteOpen}
+        onClose={() => setIsBulkInviteOpen(false)}
+        onCompleted={onRetry}
+      />
 
       <Modal description="Send a secure invitation tied to the selected company and email." isOpen={isInviteOpen} title="Invite employee" onClose={() => setIsInviteOpen(false)}>
         <form className="space-y-4 p-5" onSubmit={handleInviteSubmit}>
