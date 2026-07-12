@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { AppLayout } from "./components/layout/AppLayout";
 import { BackendWakeNotice } from "./components/system/BackendWakeNotice";
 import { ErrorState, LoadingState } from "./components/ui/States";
-import { allNavigationItems, getDefaultPageForRole, getNavigationItemsForRole, isPageAllowedForRole } from "./data/navigation";
+import { allNavigationItems, getAuthenticatedRouteTarget, getDefaultPageForRole, getNavigationItemsForRole, isPageAllowedForRole } from "./data/navigation";
 import { useAuth } from "./hooks/useAuth";
 import { useFebGridData } from "./hooks/useFebGridData";
 import { useTheme } from "./hooks/useTheme";
@@ -75,9 +75,8 @@ export function App(): JSX.Element {
 
   useEffect(() => {
     if (!auth.isAuthenticated || !auth.user || inviteToken) return;
-    if (isPageAllowedForRole(auth.user.role, activePage)) return;
-    const nextPage = getDefaultPageForRole(auth.user.role);
-    if (activePage === nextPage) return;
+    const nextPage = getAuthenticatedRouteTarget(auth.user.role, activePage, window.location.hash);
+    if (!nextPage) return;
     window.location.hash = `/${nextPage}`;
   }, [activePage, auth.isAuthenticated, auth.user, inviteToken]);
 

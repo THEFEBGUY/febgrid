@@ -302,15 +302,17 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     return existing as Promise<T>;
   }
 
-  const controller = new AbortController();
-  const promise = executeRequest<T>(path, { ...init, signal: controller.signal }).finally(() => {
+  // Session validation must survive workspace/company cancellation. It is
+  // still deduplicated for StrictMode, but only workspace GETs are abortable.
+  const controller = path.startsWith("/auth/") ? null : new AbortController();
+  const promise = executeRequest<T>(path, controller ? { ...init, signal: controller.signal } : init).finally(() => {
     if (inFlightGetRequests.get(requestKey) === promise) {
       inFlightGetRequests.delete(requestKey);
       inFlightGetControllers.delete(requestKey);
     }
   });
   inFlightGetRequests.set(requestKey, promise);
-  inFlightGetControllers.set(requestKey, controller);
+  if (controller) inFlightGetControllers.set(requestKey, controller);
   return promise;
 }
 

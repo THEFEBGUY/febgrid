@@ -250,11 +250,21 @@ export function useFebGridData({ enabled = true, role = null, page = "dashboard"
   }, [enabled, setSelectedCompanyIdOnce]);
 
   const refreshModules = useCallback(async (): Promise<void> => {
-    if (!enabled || !selectedCompanyId) {
+    if (!enabled) {
       moduleRequestIdRef.current += 1;
       loadedCompanyIdRef.current = null;
       loadedModuleKeysRef.current.clear();
       cancelInFlightGetRequests();
+      setData((current) => ({ ...emptyData, companies: current.companies }));
+      setModuleErrors({});
+      setIsLoadingModules(false);
+      return;
+    }
+
+    if (!selectedCompanyId) {
+      moduleRequestIdRef.current += 1;
+      loadedCompanyIdRef.current = null;
+      loadedModuleKeysRef.current.clear();
       setData((current) => ({ ...emptyData, companies: current.companies }));
       setModuleErrors({});
       setIsLoadingModules(false);

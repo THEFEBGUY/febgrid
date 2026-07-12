@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { api, ApiError, setApiAuthToken } from "../services/api";
 import type { AuthUser, Company, LoginPayload, RegisterPayload } from "../types/api";
@@ -56,6 +56,7 @@ export function useAuth(): AuthState {
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const validatedTokenRef = useRef<string | null>(null);
 
   useEffect(() => {
     setApiAuthToken(token);
@@ -66,6 +67,13 @@ export function useAuth(): AuthState {
 
     async function loadCurrentUser(): Promise<void> {
       if (!token) {
+        setIsLoading(false);
+        return;
+      }
+
+      // Login/register responses already contain the verified user and company.
+      // Avoid a redundant /auth/me request during the post-login transition.
+      if (validatedTokenRef.current === token) {
         setIsLoading(false);
         return;
       }
@@ -81,14 +89,20 @@ export function useAuth(): AuthState {
           }
         }
         if (!isActive) return;
+        validatedTokenRef.current = token;
         setUser(session.user);
         setCompany(session.company);
-      } catch {
+      } catch (caughtError) {
         if (!isActive) return;
-        clearStoredToken();
-        setToken(null);
-        setUser(null);
-        setCompany(null);
+        if (caughtError instanceof ApiError && [401, 403].includes(caughtError.status)) {
+          clearStoredToken();
+          validatedTokenRef.current = null;
+          setToken(null);
+          setUser(null);
+          setCompany(null);
+        } else {
+          setError(getErrorMessage(caughtError));
+        }
       } finally {
         if (isActive) setIsLoading(false);
       }
@@ -121,6 +135,8 @@ export function useAuth(): AuthState {
     try {
       const session = await api.login(payload);
       storeToken(session.access_token);
+      setApiAuthToken(session.access_token);
+      validatedTokenRef.current = session.access_token;
       setToken(session.access_token);
       setUser(session.user);
       setCompany(session.company);
@@ -138,6 +154,8 @@ export function useAuth(): AuthState {
     try {
       const session = await api.register(payload);
       storeToken(session.access_token);
+      setApiAuthToken(session.access_token);
+      validatedTokenRef.current = session.access_token;
       setToken(session.access_token);
       setUser(session.user);
       setCompany(session.company);
@@ -159,6 +177,7 @@ export function useAuth(): AuthState {
     } finally {
       clearStoredToken();
       setApiAuthToken(null);
+      validatedTokenRef.current = null;
       setToken(null);
       setUser(null);
       setCompany(null);

@@ -77,3 +77,13 @@ export function getNavigationItemsForRole(role: AuthUser["role"] | null | undefi
 export function isPageAllowedForRole(role: AuthUser["role"] | null | undefined, pageKey: NavigationItem["key"]): boolean {
   return getNavigationItemsForRole(role).some((item) => item.key === pageKey);
 }
+
+export function getAuthenticatedRouteTarget(
+  role: AuthUser["role"],
+  activePage: NavigationItem["key"],
+  currentHash: string,
+): NavigationItem["key"] | null {
+  if (!currentHash.replace(/^#\/?/, "")) return getDefaultPageForRole(role);
+  if (!isPageAllowedForRole(role, activePage)) return getDefaultPageForRole(role);
+  return null;
+}

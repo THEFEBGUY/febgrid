@@ -54,6 +54,21 @@ describe("API request coordination", () => {
     expect(getApiRequestDiagnostics().inFlightGetCount).toBe(0);
   });
 
+  it("does not abort authentication restoration during workspace cancellation", async () => {
+    let resolveFetch: ((response: Response) => void) | undefined;
+    let observedSignal: AbortSignal | null | undefined;
+    vi.spyOn(globalThis, "fetch").mockImplementation((_input, init) => {
+      observedSignal = init?.signal;
+      return new Promise<Response>((resolve) => { resolveFetch = resolve; });
+    });
+
+    const pending = api.me();
+    cancelInFlightGetRequests();
+    expect(observedSignal).toBeUndefined();
+    resolveFetch?.(jsonResponse({ user: {}, company: {} }));
+    await expect(pending).resolves.toEqual({ user: {}, company: {} });
+  });
+
   it("does not start permanent health polling after a successful request", async () => {
     const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(jsonResponse({ status: "ok" }));
 
