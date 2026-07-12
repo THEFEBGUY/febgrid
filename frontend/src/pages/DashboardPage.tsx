@@ -26,7 +26,7 @@ import { SectionPanel } from "../components/ui/SectionPanel";
 import { EmptyState, ErrorState, LoadingState } from "../components/ui/States";
 import { priorityTone, statusTone } from "../components/ui/tone";
 import { api } from "../services/api";
-import type { AIJob, CompanyPulseSnapshot, DashboardSummary } from "../types/api";
+import type { AIJob, CompanyPulseSnapshot, DashboardSummary, Employee } from "../types/api";
 import type { Metric } from "../types/domain";
 import type { ModulePageProps } from "../types/page";
 import { compactList, formatDate, formatLabel, formatTime } from "../utils/format";
@@ -60,10 +60,27 @@ export function DashboardPage({
   const [isSavingBriefMemory, setIsSavingBriefMemory] = useState(false);
   const [briefMemoryMessage, setBriefMemoryMessage] = useState<string | null>(null);
   const [briefMemoryError, setBriefMemoryError] = useState<string | null>(null);
+  const [dashboardEmployees, setDashboardEmployees] = useState<Employee[]>([]);
   const employeeNames = useMemo(
-    () => Object.fromEntries(data.employees.map((employee) => [employee.id, employee.full_name])),
-    [data.employees],
+    () => Object.fromEntries(dashboardEmployees.map((employee) => [employee.id, employee.full_name])),
+    [dashboardEmployees],
   );
+
+  useEffect(() => {
+    const companyId = selectedCompany?.id;
+    if (!companyId) {
+      setDashboardEmployees([]);
+      return;
+    }
+    let active = true;
+    setDashboardEmployees([]);
+    void api.employees(companyId).then((employees) => {
+      if (active) setDashboardEmployees(employees);
+    }).catch(() => {
+      // Employee labels are optional dashboard enrichment; summary cards remain usable.
+    });
+    return () => { active = false; };
+  }, [selectedCompany?.id]);
 
   useEffect(() => {
     const companyId = selectedCompany?.id;
@@ -75,6 +92,7 @@ export function DashboardPage({
     }
 
     let isCurrent = true;
+    setCompanyPulse(null);
     setIsPulseLoading(true);
     setPulseError(null);
     api
@@ -104,6 +122,7 @@ export function DashboardPage({
     }
 
     let isCurrent = true;
+    setCompanyBrief(null);
     setIsBriefLoading(true);
     setBriefError(null);
     api

@@ -5,14 +5,14 @@ import type { PageKey } from "../types/domain";
 export type FebGridModuleKey = Exclude<keyof FebGridData, "companies">;
 
 const ADMIN_PAGE_DATA: Record<PageKey, FebGridModuleKey[]> = {
-  dashboard: ["dashboardSummary", "employees"],
+  dashboard: ["dashboardSummary"],
   companies: [],
   employees: ["employees", "invitations", "departments", "teams"],
   teams: ["teams", "departments", "employees"],
   projects: ["projects", "employees", "departments", "teams"],
   "work-objects": ["workObjects", "employees", "projects", "departments", "teams", "workObjectTypes", "customFields"],
   leaves: ["leaves", "employees"],
-  events: ["events", "auditLogs", "employees", "projects"],
+  events: [],
   announcements: ["announcements"],
   notifications: ["notifications"],
   memory: [],

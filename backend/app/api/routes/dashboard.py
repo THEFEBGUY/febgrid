@@ -42,20 +42,30 @@ router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 OPEN_WORK_STATUSES = {"assigned", "pending", "in_progress", "under_review", "blocked"}
 
 
-def count_rows(db: Session, model: type, *criteria) -> int:
-    return int(db.scalar(select(func.count()).select_from(model).where(*criteria)) or 0)
+def grouped_counts(db: Session, model: type, company_id: UUID, **conditions: object) -> dict[str, int]:
+    """Fetch related dashboard counters in one database round trip."""
+    statement = select(
+        *(func.count().filter(condition).label(name) for name, condition in conditions.items())
+    ).select_from(model).where(model.company_id == company_id)
+    row = db.execute(statement).one()
+    return {name: int(row._mapping[name] or 0) for name in conditions}
 
 
 def get_linked_employee(db: Session, current_user: User | None) -> Employee | None:
     if current_user is None:
         return None
-    return db.scalar(
+    cache_key = f"linked_employee:{current_user.id}"
+    if cache_key in db.info:
+        return db.info[cache_key]
+    employee = db.scalar(
         select(Employee).where(
             Employee.company_id == current_user.company_id,
             Employee.user_id == current_user.id,
             Employee.is_active.is_(True),
         )
     )
+    db.info[cache_key] = employee
+    return employee
 
 
 def notification_visibility_conditions(db: Session, current_user: User | None) -> list[object]:
@@ -96,210 +106,118 @@ def get_dashboard_summary(
     active_work = WorkObject.is_active.is_(True)
     open_work = WorkObject.status.in_(OPEN_WORK_STATUSES)
 
-    unread_statement = select(func.count(Notification.id)).where(
-        Notification.company_id == company_id,
-        Notification.is_read.is_(False),
-        Notification.is_dismissed.is_(False),
-    )
-    unread_statement = apply_notification_visibility(unread_statement, db, current_user)
-    unread_notifications = int(db.scalar(unread_statement) or 0)
+    notification_counts_statement = select(
+        func.count().filter(
+            Notification.is_read.is_(False),
+            Notification.is_dismissed.is_(False),
+        ).label("unread"),
+        func.count().filter(
+            Notification.priority.in_(["high", "urgent"]),
+            Notification.is_dismissed.is_(False),
+        ).label("important"),
+    ).select_from(Notification).where(Notification.company_id == company_id)
+    notification_counts_statement = apply_notification_visibility(notification_counts_statement, db, current_user)
+    notification_counts = db.execute(notification_counts_statement).one()._mapping
+    unread_notifications = int(notification_counts["unread"] or 0)
+    important_notifications = int(notification_counts["important"] or 0)
 
-    important_statement = select(func.count(Notification.id)).where(
-        Notification.company_id == company_id,
-        Notification.priority.in_(["high", "urgent"]),
-        Notification.is_dismissed.is_(False),
+    employee_counts = grouped_counts(
+        db,
+        Employee,
+        company_id,
+        total_employees=Employee.id.is_not(None),
+        active_employees=Employee.is_active.is_(True),
+        available_employees=and_(Employee.is_active.is_(True), Employee.status == "available"),
+        on_leave_employees=and_(Employee.is_active.is_(True), Employee.status == "on_leave"),
+        busy_employees=and_(Employee.is_active.is_(True), Employee.status == "busy"),
+        inactive_employees=Employee.is_active.is_(False),
     )
-    important_statement = apply_notification_visibility(important_statement, db, current_user)
-    important_notifications = int(db.scalar(important_statement) or 0)
+    employee_summary = DashboardEmployeeSummary(**employee_counts)
 
-    average_progress = float(
-        db.scalar(
-            select(func.coalesce(func.avg(Project.progress_percent), 0)).where(
-                Project.company_id == company_id,
-                Project.is_active.is_(True),
-            )
-        )
-        or 0
+    work_counts = grouped_counts(
+        db,
+        WorkObject,
+        company_id,
+        total_work_objects=active_work,
+        pending_or_assigned=and_(active_work, WorkObject.status.in_(["pending", "assigned"])),
+        in_progress=and_(active_work, WorkObject.status == "in_progress"),
+        blocked=and_(active_work, WorkObject.status == "blocked"),
+        under_review=and_(active_work, WorkObject.status == "under_review"),
+        completed=and_(active_work, WorkObject.status == "completed"),
+        overdue=and_(active_work, open_work, WorkObject.due_date.is_not(None), WorkObject.due_date < today_start),
+        due_today=and_(active_work, open_work, WorkObject.due_date >= today_start, WorkObject.due_date < tomorrow_start),
+        high_or_critical_priority=and_(active_work, WorkObject.priority.in_(["high", "critical"])),
     )
+    work_summary = DashboardWorkSummary(**work_counts)
 
-    employee_summary = DashboardEmployeeSummary(
-        total_employees=count_rows(db, Employee, Employee.company_id == company_id),
-        active_employees=count_rows(db, Employee, Employee.company_id == company_id, Employee.is_active.is_(True)),
-        available_employees=count_rows(
-            db,
-            Employee,
-            Employee.company_id == company_id,
-            Employee.is_active.is_(True),
-            Employee.status == "available",
-        ),
-        on_leave_employees=count_rows(
-            db,
-            Employee,
-            Employee.company_id == company_id,
-            Employee.is_active.is_(True),
-            Employee.status == "on_leave",
-        ),
-        busy_employees=count_rows(
-            db,
-            Employee,
-            Employee.company_id == company_id,
-            Employee.is_active.is_(True),
-            Employee.status == "busy",
-        ),
-        inactive_employees=count_rows(db, Employee, Employee.company_id == company_id, Employee.is_active.is_(False)),
-    )
-
-    work_summary = DashboardWorkSummary(
-        total_work_objects=count_rows(db, WorkObject, WorkObject.company_id == company_id, active_work),
-        pending_or_assigned=count_rows(
-            db,
-            WorkObject,
-            WorkObject.company_id == company_id,
-            active_work,
-            WorkObject.status.in_(["pending", "assigned"]),
-        ),
-        in_progress=count_rows(db, WorkObject, WorkObject.company_id == company_id, active_work, WorkObject.status == "in_progress"),
-        blocked=count_rows(db, WorkObject, WorkObject.company_id == company_id, active_work, WorkObject.status == "blocked"),
-        under_review=count_rows(db, WorkObject, WorkObject.company_id == company_id, active_work, WorkObject.status == "under_review"),
-        completed=count_rows(db, WorkObject, WorkObject.company_id == company_id, active_work, WorkObject.status == "completed"),
-        overdue=count_rows(
-            db,
-            WorkObject,
-            WorkObject.company_id == company_id,
-            active_work,
-            open_work,
-            WorkObject.due_date.is_not(None),
-            WorkObject.due_date < today_start,
-        ),
-        due_today=count_rows(
-            db,
-            WorkObject,
-            WorkObject.company_id == company_id,
-            active_work,
-            open_work,
-            WorkObject.due_date >= today_start,
-            WorkObject.due_date < tomorrow_start,
-        ),
-        high_or_critical_priority=count_rows(
-            db,
-            WorkObject,
-            WorkObject.company_id == company_id,
-            active_work,
-            WorkObject.priority.in_(["high", "critical"]),
-        ),
-    )
-
+    active_project = Project.is_active.is_(True)
+    project_counts_statement = select(
+        func.count().filter(active_project).label("total_projects"),
+        func.count().filter(active_project, Project.status == "active").label("active_projects"),
+        func.count().filter(active_project, Project.status == "on_hold").label("on_hold_projects"),
+        func.count().filter(active_project, Project.status == "delayed").label("delayed_projects"),
+        func.count().filter(active_project, Project.status == "completed").label("completed_projects"),
+        func.count().filter(active_project, Project.priority.in_(["high", "critical"])).label("high_priority_projects"),
+        func.coalesce(func.avg(Project.progress_percent).filter(active_project), 0).label("average_progress"),
+    ).where(Project.company_id == company_id)
+    project_counts = db.execute(project_counts_statement).one()._mapping
     project_summary = DashboardProjectSummary(
-        total_projects=count_rows(db, Project, Project.company_id == company_id, Project.is_active.is_(True)),
-        active_projects=count_rows(db, Project, Project.company_id == company_id, Project.is_active.is_(True), Project.status == "active"),
-        on_hold_projects=count_rows(db, Project, Project.company_id == company_id, Project.is_active.is_(True), Project.status == "on_hold"),
-        delayed_projects=count_rows(db, Project, Project.company_id == company_id, Project.is_active.is_(True), Project.status == "delayed"),
-        completed_projects=count_rows(db, Project, Project.company_id == company_id, Project.is_active.is_(True), Project.status == "completed"),
-        high_priority_projects=count_rows(
-            db,
-            Project,
-            Project.company_id == company_id,
-            Project.is_active.is_(True),
-            Project.priority.in_(["high", "critical"]),
-        ),
-        average_progress=round(average_progress, 1),
+        total_projects=int(project_counts["total_projects"] or 0),
+        active_projects=int(project_counts["active_projects"] or 0),
+        on_hold_projects=int(project_counts["on_hold_projects"] or 0),
+        delayed_projects=int(project_counts["delayed_projects"] or 0),
+        completed_projects=int(project_counts["completed_projects"] or 0),
+        high_priority_projects=int(project_counts["high_priority_projects"] or 0),
+        average_progress=round(float(project_counts["average_progress"] or 0), 1),
     )
 
-    leave_summary = DashboardLeaveSummary(
-        total_leave_requests=count_rows(db, LeaveRequest, LeaveRequest.company_id == company_id, LeaveRequest.is_active.is_(True)),
-        pending_leave_requests=count_rows(
-            db,
-            LeaveRequest,
-            LeaveRequest.company_id == company_id,
-            LeaveRequest.is_active.is_(True),
-            LeaveRequest.status == "pending",
-        ),
-        approved_leave_requests=count_rows(
-            db,
-            LeaveRequest,
-            LeaveRequest.company_id == company_id,
-            LeaveRequest.is_active.is_(True),
-            LeaveRequest.status == "approved",
-        ),
-        rejected_leave_requests=count_rows(
-            db,
-            LeaveRequest,
-            LeaveRequest.company_id == company_id,
-            LeaveRequest.is_active.is_(True),
-            LeaveRequest.status == "rejected",
-        ),
-        cancelled_leave_requests=count_rows(
-            db,
-            LeaveRequest,
-            LeaveRequest.company_id == company_id,
-            LeaveRequest.is_active.is_(True),
-            LeaveRequest.status == "cancelled",
-        ),
-        upcoming_approved_leaves=count_rows(
-            db,
-            LeaveRequest,
-            LeaveRequest.company_id == company_id,
-            LeaveRequest.is_active.is_(True),
-            LeaveRequest.status == "approved",
-            LeaveRequest.start_date >= today,
-        ),
+    active_leave = LeaveRequest.is_active.is_(True)
+    leave_counts = grouped_counts(
+        db,
+        LeaveRequest,
+        company_id,
+        total_leave_requests=active_leave,
+        pending_leave_requests=and_(active_leave, LeaveRequest.status == "pending"),
+        approved_leave_requests=and_(active_leave, LeaveRequest.status == "approved"),
+        rejected_leave_requests=and_(active_leave, LeaveRequest.status == "rejected"),
+        cancelled_leave_requests=and_(active_leave, LeaveRequest.status == "cancelled"),
+        upcoming_approved_leaves=and_(active_leave, LeaveRequest.status == "approved", LeaveRequest.start_date >= today),
     )
+    leave_summary = DashboardLeaveSummary(**leave_counts)
 
-    file_summary = DashboardFileSummary(
-        total_attachments=count_rows(db, Attachment, Attachment.company_id == company_id, Attachment.is_active.is_(True)),
-        recent_uploads_count=count_rows(
-            db,
-            Attachment,
-            Attachment.company_id == company_id,
-            Attachment.is_active.is_(True),
-            Attachment.created_at >= seven_days_ago,
-        ),
+    file_counts = grouped_counts(
+        db,
+        Attachment,
+        company_id,
+        total_attachments=Attachment.is_active.is_(True),
+        recent_uploads_count=and_(Attachment.is_active.is_(True), Attachment.created_at >= seven_days_ago),
     )
+    file_summary = DashboardFileSummary(**file_counts)
 
     notification_summary = DashboardNotificationSummary(
         unread_notifications=unread_notifications,
         important_notifications=important_notifications,
     )
 
-    announcement_summary = DashboardAnnouncementSummary(
-        active_announcements=count_rows(
-            db,
-            Announcement,
-            Announcement.company_id == company_id,
-            Announcement.is_archived.is_(False),
-            Announcement.is_published.is_(True),
-        ),
-        urgent_announcements=count_rows(
-            db,
-            Announcement,
-            Announcement.company_id == company_id,
-            Announcement.is_archived.is_(False),
-            Announcement.is_published.is_(True),
-            Announcement.priority == "urgent",
-        ),
+    published_announcement = and_(Announcement.is_archived.is_(False), Announcement.is_published.is_(True))
+    announcement_counts = grouped_counts(
+        db,
+        Announcement,
+        company_id,
+        active_announcements=published_announcement,
+        urgent_announcements=and_(published_announcement, Announcement.priority == "urgent"),
     )
+    announcement_summary = DashboardAnnouncementSummary(**announcement_counts)
 
-    memory_summary = DashboardMemorySummary(
-        approved_memories=count_rows(
-            db,
-            CompanyMemory,
-            CompanyMemory.company_id == company_id,
-            CompanyMemory.status == "approved",
-        ),
-        pending_suggestions=count_rows(
-            db,
-            CompanyMemory,
-            CompanyMemory.company_id == company_id,
-            CompanyMemory.status == "suggested",
-        ),
-        important_memories=count_rows(
-            db,
-            CompanyMemory,
-            CompanyMemory.company_id == company_id,
-            CompanyMemory.status == "approved",
-            CompanyMemory.importance.in_(["high", "critical"]),
-        ),
+    memory_counts = grouped_counts(
+        db,
+        CompanyMemory,
+        company_id,
+        approved_memories=CompanyMemory.status == "approved",
+        pending_suggestions=CompanyMemory.status == "suggested",
+        important_memories=and_(CompanyMemory.status == "approved", CompanyMemory.importance.in_(["high", "critical"])),
     )
+    memory_summary = DashboardMemorySummary(**memory_counts)
 
     intelligence_summary: DashboardIntelligenceSummary | None = None
     if current_user is not None and current_user.role in OWNER_ADMIN_ROLES:
@@ -323,6 +241,15 @@ def get_dashboard_summary(
             or 0
         )
         active_employee_count = employee_summary.active_employees
+        ai_counts = grouped_counts(
+            db,
+            AIJob,
+            company_id,
+            queued=AIJob.status == "queued",
+            running=AIJob.status == "running",
+            failed=AIJob.status == "failed",
+            cancelled=AIJob.status == "cancelled",
+        )
         intelligence_summary = DashboardIntelligenceSummary(
             latest_work_dna_scope=latest_work_dna.scope_type if latest_work_dna is not None else None,
             latest_work_dna_generated_at=latest_work_dna.created_at if latest_work_dna is not None else None,
@@ -331,10 +258,10 @@ def get_dashboard_summary(
             latest_work_dna_template_candidates=len(latest_work_dna.template_candidates_json or []) if latest_work_dna is not None else 0,
             employee_twins_recent_count=recent_twin_employee_count,
             employee_twins_missing_recent_count=max(active_employee_count - recent_twin_employee_count, 0),
-            ai_queued_jobs=count_rows(db, AIJob, AIJob.company_id == company_id, AIJob.status == "queued"),
-            ai_running_jobs=count_rows(db, AIJob, AIJob.company_id == company_id, AIJob.status == "running"),
-            ai_failed_jobs=count_rows(db, AIJob, AIJob.company_id == company_id, AIJob.status == "failed"),
-            ai_cancelled_jobs=count_rows(db, AIJob, AIJob.company_id == company_id, AIJob.status == "cancelled"),
+            ai_queued_jobs=ai_counts["queued"],
+            ai_running_jobs=ai_counts["running"],
+            ai_failed_jobs=ai_counts["failed"],
+            ai_cancelled_jobs=ai_counts["cancelled"],
         )
 
     recent_events = serialize_events(

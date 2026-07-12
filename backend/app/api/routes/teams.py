@@ -1,13 +1,12 @@
-from uuid import UUID
+from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Depends, Query, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps import db_session, get_current_user
 from app.api.utils import ensure_company, get_or_404, update_model
 from app.core.permissions import OWNER_ADMIN_ROLES, ensure_company_access, ensure_role
-from app.models.company import Company
 from app.models.department import Department
 from app.models.employee import Employee
 from app.models.team import Team, TeamMember
@@ -19,12 +18,23 @@ router = APIRouter(prefix="/teams", tags=["teams"])
 
 
 def validate_team_refs(db: Session, company_id: UUID, department_id: UUID | None, lead_employee_id: UUID | None) -> None:
+    checks: list[tuple[str, object]] = []
     if department_id:
-        department = get_or_404(db, Department, department_id, label="Department")
-        ensure_company(department, company_id, label="Department")
+        checks.append((
+            "Department",
+            select(Department.id).where(Department.id == department_id, Department.company_id == company_id).scalar_subquery(),
+        ))
     if lead_employee_id:
-        lead = get_or_404(db, Employee, lead_employee_id, label="Team lead")
-        ensure_company(lead, company_id, label="Team lead")
+        checks.append((
+            "Team lead",
+            select(Employee.id).where(Employee.id == lead_employee_id, Employee.company_id == company_id).scalar_subquery(),
+        ))
+    if not checks:
+        return
+    values = db.execute(select(*(expression for _, expression in checks))).one()
+    for index, (label, _) in enumerate(checks):
+        if values[index] is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"{label} not found")
 
 
 @router.post("", response_model=TeamRead, status_code=status.HTTP_201_CREATED)
@@ -35,10 +45,10 @@ def create_team(
 ) -> Team:
     ensure_company_access(current_user, payload.company_id)
     ensure_role(current_user, OWNER_ADMIN_ROLES)
-    get_or_404(db, Company, payload.company_id, label="Company")
     validate_team_refs(db, payload.company_id, payload.department_id, payload.lead_employee_id)
 
     team = Team(
+        id=uuid4(),
         company_id=payload.company_id,
         department_id=payload.department_id,
         lead_employee_id=payload.lead_employee_id,
@@ -48,7 +58,6 @@ def create_team(
         is_active=payload.is_active,
     )
     db.add(team)
-    db.flush()
     EventService.record_event(
         db,
         company_id=team.company_id,
@@ -60,7 +69,6 @@ def create_team(
         metadata={"department_id": str(team.department_id) if team.department_id else None},
     )
     db.commit()
-    db.refresh(team)
     return team
 
 
@@ -120,7 +128,6 @@ def update_team(
             metadata={"changed_fields": sorted(changed.keys())},
         )
     db.commit()
-    db.refresh(team)
     return team
 
 

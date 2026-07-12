@@ -69,6 +69,33 @@ describe("API request coordination", () => {
     await expect(pending).resolves.toEqual({ user: {}, company: {} });
   });
 
+  it("does not abort a public invitation preview during workspace cancellation", async () => {
+    let resolveFetch: ((response: Response) => void) | undefined;
+    let observedSignal: AbortSignal | null | undefined;
+    vi.spyOn(globalThis, "fetch").mockImplementation((_input, init) => {
+      observedSignal = init?.signal;
+      return new Promise<Response>((resolve) => { resolveFetch = resolve; });
+    });
+
+    const controller = new AbortController();
+    const pending = api.previewInvitation("invite-token", controller.signal);
+    cancelInFlightGetRequests();
+    expect(observedSignal?.aborted).toBe(false);
+    resolveFetch?.(jsonResponse({ company_name: "FebGrid", status: "pending" }));
+    await expect(pending).resolves.toMatchObject({ company_name: "FebGrid" });
+  });
+
+  it("lets the invitation page cancel only its own public preview", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation((_input, init) => new Promise<Response>((_resolve, reject) => {
+      init?.signal?.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")), { once: true });
+    }));
+
+    const controller = new AbortController();
+    const pending = api.previewInvitation("old-token", controller.signal);
+    controller.abort();
+    await expect(pending).rejects.toMatchObject({ status: 499 });
+  });
+
   it("does not start permanent health polling after a successful request", async () => {
     const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(jsonResponse({ status: "ok" }));
 

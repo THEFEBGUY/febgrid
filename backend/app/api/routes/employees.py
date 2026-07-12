@@ -151,7 +151,6 @@ def create_employee(
     )
     InvitationService.create_manual_activation_for_employee(db, employee=employee, actor_user=current_user)
     db.commit()
-    db.refresh(employee)
     return employee
 
 
@@ -218,7 +217,6 @@ def update_my_employee_profile(
             metadata={"changed_fields": sorted(changed.keys())},
         )
     db.commit()
-    db.refresh(employee)
     return employee
 
 
@@ -275,7 +273,6 @@ def update_employee(
             metadata={"changed_fields": sorted(changed.keys())},
         )
     db.commit()
-    db.refresh(employee)
     return employee
 
 
@@ -331,7 +328,6 @@ def update_employee_status(
         metadata={"from": old_status, "to": payload.current_status},
     )
     db.commit()
-    db.refresh(employee)
     return employee
 
 

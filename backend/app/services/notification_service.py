@@ -1,5 +1,5 @@
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from fastapi import HTTPException, status
 from sqlalchemy import select
@@ -314,6 +314,7 @@ class NotificationService:
         metadata_payload["delivery"] = delivery_metadata
 
         notification = Notification(
+            id=uuid4(),
             company_id=company_id,
             recipient_user_id=recipient_user_id,
             recipient_employee_id=recipient_employee_id,
@@ -332,7 +333,6 @@ class NotificationService:
             is_dismissed=False,
         )
         db.add(notification)
-        db.flush()
         sent_event = EventService.record_event(
             db,
             company_id=company_id,

@@ -1,5 +1,5 @@
 from datetime import date, datetime, timedelta, timezone
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import or_, select
@@ -76,13 +76,18 @@ def ensure_aware_utc(value: datetime) -> datetime:
 def get_linked_employee(db: Session, current_user: User | None) -> Employee | None:
     if current_user is None:
         return None
-    return db.scalar(
+    cache_key = f"linked_employee:{current_user.id}"
+    if cache_key in db.info:
+        return db.info[cache_key]
+    employee = db.scalar(
         select(Employee).where(
             Employee.company_id == current_user.company_id,
             Employee.user_id == current_user.id,
             Employee.is_active.is_(True),
         )
     )
+    db.info[cache_key] = employee
+    return employee
 
 
 def actor_employee_id(db: Session, current_user: User | None, fallback_employee_id: UUID | None = None) -> UUID | None:
@@ -98,15 +103,19 @@ def validate_leave_refs(
     approver_employee_id: UUID | None = None,
     requested_by_user_id: UUID | None = None,
 ) -> None:
+    checks: list[tuple[str, object]] = []
     if employee_id is not None:
-        employee = get_or_404(db, Employee, employee_id, label="Employee")
-        ensure_company(employee, company_id, label="Employee")
+        checks.append(("Employee", select(Employee.id).where(Employee.id == employee_id, Employee.company_id == company_id).scalar_subquery()))
     if approver_employee_id is not None:
-        approver = get_or_404(db, Employee, approver_employee_id, label="Approver")
-        ensure_company(approver, company_id, label="Approver")
+        checks.append(("Approver", select(Employee.id).where(Employee.id == approver_employee_id, Employee.company_id == company_id).scalar_subquery()))
     if requested_by_user_id is not None:
-        requested_by = get_or_404(db, User, requested_by_user_id, label="Requester")
-        ensure_company_access(requested_by, company_id)
+        checks.append(("Requester", select(User.id).where(User.id == requested_by_user_id, User.company_id == company_id).scalar_subquery()))
+    if not checks:
+        return
+    values = db.execute(select(*(expression for _, expression in checks))).one()
+    for index, (label, _) in enumerate(checks):
+        if values[index] is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"{label} not found")
 
 
 def can_manage_leaves(current_user: User | None) -> bool:
@@ -286,6 +295,7 @@ def create_leave_request(
     if requested_status != "pending":
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="New leave requests must start as pending")
     leave = LeaveRequest(
+        id=uuid4(),
         company_id=payload.company_id,
         employee_id=payload.employee_id,
         approver_employee_id=payload.approver_employee_id,
@@ -302,7 +312,6 @@ def create_leave_request(
         is_active=True,
     )
     db.add(leave)
-    db.flush()
     requested_event = record_leave_event(
         db,
         leave=leave,
@@ -322,7 +331,6 @@ def create_leave_request(
     )
     notify_leave_approval_needed(db, leave, current_user, requested_event)
     db.commit()
-    db.refresh(leave)
     return leave
 
 
@@ -495,7 +503,6 @@ def update_leave_request(
         if "approver_employee_id" in changed_fields:
             notify_leave_approval_needed(db, leave, current_user, updated_event)
     db.commit()
-    db.refresh(leave)
     return leave
 
 
@@ -539,7 +546,6 @@ def approve_leave_request(
     )
     notify_leave_decision(db, leave, current_user, approved_event, approved=True)
     db.commit()
-    db.refresh(leave)
     return leave
 
 
@@ -583,7 +589,6 @@ def reject_leave_request(
     )
     notify_leave_decision(db, leave, current_user, rejected_event, approved=False)
     db.commit()
-    db.refresh(leave)
     return leave
 
 
@@ -616,7 +621,6 @@ def cancel_leave_request(
         fallback_actor_employee_id=payload.actor_employee_id or leave.employee_id,
     )
     db.commit()
-    db.refresh(leave)
     return leave
 
 

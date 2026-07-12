@@ -35,7 +35,8 @@ class DashboardIntelligenceSummaryTests(unittest.TestCase):
         self.assertIn("current_user.role in OWNER_ADMIN_ROLES", source)
         self.assertIn("EmployeeDigitalTwinSnapshot.company_id == company_id", source)
         self.assertIn("WorkDNASnapshot.company_id == company_id", source)
-        self.assertIn("AIJob.company_id == company_id", source)
+        self.assertIn("AIJob,\n            company_id", source)
+        self.assertIn("model.company_id == company_id", inspect.getsource(dashboard.grouped_counts))
 
 
 if __name__ == "__main__":

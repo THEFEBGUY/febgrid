@@ -93,14 +93,18 @@ export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, ""
 let authToken: string | null = null;
 let requestSequence = 0;
 const activeRequestCounts = new Map<string, number>();
-const slowRequestIds = new Set<number>();
 const apiTimingHistory: ApiTimingDetail[] = [];
 const inFlightGetRequests = new Map<string, Promise<unknown>>();
 const inFlightGetControllers = new Map<string, AbortController>();
 let deduplicatedGetCount = 0;
 
 export const API_TIMING_EVENT = "febgrid:api-timing";
-export const API_WAKE_EVENT = "febgrid:service-wake";
+type RequestScope = "authentication" | "public" | "workspace";
+
+interface RequestOptions {
+  deduplicate?: boolean;
+  scope?: RequestScope;
+}
 
 export interface ApiTimingDetail {
   requestId: string;
@@ -181,10 +185,6 @@ async function fetchWithTelemetry(path: string, init?: RequestInit): Promise<Res
   const started = performance.now();
   let response: Response | null = null;
   let retried = false;
-  let wakeTimer: ReturnType<typeof globalThis.setTimeout> | null = globalThis.setTimeout(() => {
-    slowRequestIds.add(sequence);
-    dispatchBrowserEvent(API_WAKE_EVENT, { state: "waking", endpoint });
-  }, 6_000);
 
   try {
     for (let attempt = 0; attempt < 2; attempt += 1) {
@@ -222,15 +222,8 @@ async function fetchWithTelemetry(path: string, init?: RequestInit): Promise<Res
     if (isAbortError(error)) {
       throw new ApiError("Request cancelled because the workspace changed.", 499);
     }
-    throw new ApiError("FebGrid could not reach the service. It may still be waking up; please retry shortly.", 0);
+    throw new ApiError("FebGrid could not reach the service. Check your connection and retry.", 0);
   } finally {
-    if (wakeTimer !== null) {
-      globalThis.clearTimeout(wakeTimer);
-      wakeTimer = null;
-    }
-    slowRequestIds.delete(sequence);
-    if (slowRequestIds.size === 0) dispatchBrowserEvent(API_WAKE_EVENT, { state: "ready" });
-
     const timing: ApiTimingDetail = {
       requestId,
       method,
@@ -280,13 +273,15 @@ async function executeRequest<T>(path: string, init?: RequestInit): Promise<T> {
   return (await response.json()) as T;
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+async function request<T>(path: string, init?: RequestInit, options: RequestOptions = {}): Promise<T> {
   const method = (init?.method ?? "GET").toUpperCase();
   if (method !== "GET" || init?.body) return executeRequest<T>(path, init);
 
-  const requestKey = `${authToken ? "authenticated" : "anonymous"}:${path}`;
+  const scope = options.scope ?? "workspace";
+  const shouldDeduplicate = options.deduplicate ?? true;
+  const requestKey = `${scope}:${authToken ? "authenticated" : "anonymous"}:${path}`;
   const existing = inFlightGetRequests.get(requestKey);
-  if (existing) {
+  if (shouldDeduplicate && existing) {
     deduplicatedGetCount += 1;
     dispatchBrowserEvent(API_TIMING_EVENT, {
       requestId: "shared-in-flight",
@@ -302,17 +297,19 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     return existing as Promise<T>;
   }
 
-  // Session validation must survive workspace/company cancellation. It is
-  // still deduplicated for StrictMode, but only workspace GETs are abortable.
-  const controller = path.startsWith("/auth/") ? null : new AbortController();
+  // Authentication and public routes own their lifecycle. Only active-workspace
+  // reads participate in company/page cancellation.
+  const controller = scope === "workspace" && !init?.signal ? new AbortController() : null;
   const promise = executeRequest<T>(path, controller ? { ...init, signal: controller.signal } : init).finally(() => {
     if (inFlightGetRequests.get(requestKey) === promise) {
       inFlightGetRequests.delete(requestKey);
       inFlightGetControllers.delete(requestKey);
     }
   });
-  inFlightGetRequests.set(requestKey, promise);
-  if (controller) inFlightGetControllers.set(requestKey, controller);
+  if (shouldDeduplicate) {
+    inFlightGetRequests.set(requestKey, promise);
+    if (controller) inFlightGetControllers.set(requestKey, controller);
+  }
   return promise;
 }
 
@@ -361,7 +358,7 @@ export const api = {
   logout: () => request<{ status: string }>("/auth/logout", { method: "POST" }),
   markPresenceOnline: () => request<Employee>("/auth/presence/online", { method: "POST" }),
   markPresenceOffline: (keepalive = false) => request<Employee>("/auth/presence/offline", { method: "POST", keepalive }),
-  me: () => request<AuthMe>("/auth/me"),
+  me: () => request<AuthMe>("/auth/me", undefined, { scope: "authentication" }),
   companies: () => request<Company[]>("/companies"),
   createCompany: (payload: CompanyCreatePayload) => request<Company>("/companies", jsonInit("POST", payload)),
   companySettings: (companyId: string) => request<CompanySettings>(companyPath("/company-settings", companyId)),
@@ -442,7 +439,12 @@ export const api = {
     request<EmployeeInvitation>(`/invitations/${invitationId}/approve`, jsonInit("POST", { company_id: companyId })),
   rejectInvitation: (invitationId: string, companyId: string, rejectionReason?: string | null) =>
     request<EmployeeInvitation>(`/invitations/${invitationId}/reject`, jsonInit("POST", { company_id: companyId, rejection_reason: rejectionReason ?? null })),
-  previewInvitation: (token: string) => request<InvitationPreview>(`/invitations/preview/${encodeURIComponent(token)}`),
+  previewInvitation: (token: string, signal?: AbortSignal) =>
+    request<InvitationPreview>(
+      `/invitations/preview/${encodeURIComponent(token)}`,
+      signal ? { signal } : undefined,
+      { deduplicate: false, scope: "public" },
+    ),
   acceptInvitation: (payload: InvitationAcceptPayload) => request<InvitationAcceptResult>("/invitations/accept", jsonInit("POST", payload)),
   acceptInvitationWithMagicLink: (payload: InvitationMagicLinkAcceptPayload) =>
     request<InvitationAcceptResult>("/invitations/accept-magic-link", jsonInit("POST", payload)),
@@ -585,8 +587,35 @@ export const api = {
   cancelLeave: (leaveId: string, payload: LeaveCancelPayload) => request<LeaveRequest>(`/leaves/${leaveId}/cancel`, jsonInit("POST", payload)),
   deactivateLeave: (leaveId: string, companyId: string) => request<void>(companyPath(`/leaves/${leaveId}`, companyId), { method: "DELETE" }),
   leaveTimeline: (leaveId: string, companyId: string) => request<Event[]>(companyPath(`/leaves/${leaveId}/timeline`, companyId)),
-  events: (companyId: string) => request<Event[]>(companyPath("/timeline", companyId)),
-  auditLogs: (companyId: string) => request<AuditLog[]>(companyPath("/audit-log", companyId)),
+  events: (
+    companyId: string,
+    filters: {
+      actor_employee_id?: string;
+      audit_only?: boolean;
+      before_created_at?: string;
+      before_id?: string;
+      date_from?: string;
+      date_to?: string;
+      event_type?: string;
+      limit?: number;
+      project_id?: string;
+      q?: string;
+      target_entity_type?: string;
+    } = {},
+    signal?: AbortSignal,
+  ) => {
+    const searchParams = new URLSearchParams({ company_id: companyId, limit: String(filters.limit ?? 50) });
+    Object.entries(filters).forEach(([key, value]) => {
+      if (key !== "limit" && value !== undefined && value !== "") searchParams.set(key, String(value));
+    });
+    return request<Event[]>(`/timeline?${searchParams.toString()}`, signal ? { signal } : undefined, { deduplicate: false, scope: "workspace" });
+  },
+  auditLogs: (companyId: string, limit = 50, signal?: AbortSignal) =>
+    request<AuditLog[]>(
+      companyPath(`/audit-log?limit=${encodeURIComponent(String(limit))}`, companyId),
+      signal ? { signal } : undefined,
+      { deduplicate: false, scope: "workspace" },
+    ),
   notifications: (companyId: string) => request<Notification[]>(companyPath("/notifications", companyId)),
   announcements: (companyId: string) => request<Announcement[]>(companyPath("/announcements", companyId)),
   createAnnouncement: (payload: AnnouncementCreatePayload) => request<Announcement>("/announcements", jsonInit("POST", payload)),

@@ -1,4 +1,4 @@
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import or_, select
@@ -8,7 +8,6 @@ from app.api.deps import db_session, get_current_user
 from app.api.serializers import serialize_events
 from app.api.utils import ensure_company, get_or_404, update_model
 from app.core.permissions import MANAGER_ROLES, ensure_company_access, ensure_role
-from app.models.company import Company
 from app.models.department import Department
 from app.models.employee import Employee
 from app.models.event import Event
@@ -65,13 +64,18 @@ def ensure_project_priority(priority_value: str) -> str:
 
 
 def get_linked_employee(db: Session, current_user: User) -> Employee | None:
-    return db.scalar(
+    cache_key = f"linked_employee:{current_user.id}"
+    if cache_key in db.info:
+        return db.info[cache_key]
+    employee = db.scalar(
         select(Employee).where(
             Employee.company_id == current_user.company_id,
             Employee.user_id == current_user.id,
             Employee.is_active.is_(True),
         )
     )
+    db.info[cache_key] = employee
+    return employee
 
 
 def actor_employee_id(db: Session, current_user: User) -> UUID | None:
@@ -88,18 +92,21 @@ def validate_project_refs(
     department_id: UUID | None = None,
     team_id: UUID | None = None,
 ) -> None:
+    checks: list[tuple[str, object]] = []
     if owner_employee_id is not None:
-        owner = get_or_404(db, Employee, owner_employee_id, label="Project owner")
-        ensure_company(owner, company_id, label="Project owner")
+        checks.append(("Project owner", select(Employee.id).where(Employee.id == owner_employee_id, Employee.company_id == company_id).scalar_subquery()))
     if owner_user_id is not None:
-        owner_user = get_or_404(db, User, owner_user_id, label="Project owner user")
-        ensure_company_access(owner_user, company_id)
+        checks.append(("Project owner user", select(User.id).where(User.id == owner_user_id, User.company_id == company_id).scalar_subquery()))
     if department_id is not None:
-        department = get_or_404(db, Department, department_id, label="Department")
-        ensure_company(department, company_id, label="Department")
+        checks.append(("Department", select(Department.id).where(Department.id == department_id, Department.company_id == company_id).scalar_subquery()))
     if team_id is not None:
-        team = get_or_404(db, Team, team_id, label="Team")
-        ensure_company(team, company_id, label="Team")
+        checks.append(("Team", select(Team.id).where(Team.id == team_id, Team.company_id == company_id).scalar_subquery()))
+    if not checks:
+        return
+    values = db.execute(select(*(expression for _, expression in checks))).one()
+    for index, (label, _) in enumerate(checks):
+        if values[index] is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"{label} not found")
 
 
 def project_member_exists(project_id: UUID, company_id: UUID, employee_id: UUID):
@@ -262,7 +269,6 @@ def create_project(
 ) -> Project:
     ensure_company_access(current_user, payload.company_id)
     ensure_role(current_user, MANAGER_ROLES)
-    get_or_404(db, Company, payload.company_id, label="Company")
     validate_project_refs(
         db,
         company_id=payload.company_id,
@@ -276,11 +282,17 @@ def create_project(
     project_data["status"] = ensure_project_status(payload.status)
     project_data["priority"] = ensure_project_priority(payload.priority)
     project_data["code"] = clean_code(payload.code)
-    project = Project(**project_data)
+    project = Project(id=uuid4(), **project_data)
     db.add(project)
-    db.flush()
     if project.owner_employee_id:
-        upsert_project_member(db, project=project, employee_id=project.owner_employee_id, role_on_project="Owner")
+        db.add(ProjectMember(
+            id=uuid4(),
+            project_id=project.id,
+            company_id=project.company_id,
+            employee_id=project.owner_employee_id,
+            role_on_project="Owner",
+            is_active=True,
+        ))
     record_project_event(
         db,
         project=project,
@@ -297,7 +309,6 @@ def create_project(
         },
     )
     db.commit()
-    db.refresh(project)
     return project
 
 
@@ -447,7 +458,6 @@ def update_project(
                 metadata={"from": previous_priority, "to": project.priority},
             )
     db.commit()
-    db.refresh(project)
     return project
 
 
@@ -509,7 +519,6 @@ def change_project_status(
         metadata={"from": previous_status, "to": project.status},
     )
     db.commit()
-    db.refresh(project)
     return project
 
 
@@ -548,7 +557,6 @@ def change_project_priority(
             metadata={"from": previous_priority, "to": project.priority},
         )
     db.commit()
-    db.refresh(project)
     return project
 
 
@@ -588,7 +596,6 @@ def change_project_owner(
         },
     )
     db.commit()
-    db.refresh(project)
     return project
 
 

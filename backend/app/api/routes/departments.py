@@ -1,4 +1,4 @@
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import select
@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import db_session, get_current_company, get_current_user
 from app.api.utils import ensure_company, get_or_404, update_model
-from app.core.permissions import OWNER_ADMIN_ROLES, ensure_role
+from app.core.permissions import OWNER_ADMIN_ROLES, ensure_company_access, ensure_role
 from app.models.company import Company
 from app.models.department import Department
 from app.models.user import User
@@ -26,13 +26,11 @@ def create_department(
     payload: DepartmentCreate,
     db: Session = Depends(db_session),
     current_user: User = Depends(get_current_user),
-    current_company: Company = Depends(get_current_company),
 ) -> Department:
     ensure_role(current_user, OWNER_ADMIN_ROLES)
-    ensure_current_company(current_company, payload.company_id)
-    department = Department(**payload.model_dump())
+    ensure_company_access(current_user, payload.company_id)
+    department = Department(id=uuid4(), **payload.model_dump())
     db.add(department)
-    db.flush()
     EventService.record_event(
         db,
         company_id=department.company_id,
@@ -42,7 +40,6 @@ def create_department(
         target_entity_id=department.id,
     )
     db.commit()
-    db.refresh(department)
     return department
 
 
@@ -83,10 +80,9 @@ def update_department(
     payload: DepartmentUpdate,
     db: Session = Depends(db_session),
     current_user: User = Depends(get_current_user),
-    current_company: Company = Depends(get_current_company),
 ) -> Department:
     ensure_role(current_user, OWNER_ADMIN_ROLES)
-    ensure_current_company(current_company, company_id)
+    ensure_company_access(current_user, company_id)
     department = get_or_404(db, Department, department_id, label="Department")
     ensure_company(department, company_id, label="Department")
     changed = update_model(department, payload)
@@ -101,7 +97,6 @@ def update_department(
             metadata={"changed_fields": sorted(changed.keys())},
         )
     db.commit()
-    db.refresh(department)
     return department
 
 
@@ -111,10 +106,9 @@ def deactivate_department(
     company_id: UUID,
     db: Session = Depends(db_session),
     current_user: User = Depends(get_current_user),
-    current_company: Company = Depends(get_current_company),
 ) -> Response:
     ensure_role(current_user, OWNER_ADMIN_ROLES)
-    ensure_current_company(current_company, company_id)
+    ensure_company_access(current_user, company_id)
     department = get_or_404(db, Department, department_id, label="Department")
     ensure_company(department, company_id, label="Department")
     department.is_active = False

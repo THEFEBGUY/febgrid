@@ -1,8 +1,8 @@
 # FebGrid Production Stabilization
 
-FebGrid includes lightweight, dependency-free request timing for the temporary
-public beta. It is designed to distinguish free-tier wake latency from warm
-application, database, and provider latency without logging tenant data.
+FebGrid includes lightweight, dependency-free request timing for the public
+application. It distinguishes network latency from warm application, database,
+and provider latency without logging tenant data.
 
 ## Safe observability
 
@@ -23,7 +23,7 @@ for an authenticated browser QA session. Records contain endpoint paths without
 query values, durations, response status, retry state, duplicate-in-flight state,
 correlation ID, and the safe `Server-Timing` value. Nothing is sent to analytics.
 
-## Free Render behavior
+## Hosting latency
 
 Controlled public health measurements on July 11, 2026 showed:
 
@@ -32,9 +32,9 @@ Controlled public health measurements on July 11, 2026 showed:
 | FastAPI | 22,212 ms | 263-281 ms |
 | Java validator | 53,999 ms | 262 ms |
 
-These measurements demonstrate platform wake time, not a warm application
-regression. After six seconds, the frontend displays a non-blocking service-wake
-message. Safe GET requests receive at most one controlled retry for network or
+These measurements demonstrate hosting-platform startup time, not a warm
+application regression. The frontend does not show hosting-plan or startup
+notices. Safe GET requests receive at most one controlled retry for network or
 502/503/504 failures. Mutations are never automatically retried.
 
 The Java service is called only for bulk CSV preview. Normal login, dashboard,
@@ -71,7 +71,7 @@ entire company workspace on every page. The critical request sets are bounded:
 
 | Page | Initial company-scoped requests |
 | --- | --- |
-| Dashboard | dashboard summary, employee display-name lookup, unread count |
+| Dashboard | dashboard summary and unread count; employee labels and intelligence widgets load independently |
 | Employees | employees, invitations, departments, teams, unread count |
 | Teams | teams, departments, eligible employees, unread count |
 | Projects | projects, employees, departments, teams, unread count |
@@ -89,10 +89,8 @@ optimistic and rolls back on failure. Identical in-flight GETs share one network
 request, and company/auth changes abort stale GETs without retrying the abort.
 
 The frontend does not run a health polling interval. The `/api/v1/health`
-traffic visible at a fixed cadence in Render logs comes from the Render
-`healthCheckPath` configured for deployment health monitoring. FebGrid's wake
-notice is event-driven by a real request that exceeds six seconds, clears as
-soon as requests recover, and never retries mutations.
+traffic visible at a fixed cadence in hosting logs comes from the configured
+deployment health check.
 
 An isolated July 12, 2026 FastAPI + SQLite route probe used synthetic data and
 the production request middleware to separate application and SQL time. These
@@ -112,5 +110,46 @@ numbers are local warm-path diagnostics, not claims about Render network time:
 | Regenerate invitation link | 10.27 | 9.00 | 0.29 | 6 |
 
 The probe also measured individual list endpoints at 7-8 ms and the dashboard
-summary at 58.50 ms (54 aggregate queries). The route probe was deleted after
+summary at 58.50 ms (54 aggregate queries). The dashboard route has since been
+reworked to aggregate related counters once per domain instead of issuing one
+query per counter. The route probe was deleted after
 execution and left no synthetic database or upload artifact in the repository.
+
+## July 12 focused stabilization
+
+Production observations before this pass were approximately 10 seconds for the
+warm dashboard, 4-5 seconds for standard mutations, and 25 seconds for the
+Universal Timeline. The root causes found in code were remote-database
+round-trip amplification:
+
+- dashboard counters were each queried separately;
+- create/update routes flushed the entity, flushed every Event, committed, and
+  then refreshed an unexpired entity;
+- the Events page blocked on timeline, audit, employees, and projects together;
+- audit serialization performed actor, employee, and company lookups per row;
+- the public invitation preview shared the active-workspace cancellation map.
+
+The stabilization changes consolidate dashboard counts by domain, batch Event
+writes into the owning transaction, remove unnecessary post-commit refreshes,
+load 50 timeline events with stable keyset pagination, join audit enrichment,
+and give invitation previews a page-owned public request scope. Company Pulse,
+the AI executive brief, audit entries, and label lookups use widget-level or
+section-level loading and cannot hold the critical dashboard/timeline shell.
+
+Deployment verification must use `Server-Timing` and `X-Request-ID` to record
+the actual Vercel-to-Render-to-Supabase result. Local checks prove query shape
+and correctness but do not prove the production latency targets.
+
+An isolated in-memory route-core probe after this pass measured:
+
+| Operation | Route-core ms | SQL ms | Queries |
+| --- | ---: | ---: | ---: |
+| Create department | 2.90 | 0.13 | 2 |
+| Create team (no optional references) | 1.71 | 0.09 | 2 |
+| Dashboard summary | 69.57 | 2.76 | 18 |
+| Timeline first 50 | 2.70 | 0.20 | 1 |
+| Timeline next 50 | 2.66 | 0.15 | 1 |
+
+The two timeline pages were newest-first, bounded, non-overlapping, and stable
+for equal timestamps. These route-core numbers exclude authentication/network
+latency. The temporary probe and synthetic database were removed immediately.

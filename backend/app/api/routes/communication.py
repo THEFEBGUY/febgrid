@@ -1,6 +1,6 @@
 import re
 from datetime import datetime, timezone
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import select
@@ -794,6 +794,7 @@ def create_announcement(
     ensure_company_access(current_user, payload.company_id)
     ensure_role(current_user, OWNER_ADMIN_ROLES)
     announcement = Announcement(
+        id=uuid4(),
         company_id=payload.company_id,
         author_user_id=current_user.id if current_user else None,
         title=payload.title.strip(),
@@ -804,7 +805,6 @@ def create_announcement(
         published_at=datetime.now(timezone.utc) if payload.is_published else None,
     )
     db.add(announcement)
-    db.flush()
     record_announcement_event(
         db,
         announcement=announcement,
@@ -824,7 +824,6 @@ def create_announcement(
         )
         notify_announcement(db, announcement=announcement, current_user=current_user, event=published_event)
     db.commit()
-    db.refresh(announcement)
     return announcement
 
 
@@ -873,7 +872,6 @@ def update_announcement(
             metadata={"changed_fields": sorted(set(changed_fields))},
         )
     db.commit()
-    db.refresh(announcement)
     return announcement
 
 
@@ -898,5 +896,4 @@ def archive_announcement(
         description="An internal announcement was archived.",
     )
     db.commit()
-    db.refresh(announcement)
     return announcement

@@ -2,8 +2,8 @@ from datetime import datetime
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import or_, select
-from sqlalchemy.orm import Session
+from sqlalchemy import and_, or_, select
+from sqlalchemy.orm import Session, joinedload
 
 from app.api.deps import db_session, get_current_user, get_optional_current_user
 from app.api.serializers import serialize_event, serialize_events
@@ -104,10 +104,10 @@ def apply_event_filters(
     return statement
 
 
-def serialize_audit_event(db: Session, event: Event) -> AuditLogRead:
-    actor_user = db.get(User, event.actor_user_id) if event.actor_user_id else None
-    actor_employee = db.get(Employee, event.actor_employee_id) if event.actor_employee_id else None
-    company = db.get(Company, event.company_id)
+def serialize_audit_event(event: Event) -> AuditLogRead:
+    actor_user = event.actor_user
+    actor_employee = event.actor
+    company = event.company
     base = serialize_event(event)
     return AuditLogRead(
         **base.model_dump(),
@@ -234,8 +234,10 @@ def universal_timeline(
     date_from: datetime | None = None,
     date_to: datetime | None = None,
     audit_only: bool = False,
-    limit: int = Query(default=100, ge=1, le=300),
+    limit: int = Query(default=50, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
+    before_created_at: datetime | None = None,
+    before_id: UUID | None = None,
 ) -> list[EventRead]:
     ensure_company_access(current_user, company_id)
     ensure_company_timeline_access(current_user)
@@ -255,7 +257,17 @@ def universal_timeline(
         date_to=date_to,
         audit_only=audit_only,
     )
-    statement = statement.order_by(Event.created_at.desc()).limit(limit).offset(offset)
+    if before_created_at is not None:
+        if before_id is not None:
+            statement = statement.where(
+                or_(
+                    Event.created_at < before_created_at,
+                    and_(Event.created_at == before_created_at, Event.id < before_id),
+                )
+            )
+        else:
+            statement = statement.where(Event.created_at < before_created_at)
+    statement = statement.order_by(Event.created_at.desc(), Event.id.desc()).limit(limit).offset(offset)
     return serialize_events(db.scalars(statement).all())
 
 
@@ -281,7 +293,11 @@ def audit_log(
     ensure_company_access(current_user, company_id)
     ensure_role(current_user, OWNER_ADMIN_ROLES)
     event_type = event_type or action
-    statement = select(Event).where(Event.company_id == company_id)
+    statement = (
+        select(Event)
+        .options(joinedload(Event.actor_user), joinedload(Event.actor), joinedload(Event.company))
+        .where(Event.company_id == company_id)
+    )
     statement = apply_event_filters(
         statement,
         event_type=event_type,
@@ -296,8 +312,8 @@ def audit_log(
         date_to=date_to,
         audit_only=True,
     )
-    statement = statement.order_by(Event.created_at.desc()).limit(limit).offset(offset)
-    return [serialize_audit_event(db, event) for event in db.scalars(statement).all()]
+    statement = statement.order_by(Event.created_at.desc(), Event.id.desc()).limit(limit).offset(offset)
+    return [serialize_audit_event(event) for event in db.scalars(statement).all()]
 
 
 @audit_router.get("/{event_id}", response_model=AuditLogRead)
@@ -311,8 +327,13 @@ def get_audit_log_entry(
     ensure_role(current_user, OWNER_ADMIN_ROLES)
     event = get_or_404(db, Event, event_id, label="Audit log entry")
     ensure_company(event, company_id, label="Audit log entry")
-    statement = apply_event_filters(select(Event).where(Event.id == event.id), audit_only=True)
+    statement = apply_event_filters(
+        select(Event)
+        .options(joinedload(Event.actor_user), joinedload(Event.actor), joinedload(Event.company))
+        .where(Event.id == event.id),
+        audit_only=True,
+    )
     audit_event = db.scalar(statement)
     if audit_event is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Audit log entry not found")
-    return serialize_audit_event(db, audit_event)
+    return serialize_audit_event(audit_event)

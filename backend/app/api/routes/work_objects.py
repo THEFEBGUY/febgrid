@@ -1,7 +1,7 @@
 import json
 from datetime import datetime, timedelta, timezone
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Response, UploadFile, status
 from sqlalchemy import or_, select
@@ -79,13 +79,18 @@ def ensure_work_object_priority(priority: str) -> str:
 def get_linked_employee(db: Session, current_user: User | None) -> Employee | None:
     if current_user is None:
         return None
-    return db.scalar(
+    cache_key = f"linked_employee:{current_user.id}"
+    if cache_key in db.info:
+        return db.info[cache_key]
+    employee = db.scalar(
         select(Employee).where(
             Employee.company_id == current_user.company_id,
             Employee.user_id == current_user.id,
             Employee.is_active.is_(True),
         )
     )
+    db.info[cache_key] = employee
+    return employee
 
 
 def actor_employee_id(db: Session, current_user: User | None, fallback_employee_id: UUID | None = None) -> UUID | None:
@@ -104,24 +109,25 @@ def validate_work_object_refs(
     creator_user_id: UUID | None = None,
     assignee_employee_id: UUID | None = None,
 ) -> None:
+    checks: list[tuple[str, object]] = []
     if project_id is not None:
-        project = get_or_404(db, Project, project_id, label="Project")
-        ensure_company(project, company_id, label="Project")
+        checks.append(("Project", select(Project.id).where(Project.id == project_id, Project.company_id == company_id).scalar_subquery()))
     if department_id is not None:
-        department = get_or_404(db, Department, department_id, label="Department")
-        ensure_company(department, company_id, label="Department")
+        checks.append(("Department", select(Department.id).where(Department.id == department_id, Department.company_id == company_id).scalar_subquery()))
     if team_id is not None:
-        team = get_or_404(db, Team, team_id, label="Team")
-        ensure_company(team, company_id, label="Team")
+        checks.append(("Team", select(Team.id).where(Team.id == team_id, Team.company_id == company_id).scalar_subquery()))
     if creator_employee_id is not None:
-        creator = get_or_404(db, Employee, creator_employee_id, label="Creator")
-        ensure_company(creator, company_id, label="Creator")
+        checks.append(("Creator", select(Employee.id).where(Employee.id == creator_employee_id, Employee.company_id == company_id).scalar_subquery()))
     if creator_user_id is not None:
-        creator_user = get_or_404(db, User, creator_user_id, label="Creator user")
-        ensure_company_access(creator_user, company_id)
+        checks.append(("Creator user", select(User.id).where(User.id == creator_user_id, User.company_id == company_id).scalar_subquery()))
     if assignee_employee_id is not None:
-        assignee = get_or_404(db, Employee, assignee_employee_id, label="Assignee")
-        ensure_company(assignee, company_id, label="Assignee")
+        checks.append(("Assignee", select(Employee.id).where(Employee.id == assignee_employee_id, Employee.company_id == company_id).scalar_subquery()))
+    if not checks:
+        return
+    values = db.execute(select(*(expression for _, expression in checks))).one()
+    for index, (label, _) in enumerate(checks):
+        if values[index] is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"{label} not found")
 
 
 def can_view_work_object(db: Session, current_user: User | None, work_object: WorkObject) -> bool:
@@ -335,9 +341,8 @@ def create_work_object(
     )
     work_data["creator_employee_id"] = creator_employee_id
     work_data["creator_user_id"] = creator_user_id
-    work_object = WorkObject(**work_data)
+    work_object = WorkObject(id=uuid4(), **work_data)
     db.add(work_object)
-    db.flush()
     record_work_event(
         db,
         work_object=work_object,
@@ -367,7 +372,6 @@ def create_work_object(
         )
         notify_assignment(db, work_object, current_user, assignment_event)
     db.commit()
-    db.refresh(work_object)
     return work_object
 
 
@@ -620,7 +624,6 @@ def update_work_object(
             fallback_actor_employee_id=work_object.creator_employee_id,
         )
     db.commit()
-    db.refresh(work_object)
     return work_object
 
 
@@ -705,7 +708,6 @@ def assign_work_object(
             fallback_actor_employee_id=work_object.creator_employee_id,
         )
     db.commit()
-    db.refresh(work_object)
     return work_object
 
 
@@ -771,7 +773,6 @@ def update_work_object_status(
             fallback_actor_employee_id=payload.actor_employee_id or work_object.creator_employee_id,
         )
     db.commit()
-    db.refresh(work_object)
     return work_object
 
 
@@ -813,7 +814,6 @@ def update_work_object_priority(
                 fallback_actor_employee_id=work_object.creator_employee_id,
             )
     db.commit()
-    db.refresh(work_object)
     return work_object
 
 
@@ -846,7 +846,6 @@ def update_work_object_project(
             fallback_actor_employee_id=work_object.creator_employee_id,
         )
     db.commit()
-    db.refresh(work_object)
     return work_object
 
 
@@ -883,7 +882,6 @@ def update_work_object_org(
             fallback_actor_employee_id=work_object.creator_employee_id,
         )
     db.commit()
-    db.refresh(work_object)
     return work_object
 
 
@@ -946,7 +944,6 @@ def complete_work_object(
             fallback_actor_employee_id=work_object.creator_employee_id,
         )
     db.commit()
-    db.refresh(work_object)
     return work_object
 
 

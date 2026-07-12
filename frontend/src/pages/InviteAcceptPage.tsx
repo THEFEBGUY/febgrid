@@ -94,16 +94,18 @@ export function InviteAcceptPage({ token }: InviteAcceptPageProps): JSX.Element 
   const [completionMessage, setCompletionMessage] = useState<string | null>(null);
   const [magicLinkMessage, setMagicLinkMessage] = useState<string | null>(null);
   const [isMagicLinkSubmitting, setIsMagicLinkSubmitting] = useState(false);
+  const [previewRetry, setPreviewRetry] = useState(0);
   const magicSessionHandled = useRef(false);
 
   useEffect(() => {
     let isActive = true;
+    const controller = new AbortController();
 
     async function loadPreview(): Promise<void> {
       setIsLoading(true);
       setError(null);
       try {
-        const result = await api.previewInvitation(token);
+        const result = await api.previewInvitation(token, controller.signal);
         if (!isActive) return;
         setPreview(result);
         const displayName = result.employee_name ?? "";
@@ -112,6 +114,7 @@ export function InviteAcceptPage({ token }: InviteAcceptPageProps): JSX.Element 
       } catch (caughtError) {
         if (!isActive) return;
         if (caughtError instanceof ApiError) {
+          if (caughtError.status === 499) return;
           setError(caughtError.status === 410 ? "This invite link is expired, revoked, or no longer available." : caughtError.message);
         } else {
           setError("Unable to load this invite.");
@@ -124,8 +127,9 @@ export function InviteAcceptPage({ token }: InviteAcceptPageProps): JSX.Element 
     void loadPreview();
     return () => {
       isActive = false;
+      controller.abort();
     };
-  }, [token]);
+  }, [previewRetry, token]);
 
   useEffect(() => {
     if (!preview || accepted || magicSessionHandled.current || !isSupabaseMagicLinkAvailable) return;
@@ -263,7 +267,7 @@ export function InviteAcceptPage({ token }: InviteAcceptPageProps): JSX.Element 
       <OnboardingShell>
         <div className="min-h-screen px-4 py-10">
           <div className="febgrid-surface mx-auto max-w-2xl rounded-lg">
-            <ErrorState message={error} onRetry={() => window.location.reload()} />
+            <ErrorState message={error} onRetry={async () => { setPreviewRetry((value) => value + 1); }} />
           </div>
         </div>
       </OnboardingShell>

@@ -97,7 +97,7 @@ existing localhost flow, keeps the public demo Java validation endpoint behind
 its server-only service key, and documents the optional exact-email Supabase
 magic-link onboarding path.
 
-Public-beta timing, safe request correlation, free-tier wake behavior, and the
+Public-beta timing, safe request correlation, hosting latency behavior, and the
 small Supabase connection-pool defaults are documented in
 [Production Stabilization](docs/FebGrid_Production_Stabilization.md).
 The same guide documents page-scoped frontend loading, targeted mutation state,

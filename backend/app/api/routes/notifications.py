@@ -209,7 +209,6 @@ def create_notification(
     if notification is None:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Notification recipient is required")
     db.commit()
-    db.refresh(notification)
     return notification
 
 
@@ -281,7 +280,6 @@ def mark_notification_read(
             title="Notification marked read",
         )
     db.commit()
-    db.refresh(notification)
     return notification
 
 
@@ -304,7 +302,6 @@ def mark_notification_unread(
             title="Notification marked unread",
         )
     db.commit()
-    db.refresh(notification)
     return notification
 
 
@@ -361,7 +358,6 @@ def dismiss_notification(
             title="Notification dismissed",
         )
     db.commit()
-    db.refresh(notification)
     return notification
 
 

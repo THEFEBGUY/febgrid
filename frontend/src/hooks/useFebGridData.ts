@@ -338,6 +338,7 @@ export function useFebGridData({ enabled = true, role = null, page = "dashboard"
 
   useEffect(() => {
     void refreshModules();
+    return () => cancelInFlightGetRequests();
   }, [refreshModules]);
 
   function selectCompany(companyId: string): void {

@@ -25,9 +25,12 @@ describe("page data plans", () => {
   it("uses the dashboard summary instead of loading the whole workspace", () => {
     expect(getPageDataKeys("dashboard", "company_owner")).toEqual([
       "dashboardSummary",
-      "employees",
       "notificationUnreadCount",
     ]);
+  });
+
+  it("lets the timeline page own its bounded, filter-aware requests", () => {
+    expect(getPageDataKeys("events", "company_owner")).toEqual(["notificationUnreadCount"]);
   });
 
   it("does not load admin AI or billing data for employee pages", () => {

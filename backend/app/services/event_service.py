@@ -1,5 +1,5 @@
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from sqlalchemy.orm import Session
 
@@ -44,6 +44,7 @@ class EventService:
         if actor_user_id is None:
             actor_user_id = uuid_from_metadata(event_metadata.get("actor_user_id"))
         event = Event(
+            id=uuid4(),
             company_id=company_id,
             actor_user_id=actor_user_id,
             actor_employee_id=actor_employee_id,
@@ -57,5 +58,4 @@ class EventService:
             metadata_json=event_metadata,
         )
         db.add(event)
-        db.flush()
         return event
