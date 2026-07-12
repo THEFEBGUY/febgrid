@@ -192,6 +192,8 @@ export function EmployeesPage({
   const [statusFilter, setStatusFilter] = useState("");
   const [departmentFilter, setDepartmentFilter] = useState("");
   const [teamFilter, setTeamFilter] = useState("");
+  const [pendingEmployeeIds, setPendingEmployeeIds] = useState<Set<string>>(() => new Set());
+  const [rowActionError, setRowActionError] = useState<string | null>(null);
 
   const departmentNames = useMemo(
     () => Object.fromEntries(data.departments.map((department) => [department.id, department.name])),
@@ -293,6 +295,23 @@ export function EmployeesPage({
     }
   }
 
+  async function handleDeactivateEmployee(employeeId: string): Promise<void> {
+    if (pendingEmployeeIds.has(employeeId)) return;
+    setPendingEmployeeIds((current) => new Set(current).add(employeeId));
+    setRowActionError(null);
+    try {
+      await onDeactivateEmployee(employeeId);
+    } catch (error) {
+      setRowActionError(error instanceof Error ? error.message : "Unable to deactivate this employee.");
+    } finally {
+      setPendingEmployeeIds((current) => {
+        const next = new Set(current);
+        next.delete(employeeId);
+        return next;
+      });
+    }
+  }
+
   const columns: DataTableColumn<Employee>[] = [
     {
       key: "name",
@@ -361,9 +380,9 @@ export function EmployeesPage({
             className="size-9 px-0"
             aria-label="Deactivate employee"
             title="Deactivate employee"
-            disabled={isMutating || !employee.is_active}
+            disabled={isMutating || pendingEmployeeIds.has(employee.id) || !employee.is_active}
             icon={<Power className="size-4" aria-hidden="true" />}
-            onClick={() => void onDeactivateEmployee(employee.id)}
+            onClick={() => void handleDeactivateEmployee(employee.id)}
           >
             <span className="sr-only">Deactivate employee</span>
           </Button>
@@ -642,6 +661,11 @@ export function EmployeesPage({
             </div>
           }
         >
+          {rowActionError ? (
+            <div className="mx-4 mt-4 rounded-md border border-danger-500/30 bg-danger-500/10 px-3 py-2 text-sm font-semibold text-danger-700" role="alert">
+              {rowActionError}
+            </div>
+          ) : null}
           <ModuleBoundary
             emptyDescription={selectedCompany ? "Add employees to build the company directory and assign work." : "Create or select a company before adding employees."}
             emptyTitle="No employees yet"

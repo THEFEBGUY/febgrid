@@ -55,8 +55,8 @@ export function App(): JSX.Element {
   const { theme, toggleTheme } = useTheme();
   const currentUserRole = auth.user?.role ?? null;
   const navigationItems = getNavigationItemsForRole(currentUserRole);
-  const febGrid = useFebGridData({ enabled: auth.isAuthenticated && !inviteToken, role: currentUserRole });
-  const unreadNotificationCount = febGrid.data.notifications.filter((notification) => !notification.is_read && !notification.is_dismissed).length;
+  const febGrid = useFebGridData({ enabled: auth.isAuthenticated && !inviteToken, role: currentUserRole, page: activePage });
+  const unreadNotificationCount = febGrid.data.notificationUnreadCount;
 
   useEffect(() => {
     const handleHashChange = (): void => {

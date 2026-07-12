@@ -95,6 +95,9 @@ let requestSequence = 0;
 const activeRequestCounts = new Map<string, number>();
 const slowRequestIds = new Set<number>();
 const apiTimingHistory: ApiTimingDetail[] = [];
+const inFlightGetRequests = new Map<string, Promise<unknown>>();
+const inFlightGetControllers = new Map<string, AbortController>();
+let deduplicatedGetCount = 0;
 
 export const API_TIMING_EVENT = "febgrid:api-timing";
 export const API_WAKE_EVENT = "febgrid:service-wake";
@@ -108,13 +111,31 @@ export interface ApiTimingDetail {
   duplicateInFlight: boolean;
   retried: boolean;
   serverTiming: string | null;
+  deduplicated?: boolean;
 }
 
 export function getApiTimingSnapshot(): ApiTimingDetail[] {
   return [...apiTimingHistory];
 }
 
+export function getApiRequestDiagnostics(): { deduplicatedGetCount: number; inFlightGetCount: number } {
+  return { deduplicatedGetCount, inFlightGetCount: inFlightGetRequests.size };
+}
+
+export function resetApiRequestDiagnostics(): void {
+  cancelInFlightGetRequests();
+  deduplicatedGetCount = 0;
+  apiTimingHistory.length = 0;
+}
+
+export function cancelInFlightGetRequests(): void {
+  inFlightGetControllers.forEach((controller) => controller.abort());
+  inFlightGetControllers.clear();
+  inFlightGetRequests.clear();
+}
+
 export function setApiAuthToken(token: string | null): void {
+  if (authToken !== token) cancelInFlightGetRequests();
   authToken = token;
 }
 
@@ -141,7 +162,11 @@ function safeEndpoint(path: string): string {
 }
 
 function wait(durationMs: number): Promise<void> {
-  return new Promise((resolve) => window.setTimeout(resolve, durationMs));
+  return new Promise((resolve) => globalThis.setTimeout(resolve, durationMs));
+}
+
+function isAbortError(error: unknown): boolean {
+  return typeof DOMException !== "undefined" && error instanceof DOMException && error.name === "AbortError";
 }
 
 async function fetchWithTelemetry(path: string, init?: RequestInit): Promise<Response> {
@@ -156,7 +181,7 @@ async function fetchWithTelemetry(path: string, init?: RequestInit): Promise<Res
   const started = performance.now();
   let response: Response | null = null;
   let retried = false;
-  let wakeTimer: number | null = window.setTimeout(() => {
+  let wakeTimer: ReturnType<typeof globalThis.setTimeout> | null = globalThis.setTimeout(() => {
     slowRequestIds.add(sequence);
     dispatchBrowserEvent(API_WAKE_EVENT, { state: "waking", endpoint });
   }, 6_000);
@@ -174,6 +199,7 @@ async function fetchWithTelemetry(path: string, init?: RequestInit): Promise<Res
           },
         });
       } catch (error) {
+        if (isAbortError(error)) throw error;
         if (method !== "GET" || attempt > 0) throw error;
         retried = true;
         await wait(1_200);
@@ -193,10 +219,13 @@ async function fetchWithTelemetry(path: string, init?: RequestInit): Promise<Res
     return response;
   } catch (error) {
     if (error instanceof ApiError) throw error;
+    if (isAbortError(error)) {
+      throw new ApiError("Request cancelled because the workspace changed.", 499);
+    }
     throw new ApiError("FebGrid could not reach the service. It may still be waking up; please retry shortly.", 0);
   } finally {
     if (wakeTimer !== null) {
-      window.clearTimeout(wakeTimer);
+      globalThis.clearTimeout(wakeTimer);
       wakeTimer = null;
     }
     slowRequestIds.delete(sequence);
@@ -222,7 +251,7 @@ async function fetchWithTelemetry(path: string, init?: RequestInit): Promise<Res
   }
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+async function executeRequest<T>(path: string, init?: RequestInit): Promise<T> {
   const isFormData = init?.body instanceof FormData;
   const response = await fetchWithTelemetry(path, {
     ...init,
@@ -249,6 +278,40 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   }
 
   return (await response.json()) as T;
+}
+
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const method = (init?.method ?? "GET").toUpperCase();
+  if (method !== "GET" || init?.body) return executeRequest<T>(path, init);
+
+  const requestKey = `${authToken ? "authenticated" : "anonymous"}:${path}`;
+  const existing = inFlightGetRequests.get(requestKey);
+  if (existing) {
+    deduplicatedGetCount += 1;
+    dispatchBrowserEvent(API_TIMING_EVENT, {
+      requestId: "shared-in-flight",
+      method,
+      endpoint: safeEndpoint(path),
+      durationMs: 0,
+      status: 0,
+      duplicateInFlight: true,
+      retried: false,
+      serverTiming: null,
+      deduplicated: true,
+    } satisfies ApiTimingDetail);
+    return existing as Promise<T>;
+  }
+
+  const controller = new AbortController();
+  const promise = executeRequest<T>(path, { ...init, signal: controller.signal }).finally(() => {
+    if (inFlightGetRequests.get(requestKey) === promise) {
+      inFlightGetRequests.delete(requestKey);
+      inFlightGetControllers.delete(requestKey);
+    }
+  });
+  inFlightGetRequests.set(requestKey, promise);
+  inFlightGetControllers.set(requestKey, controller);
+  return promise;
 }
 
 async function requestBlob(path: string, init?: RequestInit): Promise<Blob> {

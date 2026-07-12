@@ -59,6 +59,8 @@ export function NotificationsPage({
   onDismissNotification,
   currentUserRole,
 }: NotificationsPageProps): JSX.Element {
+  const [pendingNotificationIds, setPendingNotificationIds] = useState<Set<string>>(new Set());
+  const [actionError, setActionError] = useState<string | null>(null);
   const [searchFilter, setSearchFilter] = useState("");
   const [readFilter, setReadFilter] = useState("");
   const [typeFilter, setTypeFilter] = useState("");
@@ -90,6 +92,22 @@ export function NotificationsPage({
   const unreadCount = visibleNotifications.filter((notification) => !notification.is_read).length;
   const hasActiveFilters = Boolean(searchFilter || readFilter || typeFilter || priorityFilter);
 
+  async function runNotificationAction(notificationId: string, action: () => Promise<void>): Promise<void> {
+    setActionError(null);
+    setPendingNotificationIds((current) => new Set(current).add(notificationId));
+    try {
+      await action();
+    } catch {
+      setActionError("The notification update could not be saved. Its previous state was restored.");
+    } finally {
+      setPendingNotificationIds((current) => {
+        const next = new Set(current);
+        next.delete(notificationId);
+        return next;
+      });
+    }
+  }
+
   return (
     <SectionPanel
       eyebrow={selectedCompany?.name ?? "Action stream"}
@@ -99,10 +117,10 @@ export function NotificationsPage({
           disabled={isMutating || unreadCount === 0}
           icon={<CheckCheck className="size-4" aria-hidden="true" />}
           onClick={() => {
-            void onMarkAllRead();
+            void runNotificationAction("all", onMarkAllRead);
           }}
         >
-          Mark all read
+          {pendingNotificationIds.has("all") ? "Saving..." : "Mark all read"}
         </Button>
       }
     >
@@ -114,6 +132,7 @@ export function NotificationsPage({
         isLoading={isLoadingModules}
         onRetry={onRetry}
       >
+        {actionError ? <p className="border-b border-rose-200 bg-rose-50 px-5 py-3 text-sm font-semibold text-rose-700">{actionError}</p> : null}
         <FilterBar
           isResetDisabled={!hasActiveFilters}
           onReset={() => {
@@ -203,17 +222,17 @@ export function NotificationsPage({
                   ) : null}
                   <Button
                     className="h-9"
-                    disabled={isMutating}
+                    disabled={isMutating || pendingNotificationIds.has(notification.id)}
                     icon={notification.is_read ? <RotateCcw className="size-4" aria-hidden="true" /> : <Check className="size-4" aria-hidden="true" />}
                     onClick={() => {
-                      void (notification.is_read ? onMarkUnread(notification.id) : onMarkRead(notification.id));
+                      void runNotificationAction(notification.id, () => (notification.is_read ? onMarkUnread(notification.id) : onMarkRead(notification.id)));
                     }}
                   >
                     {notification.is_read ? "Unread" : "Read"}
                   </Button>
                   <Button
                     className="h-9"
-                    disabled={isMutating}
+                    disabled={isMutating || pendingNotificationIds.has(notification.id)}
                     icon={<EyeOff className="size-4" aria-hidden="true" />}
                     onClick={() => {
                       void onDismissNotification(notification.id);

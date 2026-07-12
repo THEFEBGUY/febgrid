@@ -63,3 +63,54 @@ acceptance link is available without waiting for a full admin workspace refresh.
 Email delivery preparation remains a separate status in the response. Password
 and Supabase exact-email magic-link acceptance continue to use the same server
 invitation validation and tenant checks.
+
+## Page-scoped loading and mutation updates
+
+The public-beta frontend uses a route-specific data plan instead of loading the
+entire company workspace on every page. The critical request sets are bounded:
+
+| Page | Initial company-scoped requests |
+| --- | --- |
+| Dashboard | dashboard summary, employee display-name lookup, unread count |
+| Employees | employees, invitations, departments, teams, unread count |
+| Teams | teams, departments, eligible employees, unread count |
+| Projects | projects, employees, departments, teams, unread count |
+| Work Objects | work objects and only the lookup data used by its form, plus unread count |
+| Leaves | leaves, employees, unread count |
+
+Independent requests in one plan run concurrently and optional failures are
+reported per module. Settings, billing, file-pipeline, and AI-foundation data do
+not load on ordinary operational pages.
+
+Successful CRUD responses update only their affected local collection. Team,
+department, project, work-object, leave, announcement, invitation, and employee
+mutations do not trigger a full workspace refresh. Notification read state is
+optimistic and rolls back on failure. Identical in-flight GETs share one network
+request, and company/auth changes abort stale GETs without retrying the abort.
+
+The frontend does not run a health polling interval. The `/api/v1/health`
+traffic visible at a fixed cadence in Render logs comes from the Render
+`healthCheckPath` configured for deployment health monitoring. FebGrid's wake
+notice is event-driven by a real request that exceeds six seconds, clears as
+soon as requests recover, and never retries mutations.
+
+An isolated July 12, 2026 FastAPI + SQLite route probe used synthetic data and
+the production request middleware to separate application and SQL time. These
+numbers are local warm-path diagnostics, not claims about Render network time:
+
+| Operation | Client ms | App ms | DB ms | Queries |
+| --- | ---: | ---: | ---: | ---: |
+| Create department | 13.17 | 11.36 | 0.28 | 5 |
+| Create team | 46.49 | 44.98 | 0.29 | 6 |
+| Create project | 40.73 | 38.93 | 0.41 | 8 |
+| Create work object | 50.31 | 48.57 | 0.52 | 9 |
+| Create leave | 55.25 | 53.87 | 0.79 | 12 |
+| Create announcement | 14.43 | 13.03 | 0.53 | 11 |
+| Deactivate employee | 8.22 | 6.69 | 0.19 | 4 |
+| Read notification | 11.68 | 10.33 | 0.38 | 8 |
+| Create invitation | 16.14 | 14.87 | 0.64 | 11 |
+| Regenerate invitation link | 10.27 | 9.00 | 0.29 | 6 |
+
+The probe also measured individual list endpoints at 7-8 ms and the dashboard
+summary at 58.50 ms (54 aggregate queries). The route probe was deleted after
+execution and left no synthetic database or upload artifact in the repository.

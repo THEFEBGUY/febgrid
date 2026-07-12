@@ -1492,6 +1492,7 @@ export interface FebGridData {
   leaves: LeaveRequest[];
   events: Event[];
   notifications: Notification[];
+  notificationUnreadCount: number;
   announcements: Announcement[];
   files: Attachment[];
 }

@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { api, ApiError } from "../services/api";
+import { getPageDataKeys, type FebGridModuleKey } from "../data/pageDataPlan";
+import { markEntityInactive, prependEntity, replaceEntity, setNotificationReadState } from "../data/febGridState";
+import { api, ApiError, cancelInFlightGetRequests } from "../services/api";
 import type {
   AnnouncementCreatePayload,
   AnnouncementUpdatePayload,
@@ -33,6 +35,7 @@ import type {
   WorkObjectTypeUpdatePayload,
   WorkObjectUpdatePayload,
 } from "../types/api";
+import type { PageKey } from "../types/domain";
 
 const emptyData: FebGridData = {
   companies: [],
@@ -59,12 +62,12 @@ const emptyData: FebGridData = {
   leaves: [],
   events: [],
   notifications: [],
+  notificationUnreadCount: 0,
   announcements: [],
   files: [],
 };
 
-type ModuleDataKey = Exclude<keyof FebGridData, "companies">;
-type ModuleErrors = Partial<Record<ModuleDataKey, string>>;
+type ModuleErrors = Partial<Record<FebGridModuleKey, string>>;
 
 interface FebGridDataState {
   data: FebGridData;
@@ -141,6 +144,7 @@ interface FebGridDataState {
 interface UseFebGridDataOptions {
   enabled?: boolean;
   role?: UserRole | null;
+  page?: PageKey;
 }
 
 function getErrorMessage(error: unknown): string {
@@ -178,7 +182,7 @@ function findCompany(companies: Company[], companyId: string | null): Company | 
   return companies.find((company) => company.id === companyId);
 }
 
-export function useFebGridData({ enabled = true, role = null }: UseFebGridDataOptions = {}): FebGridDataState {
+export function useFebGridData({ enabled = true, role = null, page = "dashboard" }: UseFebGridDataOptions = {}): FebGridDataState {
   const [data, setData] = useState<FebGridData>(emptyData);
   const [selectedCompanyId, setSelectedCompanyId] = useState<string | null>(() => getStoredCompanyId());
   const [isLoadingCompanies, setIsLoadingCompanies] = useState(true);
@@ -187,6 +191,9 @@ export function useFebGridData({ enabled = true, role = null }: UseFebGridDataOp
   const [error, setError] = useState<string | null>(null);
   const [moduleErrors, setModuleErrors] = useState<ModuleErrors>({});
   const moduleRequestIdRef = useRef(0);
+  const loadedCompanyIdRef = useRef<string | null>(null);
+  const loadedModuleKeysRef = useRef<Set<FebGridModuleKey>>(new Set());
+  const selectedCompanyIdRef = useRef<string | null>(selectedCompanyId);
 
   const selectedCompany = useMemo(
     () => data.companies.find((company) => company.id === selectedCompanyId) ?? null,
@@ -194,19 +201,20 @@ export function useFebGridData({ enabled = true, role = null }: UseFebGridDataOp
   );
 
   const setSelectedCompanyIdOnce = useCallback((companyId: string | null): void => {
-    setSelectedCompanyId((currentCompanyId) => {
-      if (currentCompanyId === companyId) return currentCompanyId;
+    if (selectedCompanyIdRef.current === companyId) return;
 
-      moduleRequestIdRef.current += 1;
+    selectedCompanyIdRef.current = companyId;
+    moduleRequestIdRef.current += 1;
+    loadedCompanyIdRef.current = null;
+    loadedModuleKeysRef.current.clear();
+    cancelInFlightGetRequests();
+    setData((current) => ({ ...emptyData, companies: current.companies }));
+    setModuleErrors({});
 
-      if (companyId) {
-        storeCompanyId(companyId);
-      } else {
-        clearStoredCompanyId();
-      }
+    if (companyId) storeCompanyId(companyId);
+    else clearStoredCompanyId();
 
-      return companyId;
-    });
+    setSelectedCompanyId(companyId);
   }, []);
 
   const refreshCompanies = useCallback(async (): Promise<void> => {
@@ -225,20 +233,12 @@ export function useFebGridData({ enabled = true, role = null }: UseFebGridDataOp
     try {
       const companies = await api.companies();
       setData((current) => ({ ...current, companies }));
-
-      setSelectedCompanyId((currentCompanyId) => {
-        if (findCompany(companies, currentCompanyId)) return currentCompanyId;
-
+      const currentCompanyId = selectedCompanyIdRef.current;
+      if (!findCompany(companies, currentCompanyId)) {
         const storedCompanyId = getStoredCompanyId();
         const nextCompany = findCompany(companies, storedCompanyId) ?? companies[0] ?? null;
-        const nextCompanyId = nextCompany?.id ?? null;
-
-        if (nextCompanyId === currentCompanyId) return currentCompanyId;
-        if (nextCompanyId) storeCompanyId(nextCompanyId);
-        else clearStoredCompanyId();
-
-        return nextCompanyId;
-      });
+        setSelectedCompanyIdOnce(nextCompany?.id ?? null);
+      }
     } catch (caughtError) {
       setError(getErrorMessage(caughtError));
       setModuleErrors({});
@@ -252,6 +252,9 @@ export function useFebGridData({ enabled = true, role = null }: UseFebGridDataOp
   const refreshModules = useCallback(async (): Promise<void> => {
     if (!enabled || !selectedCompanyId) {
       moduleRequestIdRef.current += 1;
+      loadedCompanyIdRef.current = null;
+      loadedModuleKeysRef.current.clear();
+      cancelInFlightGetRequests();
       setData((current) => ({ ...emptyData, companies: current.companies }));
       setModuleErrors({});
       setIsLoadingModules(false);
@@ -261,186 +264,63 @@ export function useFebGridData({ enabled = true, role = null }: UseFebGridDataOp
     const requestId = moduleRequestIdRef.current + 1;
     moduleRequestIdRef.current = requestId;
 
-    setIsLoadingModules(true);
-    setModuleErrors({});
-    setData((current) => ({ ...current, ...emptyData, companies: current.companies }));
-
-    if (role === "employee") {
-      const [employeeMe, projects, workObjects, leaves, leaveApprovers, notifications, announcements] = await Promise.allSettled([
-        api.employeeMe(),
-        api.projects(selectedCompanyId),
-        api.workObjects(selectedCompanyId),
-        api.leaves(selectedCompanyId),
-        api.leaveApprovers(selectedCompanyId),
-        api.notifications(selectedCompanyId),
-        api.announcements(selectedCompanyId),
-      ]);
-
-      const nextData: Partial<FebGridData> = {};
-      const nextErrors: ModuleErrors = {};
-
-      if (employeeMe.status === "fulfilled") nextData.employees = [employeeMe.value];
-      else nextErrors.employees = getErrorMessage(employeeMe.reason);
-
-      if (projects.status === "fulfilled") nextData.projects = projects.value;
-      else nextErrors.projects = getErrorMessage(projects.reason);
-
-      if (workObjects.status === "fulfilled") nextData.workObjects = workObjects.value;
-      else nextErrors.workObjects = getErrorMessage(workObjects.reason);
-
-      if (leaves.status === "fulfilled") nextData.leaves = leaves.value;
-      else nextErrors.leaves = getErrorMessage(leaves.reason);
-
-      if (leaveApprovers.status === "fulfilled") nextData.leaveApprovers = leaveApprovers.value;
-      else nextErrors.leaveApprovers = getErrorMessage(leaveApprovers.reason);
-
-      if (notifications.status === "fulfilled") nextData.notifications = notifications.value;
-      else nextErrors.notifications = getErrorMessage(notifications.reason);
-
-      if (announcements.status === "fulfilled") nextData.announcements = announcements.value;
-      else nextErrors.announcements = getErrorMessage(announcements.reason);
-
-      if (moduleRequestIdRef.current !== requestId) return;
-
-      setData((current) => ({ ...current, ...nextData }));
-      setModuleErrors(nextErrors);
-      setIsLoadingModules(false);
-      return;
+    if (loadedCompanyIdRef.current !== selectedCompanyId) {
+      loadedCompanyIdRef.current = selectedCompanyId;
+      loadedModuleKeysRef.current.clear();
+      setData((current) => ({ ...emptyData, companies: current.companies }));
     }
 
-    const [
-      companySettings,
-      billingPlans,
-      billingSummary,
-      industryTemplates,
-      workObjectTypes,
-      customFields,
-      dashboardSummary,
-      departments,
-      employees,
-      invitations,
-      teams,
-      projects,
-      workObjects,
-      leaves,
-      events,
-      auditLogs,
-      notifications,
-      announcements,
-      files,
-      aiCapabilities,
-      aiProviderStatus,
-      aiSafetySettings,
-      aiJobQueueSummary,
-      aiJobs,
-    ] = await Promise.allSettled([
-      api.companySettings(selectedCompanyId),
-      api.billingPlans(),
-      api.billingSummary(selectedCompanyId),
-      api.industryTemplates(),
-      api.workObjectTypes(selectedCompanyId, true),
-      api.customFields(selectedCompanyId, undefined, true),
-      api.dashboardSummary(selectedCompanyId),
-      api.departments(selectedCompanyId),
-      api.employees(selectedCompanyId),
-      api.invitations(selectedCompanyId),
-      api.teams(selectedCompanyId),
-      api.projects(selectedCompanyId),
-      api.workObjects(selectedCompanyId),
-      api.leaves(selectedCompanyId),
-      api.events(selectedCompanyId),
-      api.auditLogs(selectedCompanyId),
-      api.notifications(selectedCompanyId),
-      api.announcements(selectedCompanyId),
-      api.files(selectedCompanyId),
-      api.aiCapabilities(selectedCompanyId),
-      api.aiProviderStatus(selectedCompanyId),
-      api.aiSafetySettings(selectedCompanyId),
-      api.aiJobQueueSummary(selectedCompanyId),
-      api.aiJobs(selectedCompanyId, { limit: 10 }),
-    ]);
-
+    const dataLoaders: Record<FebGridModuleKey, () => Promise<unknown>> = {
+      aiCapabilities: () => api.aiCapabilities(selectedCompanyId),
+      aiProviderStatus: () => api.aiProviderStatus(selectedCompanyId),
+      aiSafetySettings: () => api.aiSafetySettings(selectedCompanyId),
+      aiJobQueueSummary: () => api.aiJobQueueSummary(selectedCompanyId),
+      aiJobs: () => api.aiJobs(selectedCompanyId, { limit: 10 }),
+      auditLogs: () => api.auditLogs(selectedCompanyId),
+      billingPlans: () => api.billingPlans(),
+      billingSummary: () => api.billingSummary(selectedCompanyId),
+      companySettings: () => api.companySettings(selectedCompanyId),
+      industryTemplates: () => api.industryTemplates(),
+      workObjectTypes: () => api.workObjectTypes(selectedCompanyId, true),
+      customFields: () => api.customFields(selectedCompanyId, undefined, true),
+      dashboardSummary: () => api.dashboardSummary(selectedCompanyId),
+      departments: () => api.departments(selectedCompanyId),
+      employees: async () => (role === "employee" ? [await api.employeeMe()] : api.employees(selectedCompanyId)),
+      leaveApprovers: () => api.leaveApprovers(selectedCompanyId),
+      invitations: () => api.invitations(selectedCompanyId),
+      teams: () => api.teams(selectedCompanyId),
+      projects: () => api.projects(selectedCompanyId),
+      workObjects: () => api.workObjects(selectedCompanyId),
+      leaves: () => api.leaves(selectedCompanyId),
+      events: () => api.events(selectedCompanyId),
+      notifications: () => api.notifications(selectedCompanyId),
+      notificationUnreadCount: async () => (await api.notificationUnreadCount(selectedCompanyId)).unread_count,
+      announcements: () => api.announcements(selectedCompanyId),
+      files: () => api.files(selectedCompanyId),
+    };
+    const keys = getPageDataKeys(page, role);
+    setIsLoadingModules(keys.some((key) => !loadedModuleKeysRef.current.has(key)));
+    setModuleErrors({});
+    const results = await Promise.allSettled(keys.map((key) => dataLoaders[key]()));
     const nextData: Partial<FebGridData> = {};
     const nextErrors: ModuleErrors = {};
-
-    if (companySettings.status === "fulfilled") nextData.companySettings = companySettings.value;
-    else nextErrors.companySettings = getErrorMessage(companySettings.reason);
-
-    if (billingPlans.status === "fulfilled") nextData.billingPlans = billingPlans.value;
-    else nextErrors.billingPlans = getErrorMessage(billingPlans.reason);
-
-    if (billingSummary.status === "fulfilled") nextData.billingSummary = billingSummary.value;
-    else nextErrors.billingSummary = getErrorMessage(billingSummary.reason);
-
-    if (industryTemplates.status === "fulfilled") nextData.industryTemplates = industryTemplates.value;
-    else nextErrors.industryTemplates = getErrorMessage(industryTemplates.reason);
-
-    if (workObjectTypes.status === "fulfilled") nextData.workObjectTypes = workObjectTypes.value;
-    else nextErrors.workObjectTypes = getErrorMessage(workObjectTypes.reason);
-
-    if (customFields.status === "fulfilled") nextData.customFields = customFields.value;
-    else nextErrors.customFields = getErrorMessage(customFields.reason);
-
-    if (dashboardSummary.status === "fulfilled") nextData.dashboardSummary = dashboardSummary.value;
-    else nextErrors.dashboardSummary = getErrorMessage(dashboardSummary.reason);
-
-    if (departments.status === "fulfilled") nextData.departments = departments.value;
-    else nextErrors.departments = getErrorMessage(departments.reason);
-
-    if (employees.status === "fulfilled") nextData.employees = employees.value;
-    else nextErrors.employees = getErrorMessage(employees.reason);
-
-    if (invitations.status === "fulfilled") nextData.invitations = invitations.value;
-    else nextErrors.invitations = getErrorMessage(invitations.reason);
-
-    if (teams.status === "fulfilled") nextData.teams = teams.value;
-    else nextErrors.teams = getErrorMessage(teams.reason);
-
-    if (projects.status === "fulfilled") nextData.projects = projects.value;
-    else nextErrors.projects = getErrorMessage(projects.reason);
-
-    if (workObjects.status === "fulfilled") nextData.workObjects = workObjects.value;
-    else nextErrors.workObjects = getErrorMessage(workObjects.reason);
-
-    if (leaves.status === "fulfilled") nextData.leaves = leaves.value;
-    else nextErrors.leaves = getErrorMessage(leaves.reason);
-
-    if (events.status === "fulfilled") nextData.events = events.value;
-    else nextErrors.events = getErrorMessage(events.reason);
-
-    if (auditLogs.status === "fulfilled") nextData.auditLogs = auditLogs.value;
-    else nextErrors.auditLogs = getErrorMessage(auditLogs.reason);
-
-    if (notifications.status === "fulfilled") nextData.notifications = notifications.value;
-    else nextErrors.notifications = getErrorMessage(notifications.reason);
-
-    if (announcements.status === "fulfilled") nextData.announcements = announcements.value;
-    else nextErrors.announcements = getErrorMessage(announcements.reason);
-
-    if (files.status === "fulfilled") nextData.files = files.value;
-    else nextErrors.files = getErrorMessage(files.reason);
-
-    if (aiCapabilities.status === "fulfilled") nextData.aiCapabilities = aiCapabilities.value;
-    else nextErrors.aiCapabilities = getErrorMessage(aiCapabilities.reason);
-
-    if (aiProviderStatus.status === "fulfilled") nextData.aiProviderStatus = aiProviderStatus.value;
-    else nextErrors.aiProviderStatus = getErrorMessage(aiProviderStatus.reason);
-
-    if (aiSafetySettings.status === "fulfilled") nextData.aiSafetySettings = aiSafetySettings.value;
-    else nextErrors.aiSafetySettings = getErrorMessage(aiSafetySettings.reason);
-
-    if (aiJobQueueSummary.status === "fulfilled") nextData.aiJobQueueSummary = aiJobQueueSummary.value;
-    else nextErrors.aiJobQueueSummary = getErrorMessage(aiJobQueueSummary.reason);
-
-    if (aiJobs.status === "fulfilled") nextData.aiJobs = aiJobs.value;
-    else nextErrors.aiJobs = getErrorMessage(aiJobs.reason);
+    const fulfilledKeys: FebGridModuleKey[] = [];
+    results.forEach((result, index) => {
+      const key = keys[index];
+      if (result.status === "fulfilled") {
+        Object.assign(nextData, { [key]: result.value });
+        fulfilledKeys.push(key);
+      }
+      else if (!(result.reason instanceof ApiError && result.reason.status === 499)) nextErrors[key] = getErrorMessage(result.reason);
+    });
 
     if (moduleRequestIdRef.current !== requestId) return;
 
+    fulfilledKeys.forEach((key) => loadedModuleKeysRef.current.add(key));
     setData((current) => ({ ...current, ...nextData }));
     setModuleErrors(nextErrors);
     setIsLoadingModules(false);
-  }, [enabled, role, selectedCompanyId]);
+  }, [enabled, page, role, selectedCompanyId]);
 
   useEffect(() => {
     void refreshCompanies();
@@ -483,32 +363,32 @@ export function useFebGridData({ enabled = true, role = null }: UseFebGridDataOp
   async function createEmployee(payload: Omit<EmployeeCreatePayload, "company_id">): Promise<void> {
     if (!selectedCompanyId) return;
     await runMutation(async () => {
-      await api.createEmployee({ ...payload, company_id: selectedCompanyId });
-      await Promise.all([refreshModules(), refreshCompanies()]);
+      const employee = await api.createEmployee({ ...payload, company_id: selectedCompanyId });
+      setData((current) => prependEntity(current, "employees", employee));
     });
   }
 
   async function updateEmployee(employeeId: string, payload: EmployeeUpdatePayload): Promise<void> {
     if (!selectedCompanyId) return;
     await runMutation(async () => {
-      await api.updateEmployee(employeeId, selectedCompanyId, payload);
-      await refreshModules();
+      const employee = await api.updateEmployee(employeeId, selectedCompanyId, payload);
+      setData((current) => replaceEntity(current, "employees", employee));
     });
   }
 
   async function deactivateEmployee(employeeId: string): Promise<void> {
     if (!selectedCompanyId) return;
-    await runMutation(async () => {
-      await api.deactivateEmployee(employeeId, selectedCompanyId);
-      await refreshModules();
-    });
+    setModuleErrors({});
+    setError(null);
+    await api.deactivateEmployee(employeeId, selectedCompanyId);
+    setData((current) => markEntityInactive(current, "employees", employeeId));
   }
 
   async function updateEmployeeStatus(employeeId: string, currentStatus: string): Promise<void> {
     if (!selectedCompanyId) return;
     await runMutation(async () => {
-      await api.updateEmployeeStatus(employeeId, { company_id: selectedCompanyId, current_status: currentStatus });
-      await refreshModules();
+      const employee = await api.updateEmployeeStatus(employeeId, { company_id: selectedCompanyId, current_status: currentStatus });
+      setData((current) => replaceEntity(current, "employees", employee));
     });
   }
 
@@ -519,10 +399,7 @@ export function useFebGridData({ enabled = true, role = null }: UseFebGridDataOp
     setError(null);
     try {
       const result = await api.createInvitation({ ...payload, company_id: selectedCompanyId });
-      setData((current) => ({
-        ...current,
-        invitations: [result.invitation, ...current.invitations.filter((item) => item.id !== result.invitation.id)],
-      }));
+      setData((current) => prependEntity(current, "invitations", result.invitation));
       return result;
     } finally {
       setIsMutating(false);
@@ -536,10 +413,7 @@ export function useFebGridData({ enabled = true, role = null }: UseFebGridDataOp
     setError(null);
     try {
       const result = await api.resendInvitation(invitationId, selectedCompanyId);
-      setData((current) => ({
-        ...current,
-        invitations: current.invitations.map((item) => (item.id === result.invitation.id ? result.invitation : item)),
-      }));
+      setData((current) => replaceEntity(current, "invitations", result.invitation));
       return result;
     } finally {
       setIsMutating(false);
@@ -550,10 +424,7 @@ export function useFebGridData({ enabled = true, role = null }: UseFebGridDataOp
     if (!selectedCompanyId) return;
     await runMutation(async () => {
       const invitation = await api.revokeInvitation(invitationId, selectedCompanyId);
-      setData((current) => ({
-        ...current,
-        invitations: current.invitations.map((item) => (item.id === invitation.id ? invitation : item)),
-      }));
+      setData((current) => replaceEntity(current, "invitations", invitation));
     });
   }
 
@@ -562,11 +433,7 @@ export function useFebGridData({ enabled = true, role = null }: UseFebGridDataOp
     await runMutation(async () => {
       const invitation = await api.approveInvitation(invitationId, selectedCompanyId);
       const employees = await api.employees(selectedCompanyId);
-      setData((current) => ({
-        ...current,
-        employees,
-        invitations: current.invitations.map((item) => (item.id === invitation.id ? invitation : item)),
-      }));
+      setData((current) => ({ ...replaceEntity(current, "invitations", invitation), employees }));
     });
   }
 
@@ -574,42 +441,39 @@ export function useFebGridData({ enabled = true, role = null }: UseFebGridDataOp
     if (!selectedCompanyId) return;
     await runMutation(async () => {
       const invitation = await api.rejectInvitation(invitationId, selectedCompanyId, rejectionReason);
-      setData((current) => ({
-        ...current,
-        invitations: current.invitations.map((item) => (item.id === invitation.id ? invitation : item)),
-      }));
+      setData((current) => replaceEntity(current, "invitations", invitation));
     });
   }
 
   async function createDepartment(payload: Omit<DepartmentCreatePayload, "company_id">): Promise<void> {
     if (!selectedCompanyId) return;
     await runMutation(async () => {
-      await api.createDepartment({ ...payload, company_id: selectedCompanyId });
-      await refreshModules();
+      const department = await api.createDepartment({ ...payload, company_id: selectedCompanyId });
+      setData((current) => prependEntity(current, "departments", department));
     });
   }
 
   async function createTeam(payload: Omit<TeamCreatePayload, "company_id">): Promise<void> {
     if (!selectedCompanyId) return;
     await runMutation(async () => {
-      await api.createTeam({ ...payload, company_id: selectedCompanyId });
-      await refreshModules();
+      const team = await api.createTeam({ ...payload, company_id: selectedCompanyId });
+      setData((current) => prependEntity(current, "teams", team));
     });
   }
 
   async function createProject(payload: Omit<ProjectCreatePayload, "company_id">): Promise<void> {
     if (!selectedCompanyId) return;
     await runMutation(async () => {
-      await api.createProject({ ...payload, company_id: selectedCompanyId });
-      await refreshModules();
+      const project = await api.createProject({ ...payload, company_id: selectedCompanyId });
+      setData((current) => prependEntity(current, "projects", project));
     });
   }
 
   async function updateProject(projectId: string, payload: ProjectUpdatePayload): Promise<void> {
     if (!selectedCompanyId) return;
     await runMutation(async () => {
-      await api.updateProject(projectId, selectedCompanyId, payload);
-      await refreshModules();
+      const project = await api.updateProject(projectId, selectedCompanyId, payload);
+      setData((current) => replaceEntity(current, "projects", project));
     });
   }
 
@@ -617,23 +481,23 @@ export function useFebGridData({ enabled = true, role = null }: UseFebGridDataOp
     if (!selectedCompanyId) return;
     await runMutation(async () => {
       await api.deactivateProject(projectId, selectedCompanyId);
-      await refreshModules();
+      setData((current) => markEntityInactive(current, "projects", projectId));
     });
   }
 
   async function updateProjectStatus(projectId: string, statusValue: string): Promise<void> {
     if (!selectedCompanyId) return;
     await runMutation(async () => {
-      await api.updateProjectStatus(projectId, { company_id: selectedCompanyId, status: statusValue });
-      await refreshModules();
+      const project = await api.updateProjectStatus(projectId, { company_id: selectedCompanyId, status: statusValue });
+      setData((current) => replaceEntity(current, "projects", project));
     });
   }
 
   async function updateProjectPriority(projectId: string, priority: string): Promise<void> {
     if (!selectedCompanyId) return;
     await runMutation(async () => {
-      await api.updateProjectPriority(projectId, { company_id: selectedCompanyId, priority });
-      await refreshModules();
+      const project = await api.updateProjectPriority(projectId, { company_id: selectedCompanyId, priority });
+      setData((current) => replaceEntity(current, "projects", project));
     });
   }
 
@@ -641,7 +505,6 @@ export function useFebGridData({ enabled = true, role = null }: UseFebGridDataOp
     if (!selectedCompanyId) return;
     await runMutation(async () => {
       await api.addProjectMember(projectId, { ...payload, company_id: selectedCompanyId });
-      await refreshModules();
     });
   }
 
@@ -649,23 +512,22 @@ export function useFebGridData({ enabled = true, role = null }: UseFebGridDataOp
     if (!selectedCompanyId) return;
     await runMutation(async () => {
       await api.removeProjectMember(projectId, selectedCompanyId, employeeId);
-      await refreshModules();
     });
   }
 
   async function createWorkObject(payload: Omit<WorkObjectCreatePayload, "company_id">): Promise<void> {
     if (!selectedCompanyId) return;
     await runMutation(async () => {
-      await api.createWorkObject({ ...payload, company_id: selectedCompanyId });
-      await refreshModules();
+      const workObject = await api.createWorkObject({ ...payload, company_id: selectedCompanyId });
+      setData((current) => prependEntity(current, "workObjects", workObject));
     });
   }
 
   async function updateWorkObject(workObjectId: string, payload: WorkObjectUpdatePayload): Promise<void> {
     if (!selectedCompanyId) return;
     await runMutation(async () => {
-      await api.updateWorkObject(workObjectId, selectedCompanyId, payload);
-      await refreshModules();
+      const workObject = await api.updateWorkObject(workObjectId, selectedCompanyId, payload);
+      setData((current) => replaceEntity(current, "workObjects", workObject));
     });
   }
 
@@ -673,79 +535,79 @@ export function useFebGridData({ enabled = true, role = null }: UseFebGridDataOp
     if (!selectedCompanyId) return;
     await runMutation(async () => {
       await api.deactivateWorkObject(workObjectId, selectedCompanyId);
-      await refreshModules();
+      setData((current) => markEntityInactive(current, "workObjects", workObjectId));
     });
   }
 
   async function assignWorkObject(workObjectId: string, assigneeEmployeeId: string | null): Promise<void> {
     if (!selectedCompanyId) return;
     await runMutation(async () => {
-      await api.assignWorkObject(workObjectId, { company_id: selectedCompanyId, assignee_employee_id: assigneeEmployeeId });
-      await refreshModules();
+      const workObject = await api.assignWorkObject(workObjectId, { company_id: selectedCompanyId, assignee_employee_id: assigneeEmployeeId });
+      setData((current) => replaceEntity(current, "workObjects", workObject));
     });
   }
 
   async function updateWorkObjectStatus(workObjectId: string, statusValue: string): Promise<void> {
     if (!selectedCompanyId) return;
     await runMutation(async () => {
-      await api.updateWorkObjectStatus(workObjectId, { company_id: selectedCompanyId, status: statusValue });
-      await refreshModules();
+      const workObject = await api.updateWorkObjectStatus(workObjectId, { company_id: selectedCompanyId, status: statusValue });
+      setData((current) => replaceEntity(current, "workObjects", workObject));
     });
   }
 
   async function updateWorkObjectPriority(workObjectId: string, priority: string): Promise<void> {
     if (!selectedCompanyId) return;
     await runMutation(async () => {
-      await api.updateWorkObjectPriority(workObjectId, { company_id: selectedCompanyId, priority });
-      await refreshModules();
+      const workObject = await api.updateWorkObjectPriority(workObjectId, { company_id: selectedCompanyId, priority });
+      setData((current) => replaceEntity(current, "workObjects", workObject));
     });
   }
 
   async function completeWorkObject(workObjectId: string): Promise<void> {
     if (!selectedCompanyId) return;
     await runMutation(async () => {
-      await api.completeWorkObject(workObjectId, { company_id: selectedCompanyId });
-      await refreshModules();
+      const workObject = await api.completeWorkObject(workObjectId, { company_id: selectedCompanyId });
+      setData((current) => replaceEntity(current, "workObjects", workObject));
     });
   }
 
   async function createLeave(payload: Omit<LeaveCreatePayload, "company_id">): Promise<void> {
     if (!selectedCompanyId) return;
     await runMutation(async () => {
-      await api.createLeave({ ...payload, company_id: selectedCompanyId });
-      await refreshModules();
+      const leave = await api.createLeave({ ...payload, company_id: selectedCompanyId });
+      setData((current) => prependEntity(current, "leaves", leave));
     });
   }
 
   async function updateLeave(leaveId: string, payload: LeaveUpdatePayload): Promise<void> {
     if (!selectedCompanyId) return;
     await runMutation(async () => {
-      await api.updateLeave(leaveId, selectedCompanyId, payload);
-      await refreshModules();
+      const leave = await api.updateLeave(leaveId, selectedCompanyId, payload);
+      setData((current) => replaceEntity(current, "leaves", leave));
     });
   }
 
   async function approveLeave(leaveId: string, payload: Omit<LeaveDecisionPayload, "company_id">): Promise<void> {
     if (!selectedCompanyId) return;
     await runMutation(async () => {
-      await api.approveLeave(leaveId, { ...payload, company_id: selectedCompanyId });
-      await refreshModules();
+      const leave = await api.approveLeave(leaveId, { ...payload, company_id: selectedCompanyId });
+      setData((current) => replaceEntity(current, "leaves", leave));
     });
   }
 
   async function rejectLeave(leaveId: string, payload: Omit<LeaveDecisionPayload, "company_id">): Promise<void> {
     if (!selectedCompanyId) return;
     await runMutation(async () => {
-      await api.rejectLeave(leaveId, { ...payload, company_id: selectedCompanyId });
-      await refreshModules();
+      const leave = await api.rejectLeave(leaveId, { ...payload, company_id: selectedCompanyId });
+      setData((current) => replaceEntity(current, "leaves", leave));
     });
   }
 
   async function cancelLeave(leaveId: string, payload: Omit<LeaveCancelPayload, "company_id">): Promise<void> {
     if (!selectedCompanyId) return;
     await runMutation(async () => {
-      await api.cancelLeave(leaveId, { ...payload, company_id: selectedCompanyId });
-      await refreshModules();
+      const leave = await api.cancelLeave(leaveId, { ...payload, company_id: selectedCompanyId });
+      setData((current) => replaceEntity(current, "leaves", leave));
     });
   }
 
@@ -753,42 +615,54 @@ export function useFebGridData({ enabled = true, role = null }: UseFebGridDataOp
     if (!selectedCompanyId) return;
     await runMutation(async () => {
       await api.deactivateLeave(leaveId, selectedCompanyId);
-      await refreshModules();
+      setData((current) => markEntityInactive(current, "leaves", leaveId));
     });
   }
 
   async function markNotificationRead(notificationId: string): Promise<void> {
     if (!selectedCompanyId) return;
-    await runMutation(async () => {
+    const previous = data.notifications.find((item) => item.id === notificationId);
+    if (!previous || previous.is_read) return;
+    setData((current) => setNotificationReadState(current, notificationId, true, new Date().toISOString()));
+    try {
       const notification = await api.markNotificationRead(notificationId, selectedCompanyId);
-      setData((current) => ({
-        ...current,
-        notifications: current.notifications.map((item) => (item.id === notification.id ? notification : item)),
-      }));
-    });
+      setData((current) => replaceEntity(current, "notifications", notification));
+    } catch (caughtError) {
+      setData((current) => setNotificationReadState(current, notificationId, previous.is_read, previous.read_at));
+      throw caughtError;
+    }
   }
 
   async function markNotificationUnread(notificationId: string): Promise<void> {
     if (!selectedCompanyId) return;
-    await runMutation(async () => {
+    const previous = data.notifications.find((item) => item.id === notificationId);
+    if (!previous || !previous.is_read) return;
+    setData((current) => setNotificationReadState(current, notificationId, false, null));
+    try {
       const notification = await api.markNotificationUnread(notificationId, selectedCompanyId);
-      setData((current) => ({
-        ...current,
-        notifications: current.notifications.map((item) => (item.id === notification.id ? notification : item)),
-      }));
-    });
+      setData((current) => replaceEntity(current, "notifications", notification));
+    } catch (caughtError) {
+      setData((current) => setNotificationReadState(current, notificationId, previous.is_read, previous.read_at));
+      throw caughtError;
+    }
   }
 
   async function markAllNotificationsRead(): Promise<void> {
     if (!selectedCompanyId) return;
-    await runMutation(async () => {
+    const previousNotifications = data.notifications;
+    const previousUnreadCount = data.notificationUnreadCount;
+    const readAt = new Date().toISOString();
+    setData((current) => ({
+      ...current,
+      notificationUnreadCount: 0,
+      notifications: current.notifications.map((item) => ({ ...item, is_read: true, read_at: item.read_at ?? readAt })),
+    }));
+    try {
       await api.markAllNotificationsRead(selectedCompanyId);
-      const readAt = new Date().toISOString();
-      setData((current) => ({
-        ...current,
-        notifications: current.notifications.map((item) => ({ ...item, is_read: true, read_at: item.read_at ?? readAt })),
-      }));
-    });
+    } catch (caughtError) {
+      setData((current) => ({ ...current, notifications: previousNotifications, notificationUnreadCount: previousUnreadCount }));
+      throw caughtError;
+    }
   }
 
   async function dismissNotification(notificationId: string): Promise<void> {
@@ -805,24 +679,24 @@ export function useFebGridData({ enabled = true, role = null }: UseFebGridDataOp
   async function createAnnouncement(payload: Omit<AnnouncementCreatePayload, "company_id">): Promise<void> {
     if (!selectedCompanyId) return;
     await runMutation(async () => {
-      await api.createAnnouncement({ ...payload, company_id: selectedCompanyId });
-      await refreshModules();
+      const announcement = await api.createAnnouncement({ ...payload, company_id: selectedCompanyId });
+      setData((current) => prependEntity(current, "announcements", announcement));
     });
   }
 
   async function updateAnnouncement(announcementId: string, payload: AnnouncementUpdatePayload): Promise<void> {
     if (!selectedCompanyId) return;
     await runMutation(async () => {
-      await api.updateAnnouncement(announcementId, selectedCompanyId, payload);
-      await refreshModules();
+      const announcement = await api.updateAnnouncement(announcementId, selectedCompanyId, payload);
+      setData((current) => replaceEntity(current, "announcements", announcement));
     });
   }
 
   async function archiveAnnouncement(announcementId: string): Promise<void> {
     if (!selectedCompanyId) return;
     await runMutation(async () => {
-      await api.archiveAnnouncement(announcementId, selectedCompanyId);
-      await refreshModules();
+      const announcement = await api.archiveAnnouncement(announcementId, selectedCompanyId);
+      setData((current) => replaceEntity(current, "announcements", announcement));
     });
   }
 
