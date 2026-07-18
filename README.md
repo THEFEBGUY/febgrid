@@ -10,6 +10,8 @@ FebGrid is a Business Operating System built around Work Objects, Events, Compan
 - Everything is AI-readable.
 - Everything contributes to Company Memory.
 
+All of the Project is Built with Codex with the help of GPT-5.6 SOL Model.
+
 ## Phase 1 Scope
 
 Phase 1 focuses on the backend foundation:
@@ -120,7 +122,7 @@ Run migrations from the `backend` directory:
 python -m alembic upgrade head
 ```
 
-## Bulk Employee Invite CSV
+## Bulk Employee Invite CSV. (At this stage GPT-5.6 was the best model to integrate this feature)
 
 Bulk employee invitations keep FebGrid's Python backend as the authority for
 company access, invitation creation, onboarding links, delivery preparation,
