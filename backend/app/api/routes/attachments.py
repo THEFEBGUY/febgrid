@@ -2,7 +2,8 @@ from datetime import datetime, timezone
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
-from fastapi.responses import FileResponse
+from fastapi.responses import StreamingResponse
+from urllib.parse import quote
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
@@ -227,6 +228,12 @@ def create_attachment_metadata(
     current_user: User | None = Depends(get_optional_current_user),
 ) -> Attachment:
     ensure_company_access(current_user, payload.company_id)
+    if payload.storage_provider != FileService.STORAGE_PROVIDER:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="New attachments must use the configured secure storage provider",
+        )
+    FileService.ensure_company_storage_path(company_id=payload.company_id, storage_path=payload.storage_path)
     get_or_404(db, Company, payload.company_id, label="Company")
     validate_attachment_refs(
         db,
@@ -330,17 +337,43 @@ def download_attachment(
     company_id: UUID,
     db: Session = Depends(db_session),
     current_user: User | None = Depends(get_optional_current_user),
-) -> FileResponse:
+) -> StreamingResponse:
     attachment = get_attachment_for_user(db, current_user, attachment_id=attachment_id, company_id=company_id)
-    if attachment.storage_provider != FileService.STORAGE_PROVIDER:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File is not available from local storage")
-    path = FileService.resolve_storage_path(attachment.storage_path)
-    if not path.exists() or not path.is_file():
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found")
-    return FileResponse(
-        path,
+    content = FileService.read_attachment_bytes(attachment)
+    filename = quote(attachment.original_file_name or attachment.file_name, safe="")
+    return StreamingResponse(
+        iter((content,)),
         media_type=attachment.content_type or "application/octet-stream",
-        filename=attachment.original_file_name,
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{filename}"},
+    )
+
+
+@router.get("/{attachment_id}/preview")
+def preview_attachment(
+    attachment_id: UUID,
+    company_id: UUID,
+    db: Session = Depends(db_session),
+    current_user: User | None = Depends(get_optional_current_user),
+) -> StreamingResponse:
+    attachment = get_attachment_for_user(db, current_user, attachment_id=attachment_id, company_id=company_id)
+    previewable_types = {
+        "application/json",
+        "application/pdf",
+        "text/csv",
+        "text/markdown",
+        "text/plain",
+        "image/jpeg",
+        "image/png",
+        "image/webp",
+    }
+    if (attachment.content_type or "").lower() not in previewable_types:
+        raise HTTPException(status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, detail="Preview is not available for this file type")
+    content = FileService.read_attachment_bytes(attachment)
+    filename = quote(attachment.original_file_name or attachment.file_name, safe="")
+    return StreamingResponse(
+        iter((content,)),
+        media_type=attachment.content_type or "application/octet-stream",
+        headers={"Content-Disposition": f"inline; filename*=UTF-8''{filename}"},
     )
 
 
@@ -418,7 +451,7 @@ def delete_attachment(
         description="File attachment was removed.",
     )
     if remove_file:
-        FileService.delete_local_file(attachment)
+        FileService.delete_stored_file(attachment)
     db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 

@@ -2,6 +2,7 @@ import { Sparkles } from "lucide-react";
 
 import type { AIJob } from "../../types/api";
 import { formatLabel, formatTime } from "../../utils/format";
+import { displayAIModel, displayAIProvider } from "../../utils/aiDisplay";
 import { Badge } from "../ui/Badge";
 import { Button } from "../ui/Button";
 import { LoadingState } from "../ui/States";
@@ -36,7 +37,7 @@ function list(value: unknown): string[] {
 
 function providerLabel(job: AIJob | null): string {
   if (!job) return "AI summary";
-  return job.provider_mode === "groq" ? "Groq" : formatLabel(job.provider_mode || "mock");
+  return displayAIProvider(job.provider_mode || "mock");
 }
 
 function summaryTitle(kind: SummaryKind): string {
@@ -188,6 +189,18 @@ export function AISummaryPanel({
 
       {!isLoading && job ? (
         <div className="space-y-4 p-4">
+          {job.status === "queued" || job.status === "running" ? (
+            <div className="rounded-lg border border-brand-200 bg-brand-50 px-4 py-3">
+              <p className="text-sm font-black text-brand-800">
+                {job.status === "queued" ? "Queued for secure processing" : "Generating summary"}
+              </p>
+              <p className="mt-1 text-xs font-semibold text-brand-700">
+                {job.status === "queued"
+                  ? "FebGrid will start this job automatically and update this panel when processing begins."
+                  : "The result will appear here automatically when processing finishes."}
+              </p>
+            </div>
+          ) : null}
           {job.status === "failed" ? (
             <p className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-bold text-rose-700">
               {job.error_message ?? "AI summary failed safely."}
@@ -264,7 +277,7 @@ export function AISummaryPanel({
           {(kind === "file" || kind === "document" || kind === "image" || kind === "audio") && limitations.length > 0 ? <SummaryBlock items={limitations} title="Limitations" /> : null}
           <p className="text-xs font-semibold text-ink-500">
             {generatedAt ? `Generated ${formatTime(generatedAt)}` : "Generated time unavailable"}
-            {modelName ? ` / ${modelName}` : ""}
+            {modelName ? ` / ${displayAIModel(modelName)}` : ""}
           </p>
         </div>
       ) : null}

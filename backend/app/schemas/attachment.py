@@ -26,7 +26,7 @@ class AttachmentBase(FebGridModel):
     file_size: int | None = Field(default=None, ge=0)
     extension: str | None = Field(default=None, max_length=20)
     checksum_sha256: str | None = Field(default=None, max_length=128)
-    storage_provider: str = Field(default="local", max_length=40)
+    storage_provider: str = Field(default="supabase", max_length=40)
     storage_path: str = Field(min_length=1)
     public_url: str | None = Field(
         default=None,
@@ -72,7 +72,7 @@ class WorkObjectAttachmentCreate(FebGridModel):
     file_size: int | None = Field(default=None, ge=0)
     extension: str | None = Field(default=None, max_length=20)
     checksum_sha256: str | None = Field(default=None, max_length=128)
-    storage_provider: str = Field(default="local", max_length=40)
+    storage_provider: str = Field(default="supabase", max_length=40)
     storage_path: str = Field(min_length=1)
     public_url: str | None = Field(
         default=None,

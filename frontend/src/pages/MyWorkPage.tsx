@@ -13,6 +13,7 @@ import { SectionPanel } from "../components/ui/SectionPanel";
 import { EmptyState, ErrorState, LoadingState } from "../components/ui/States";
 import { priorityTone, statusTone } from "../components/ui/tone";
 import { api } from "../services/api";
+import { aiJobTerminalError, pollAIJob } from "../services/aiJobPolling";
 import type { AIJob, Attachment, Event as FebGridEvent, WorkObject } from "../types/api";
 import type { ModulePageProps } from "../types/page";
 import { isSupportedAudioAttachment, isSupportedImageAttachment } from "../utils/files";
@@ -135,7 +136,9 @@ export function MyWorkPage({
     try {
       const job = await api.generateWorkObjectAISummary(detailWorkObject.id, selectedCompanyId);
       setAISummary(job);
-      void loadDetail(detailWorkObject.id);
+      const completedJob = await pollAIJob(job, selectedCompanyId, { onUpdate: setAISummary });
+      const terminalError = aiJobTerminalError(completedJob);
+      if (terminalError) setAISummaryError(terminalError);
     } catch (caughtError) {
       setAISummaryError(caughtError instanceof Error ? caughtError.message : "AI summary could not be generated.");
     } finally {
@@ -229,7 +232,9 @@ export function MyWorkPage({
           ? await api.generateFileAIAnalysis(fileSummaryAttachment.id, selectedCompanyId)
           : await api.generateFileAISummary(fileSummaryAttachment.id, selectedCompanyId);
       setFileAISummary(job);
-      if (detailWorkObject) void loadDetail(detailWorkObject.id);
+      const completedJob = await pollAIJob(job, selectedCompanyId, { onUpdate: setFileAISummary });
+      const terminalError = aiJobTerminalError(completedJob);
+      if (terminalError) setFileAISummaryError(terminalError);
     } catch (caughtError) {
       setFileAISummaryError(
         caughtError instanceof Error

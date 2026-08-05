@@ -1,6 +1,8 @@
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+import json
+
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Response, UploadFile, status
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
@@ -9,6 +11,7 @@ from app.api.serializers import serialize_events
 from app.api.utils import ensure_company, get_or_404, update_model
 from app.core.permissions import MANAGER_ROLES, ensure_company_access, ensure_role
 from app.models.department import Department
+from app.models.attachment import Attachment
 from app.models.employee import Employee
 from app.models.event import Event
 from app.models.project import Project, ProjectMember
@@ -16,6 +19,7 @@ from app.models.team import Team
 from app.models.user import User
 from app.models.work_object import WorkObject
 from app.schemas.ai_job import AIJobRead
+from app.schemas.attachment import AttachmentCreate, AttachmentRead
 from app.schemas.event import EventRead
 from app.schemas.project import (
     ProjectCreate,
@@ -30,6 +34,7 @@ from app.schemas.project import (
 from app.schemas.work_object import WorkObjectRead
 from app.services.ai_service import ai_service
 from app.services.event_service import EventService
+from app.services.file_service import FileService
 from app.services.notification_service import NotificationService
 
 router = APIRouter(prefix="/projects", tags=["projects"])
@@ -47,6 +52,18 @@ def clean_code(value: str | None) -> str | None:
         return None
     cleaned = value.strip()
     return cleaned or None
+
+
+def parse_attachment_metadata(raw: str | None) -> dict[str, object]:
+    if not raw or not raw.strip():
+        return {}
+    try:
+        value = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Attachment metadata must be valid JSON") from exc
+    if not isinstance(value, dict):
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Attachment metadata must be an object")
+    return value
 
 
 def ensure_project_status(status_value: str) -> str:
@@ -815,6 +832,104 @@ def get_project_timeline(
         .limit(limit)
     )
     return serialize_events(db.scalars(statement).all())
+
+
+@router.post("/{project_id}/attachments", response_model=AttachmentRead, status_code=status.HTTP_201_CREATED)
+def add_project_attachment(
+    project_id: UUID,
+    company_id: UUID = Form(...),
+    file: UploadFile = File(...),
+    description: str | None = Form(default=None),
+    metadata: str | None = Form(default=None),
+    db: Session = Depends(db_session),
+    current_user: User = Depends(get_current_user),
+) -> Attachment:
+    project = get_project_for_user(db, current_user, project_id, company_id)
+    actor_id = actor_employee_id(db, current_user)
+    stored_file = FileService.save_upload(
+        file=file,
+        company_id=company_id,
+        linked_entity_type="project",
+        linked_entity_id=project.id,
+    )
+    attachment = FileService.build_attachment(
+        AttachmentCreate(
+            company_id=company_id,
+            project_id=project.id,
+            uploaded_by_user_id=current_user.id,
+            uploaded_by_employee_id=actor_id,
+            linked_entity_type="project",
+            linked_entity_id=project.id,
+            file_name=stored_file.file_name,
+            original_file_name=stored_file.original_file_name,
+            content_type=stored_file.content_type,
+            file_size=stored_file.file_size,
+            extension=stored_file.extension,
+            checksum_sha256=stored_file.checksum_sha256,
+            storage_provider=stored_file.storage_provider,
+            storage_path=stored_file.storage_path,
+            public_url=None,
+            description=description.strip() if description else None,
+            tags=[],
+            processing_status="uploaded",
+            scan_status="not_scanned",
+            metadata=parse_attachment_metadata(metadata),
+            ai_processing_status="pending",
+            is_active=True,
+        )
+    )
+    db.add(attachment)
+    db.flush()
+    event = EventService.record_event(
+        db,
+        company_id=company_id,
+        actor_user_id=current_user.id,
+        actor_employee_id=actor_id,
+        event_type="file.uploaded",
+        title=f"{attachment.original_file_name} uploaded",
+        description="File was uploaded to a project.",
+        target_entity_type="attachment",
+        target_entity_id=attachment.id,
+        related_entity_type="project",
+        related_entity_id=project.id,
+        metadata={"attachment_id": str(attachment.id), "project_id": str(project.id), "content_type": attachment.content_type, "file_size": attachment.file_size},
+    )
+    notify_project_change(
+        db,
+        project=project,
+        current_user=current_user,
+        event=event,
+        notification_type="file.uploaded",
+        title=f"{attachment.original_file_name} uploaded",
+        message=f"A file was uploaded to {project.name}.",
+        metadata={"attachment_id": str(attachment.id), "project_id": str(project.id)},
+    )
+    db.commit()
+    db.refresh(attachment)
+    return attachment
+
+
+@router.get("/{project_id}/attachments", response_model=list[AttachmentRead])
+def list_project_attachments(
+    project_id: UUID,
+    company_id: UUID,
+    db: Session = Depends(db_session),
+    current_user: User = Depends(get_current_user),
+    limit: int = Query(default=50, ge=1, le=200),
+) -> list[Attachment]:
+    project = get_project_for_user(db, current_user, project_id, company_id)
+    statement = (
+        select(Attachment)
+        .where(
+            Attachment.company_id == company_id,
+            Attachment.project_id == project.id,
+            Attachment.is_active.is_(True),
+            Attachment.is_deleted.is_(False),
+        )
+        .order_by(Attachment.created_at.desc())
+        .limit(limit)
+    )
+    return list(db.scalars(statement).all())
 
 
 @router.get("/{project_id}/work-objects", response_model=list[WorkObjectRead])

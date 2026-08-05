@@ -103,4 +103,16 @@ describe("API request coordination", () => {
     await new Promise((resolve) => globalThis.setTimeout(resolve, 20));
     expect(fetchSpy).toHaveBeenCalledTimes(1);
   });
+
+  it("uses the canonical Process Next and Run Now routes", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(async () => jsonResponse({ processed: false, message: "Empty", job: null }));
+
+    await api.processNextAIJob("company-1");
+    await api.runAIJob("job-1", "company-1");
+
+    expect(String(fetchSpy.mock.calls[0]?.[0])).toContain("/api/v1/ai/jobs/process-next?company_id=company-1");
+    expect(String(fetchSpy.mock.calls[1]?.[0])).toContain("/api/v1/ai/jobs/job-1/run?company_id=company-1");
+    expect(fetchSpy.mock.calls[0]?.[1]?.method).toBe("POST");
+    expect(fetchSpy.mock.calls[1]?.[1]?.method).toBe("POST");
+  });
 });

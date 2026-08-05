@@ -5,6 +5,7 @@ import { Button } from "../ui/Button";
 import { EmptyState, ErrorState, LoadingState } from "../ui/States";
 import type { EmployeeDigitalTwinSignals, EmployeeDigitalTwinSnapshot } from "../../types/api";
 import { formatDateTime, formatLabel } from "../../utils/format";
+import { displayAIProvider } from "../../utils/aiDisplay";
 
 type TwinPayload = EmployeeDigitalTwinSnapshot | EmployeeDigitalTwinSignals | null;
 
@@ -134,7 +135,11 @@ export function DigitalTwinPanel({
               <div className="mt-3 flex flex-wrap items-center gap-2">
                 <Badge label={formatLabel(workloadLevel)} tone={workloadTone[workloadLevel] ?? "slate"} />
                 <Badge label={twin.is_rule_based ? "Rule based" : "AI assisted"} tone="blue" />
-                {twin.ai_narrative_used ? <Badge label={providerMode(twin) ?? "AI narrative"} tone="teal" /> : <Badge label="No employee score" tone="slate" />}
+                {twin.ai_narrative_used ? (
+                  <Badge label={providerMode(twin) ? displayAIProvider(providerMode(twin)) : "AI narrative"} tone="teal" />
+                ) : (
+                  <Badge label="No employee score" tone="slate" />
+                )}
               </div>
               <p className="mt-4 text-sm font-semibold leading-6 text-ink-700">{twin.summary}</p>
               <p className="mt-4 text-xs font-bold text-ink-500">

@@ -43,7 +43,7 @@ class Attachment(TimestampMixin, Base):
     file_size: Mapped[int | None] = mapped_column(BigInteger)
     extension: Mapped[str | None] = mapped_column(String(20))
     checksum_sha256: Mapped[str | None] = mapped_column(String(128))
-    storage_provider: Mapped[str] = mapped_column(String(40), default="local", nullable=False)
+    storage_provider: Mapped[str] = mapped_column(String(40), default="supabase", nullable=False)
     storage_path: Mapped[str] = mapped_column(Text, nullable=False)
     public_url: Mapped[str | None] = mapped_column("storage_url", Text)
     description: Mapped[str | None] = mapped_column(Text)

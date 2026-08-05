@@ -6,6 +6,11 @@ import type { ThemeMode } from "../../hooks/useTheme";
 import { api } from "../../services/api";
 import type { SearchResponse, SearchResultItem } from "../../types/api";
 import { formatLabel, formatTime } from "../../utils/format";
+import {
+  operationalSearchResultClassName,
+  operationalSearchSecondaryClassName,
+  operationalSearchTitleClassName,
+} from "../../utils/operationalSearch";
 import { Button } from "../ui/Button";
 import { ThemeToggle } from "./ThemeToggle";
 
@@ -43,6 +48,7 @@ export function Topbar({
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isSearchLoading, setIsSearchLoading] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
+  const [activeSearchResultIndex, setActiveSearchResultIndex] = useState(-1);
   const searchContainerRef = useRef<HTMLDivElement | null>(null);
   const searchRequestIdRef = useRef(0);
   const trimmedSearchQuery = searchQuery.trim();
@@ -52,6 +58,7 @@ export function Topbar({
     () => Object.entries(searchResponse?.groups ?? {}).filter(([, items]) => items.length > 0),
     [searchResponse],
   );
+  const flatSearchResults = useMemo(() => groupedSearchResults.flatMap(([, items]) => items), [groupedSearchResults]);
 
   useEffect(() => {
     if (!canUseOperationalSearch || !selectedCompanyId || trimmedSearchQuery.length < 2) {
@@ -59,6 +66,7 @@ export function Topbar({
       setSearchResponse(null);
       setIsSearchLoading(false);
       setSearchError(null);
+      setActiveSearchResultIndex(-1);
       return;
     }
 
@@ -86,6 +94,10 @@ export function Topbar({
 
     return () => window.clearTimeout(timeoutId);
   }, [canUseOperationalSearch, selectedCompanyId, trimmedSearchQuery]);
+
+  useEffect(() => {
+    setActiveSearchResultIndex(-1);
+  }, [searchResponse]);
 
   useEffect(() => {
     if (!isSearchOpen) return;
@@ -166,6 +178,10 @@ export function Topbar({
               <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-ink-500" aria-hidden="true" />
               <input
                 aria-label="Operational search"
+                aria-activedescendant={activeSearchResultIndex >= 0 ? `operational-search-result-${activeSearchResultIndex}` : undefined}
+                aria-autocomplete="list"
+                aria-controls="operational-search-results"
+                aria-expanded={isSearchOpen}
                 className="h-10 w-full rounded-md border border-grid-200 bg-white/90 pl-9 pr-3 text-sm font-semibold text-ink-900 shadow-sm transition placeholder:text-ink-500 hover:border-brand-200 hover:shadow-button focus:border-brand-500 focus:outline-none focus:ring-4 focus:ring-brand-100"
                 placeholder="Operational search"
                 type="search"
@@ -180,9 +196,18 @@ export function Topbar({
                     setIsSearchOpen(false);
                     event.currentTarget.blur();
                   }
-                  if (event.key === "Enter" && searchResponse?.results[0]) {
+                  if (event.key === "ArrowDown" && flatSearchResults.length > 0) {
                     event.preventDefault();
-                    openSearchResult(searchResponse.results[0]);
+                    setActiveSearchResultIndex((current) => (current + 1) % flatSearchResults.length);
+                  }
+                  if (event.key === "ArrowUp" && flatSearchResults.length > 0) {
+                    event.preventDefault();
+                    setActiveSearchResultIndex((current) => (current <= 0 ? flatSearchResults.length - 1 : current - 1));
+                  }
+                  const selectedResult = flatSearchResults[activeSearchResultIndex] ?? flatSearchResults[0];
+                  if (event.key === "Enter" && selectedResult) {
+                    event.preventDefault();
+                    openSearchResult(selectedResult);
                   }
                 }}
               />
@@ -204,36 +229,56 @@ export function Topbar({
                   ) : groupedSearchResults.length === 0 ? (
                     <div className="px-4 py-5 text-sm font-medium text-ink-500">No operational results found.</div>
                   ) : (
-                    <div className="max-h-[28rem] overflow-y-auto py-2">
+                    <div id="operational-search-results" className="max-h-[28rem] overflow-y-auto py-2" role="listbox">
                       {groupedSearchResults.map(([groupName, items]) => (
                         <div key={groupName} className="py-2">
                           <p className="px-4 pb-1 text-xs font-bold uppercase tracking-normal text-ink-500">{formatLabel(groupName)}</p>
                           <div className="space-y-1">
-                            {items.map((item) => (
-                              <button
-                                key={`${item.type}-${item.id}`}
-                                className="block w-full px-4 py-2.5 text-left transition hover:bg-brand-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-brand-600"
-                                type="button"
-                                onClick={() => openSearchResult(item)}
-                              >
-                                <span className="flex items-center justify-between gap-3">
-                                  <span className="min-w-0">
-                                    <span className="block truncate text-sm font-bold text-ink-950">{item.title}</span>
-                                    <span className="mt-0.5 block truncate text-xs font-semibold text-ink-500">
-                                      {[
-                                        item.subtitle,
-                                        item.status ? formatLabel(item.status) : null,
-                                        item.updated_at || item.created_at ? formatTime(item.updated_at ?? item.created_at) : null,
-                                      ]
-                                        .filter(Boolean)
-                                        .join(" / ")}
+                            {items.map((item) => {
+                              const resultIndex = flatSearchResults.indexOf(item);
+                              const isSelected = resultIndex === activeSearchResultIndex;
+                              return (
+                                <button
+                                  key={`${item.type}-${item.id}`}
+                                  id={`operational-search-result-${resultIndex}`}
+                                  aria-selected={isSelected}
+                                  className={operationalSearchResultClassName(isSelected)}
+                                  role="option"
+                                  type="button"
+                                  onFocus={() => setActiveSearchResultIndex(resultIndex)}
+                                  onClick={() => openSearchResult(item)}
+                                >
+                                  <span className="flex items-center justify-between gap-3">
+                                    <span className="min-w-0">
+                                      <span className={operationalSearchTitleClassName(isSelected)}>{item.title}</span>
+                                      <span className={`mt-0.5 block truncate text-xs font-semibold ${operationalSearchSecondaryClassName(isSelected)}`}>
+                                        {[
+                                          item.subtitle,
+                                          item.status ? formatLabel(item.status) : null,
+                                          item.updated_at || item.created_at ? formatTime(item.updated_at ?? item.created_at) : null,
+                                        ]
+                                          .filter(Boolean)
+                                          .join(" / ")}
+                                      </span>
                                     </span>
+                                    {item.priority ? (
+                                      <span
+                                        className={`rounded-md border px-2 py-1 text-xs font-bold ${
+                                          isSelected
+                                            ? "border-white/30 text-white"
+                                            : "border-grid-200 text-ink-600 group-hover:border-white/30 group-hover:text-white group-active:border-white/30 group-active:text-white"
+                                        }`}
+                                      >
+                                        {formatLabel(item.priority)}
+                                      </span>
+                                    ) : null}
                                   </span>
-                                  {item.priority ? <span className="rounded-md border border-grid-200 px-2 py-1 text-xs font-bold text-ink-600">{formatLabel(item.priority)}</span> : null}
-                                </span>
-                                {item.description ? <span className="mt-1 line-clamp-1 text-xs text-ink-500">{item.description}</span> : null}
-                              </button>
-                            ))}
+                                  {item.description ? (
+                                    <span className={`mt-1 line-clamp-1 text-xs ${operationalSearchSecondaryClassName(isSelected)}`}>{item.description}</span>
+                                  ) : null}
+                                </button>
+                              );
+                            })}
                           </div>
                         </div>
                       ))}

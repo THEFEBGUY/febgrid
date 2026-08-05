@@ -1,6 +1,6 @@
 import os
 import socket
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
 from fastapi import HTTPException, status
@@ -39,6 +39,14 @@ def is_retryable_error(error_code: str) -> bool:
 def next_retry_time(attempts: int):
     delay = timedelta(minutes=1 if attempts <= 1 else 5)
     return utc_now() + delay
+
+
+def as_utc(value: datetime | None) -> datetime | None:
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
 
 
 class AIJobRunner:
@@ -83,7 +91,7 @@ class AIJobRunner:
             stale_running=int(stale_running or 0),
         )
 
-    def fetch_next_queued_job(self, db: Session, *, company_id: UUID) -> AIJob | None:
+    def fetch_next_queued_job(self, db: Session, *, company_id: UUID | None = None) -> AIJob | None:
         now = utc_now()
         priority_order = case(
             (AIJob.priority == "urgent", 0),
@@ -92,20 +100,44 @@ class AIJobRunner:
             (AIJob.priority == "low", 3),
             else_=4,
         )
-        statement = (
-            select(AIJob)
-            .where(
-                AIJob.company_id == company_id,
+        conditions = [
                 AIJob.status == "queued",
                 AIJob.attempts < AIJob.max_attempts,
                 or_(AIJob.scheduled_at.is_(None), AIJob.scheduled_at <= now),
                 or_(AIJob.next_attempt_at.is_(None), AIJob.next_attempt_at <= now),
-            )
+        ]
+        if company_id is not None:
+            conditions.append(AIJob.company_id == company_id)
+        statement = (
+            select(AIJob)
+            .where(*conditions)
             .order_by(priority_order, AIJob.created_at.asc())
             .limit(1)
             .with_for_update(skip_locked=True)
         )
         return db.scalar(statement)
+
+    def fetch_exhausted_queued_job(self, db: Session) -> AIJob | None:
+        return db.scalar(
+            select(AIJob)
+            .where(AIJob.status == "queued", AIJob.attempts >= AIJob.max_attempts)
+            .order_by(AIJob.created_at.asc())
+            .limit(1)
+            .with_for_update(skip_locked=True)
+        )
+
+    def fetch_one_stale_job(self, db: Session) -> AIJob | None:
+        stale_before = utc_now() - self.stale_after
+        return db.scalar(
+            select(AIJob)
+            .where(
+                AIJob.status == "running",
+                or_(AIJob.locked_at <= stale_before, AIJob.started_at <= stale_before),
+            )
+            .order_by(AIJob.started_at.asc(), AIJob.created_at.asc())
+            .limit(1)
+            .with_for_update(skip_locked=True)
+        )
 
     def process_next(self, db: Session, *, company_id: UUID, current_user: User) -> AIJob | None:
         ensure_company_access(current_user, company_id)
@@ -113,9 +145,17 @@ class AIJobRunner:
         job = self.fetch_next_queued_job(db, company_id=company_id)
         if job is None:
             return None
-        return self.run_job(db, job=job, current_user=current_user, run_mode="queued")
+        return self.run_job(db, job=job, current_user=current_user, run_mode="queued", respect_schedule=True)
 
-    def run_job(self, db: Session, *, job: AIJob, current_user: User, run_mode: str = "manual") -> AIJob:
+    def run_job(
+        self,
+        db: Session,
+        *,
+        job: AIJob,
+        current_user: User,
+        run_mode: str = "manual",
+        respect_schedule: bool = False,
+    ) -> AIJob:
         from app.services.ai_service import AIService
 
         AIService.ensure_manage_job(current_user, job)
@@ -129,7 +169,8 @@ class AIJobRunner:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Only queued AI jobs can be run")
         if job.attempts >= job.max_attempts:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="AI job has reached its attempt limit")
-        if job.next_attempt_at is not None and job.next_attempt_at > utc_now():
+        next_attempt_at = as_utc(job.next_attempt_at)
+        if respect_schedule and next_attempt_at is not None and next_attempt_at > utc_now():
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="AI job is waiting for its next retry window")
 
         self.lock_job(db, job=job, current_user=current_user, run_mode=run_mode)
@@ -145,6 +186,14 @@ class AIJobRunner:
                 error_code="provider_unknown_error",
                 error_message="AI job failed safely.",
                 metadata={},
+            )
+        job_metadata = job.metadata_json if isinstance(job.metadata_json, dict) else {}
+        if job.status in {"succeeded", "failed"} and job_metadata.get("summary_feature") is True:
+            AIService.record_summary_event(
+                db,
+                job=job,
+                current_user=current_user,
+                phase="succeeded" if job.status == "succeeded" else "failed",
             )
         return job
 
@@ -218,6 +267,10 @@ class AIJobRunner:
         entity_context = AIService.build_safe_context(db, job)
         messages = AIService.build_messages(job, entity_context, runtime.groq_max_input_chars)
         provider = build_ai_provider(provider_mode, runtime)
+        # Persist the lease and release the database transaction before the
+        # external provider call. A crashed process is recovered by the stale
+        # lease path instead of leaving an invisible in-flight transaction.
+        db.commit()
         result = provider.generate(
             AIProviderRequest(
                 job_type=job.job_type,
@@ -440,7 +493,9 @@ class AIJobRunner:
 
     def is_stale(self, job: AIJob) -> bool:
         threshold = utc_now() - self.stale_after
-        return bool((job.locked_at and job.locked_at <= threshold) or (job.started_at and job.started_at <= threshold))
+        locked_at = as_utc(job.locked_at)
+        started_at = as_utc(job.started_at)
+        return bool((locked_at and locked_at <= threshold) or (started_at and started_at <= threshold))
 
     @staticmethod
     def clear_lock(job: AIJob) -> None:

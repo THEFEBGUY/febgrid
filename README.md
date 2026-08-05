@@ -25,7 +25,7 @@ Phase 1 focuses on the backend foundation:
 - Phase 1 project management foundation for project ownership, members, status, priority, progress, timeline, and linked work object lists
 - Sprint 4 Work Object Engine v1 for tenant-safe work creation, assignment, status/priority tracking, project linkage, detail timeline, and dashboard work counts
 - Sprint 5 Leave Management v1 for tenant-safe leave requests, pending review, approval/rejection/cancel flows, leave events, and dashboard leave counts
-- Sprint 6 File Upload v1 for tenant-safe work-object attachments, local development storage, download/delete flow, file events, and attachment search metadata
+- Sprint 6 File Upload v1 for tenant-safe work-object and project attachments backed by private Supabase Storage, secure download/preview, file events, and attachment search metadata
 - Notification v1 and Event Stream Polish for tenant-safe in-app notifications, unread/read/dismiss actions, unread counts, and a reliable universal timeline
 - Phase 1 Communication Layer foundation for tenant-safe work-object/project comments, simple employee mentions, internal announcements, communication events, and in-app notifications
 - Sprint 9 Basic Dashboard polish with a tenant-safe live operational summary for employees, work, projects, leave, files, notifications, announcements, and recent events
@@ -77,6 +77,13 @@ For local auth, set a development value for `JWT_SECRET_KEY`. If it is omitted, 
 
 AI provider configuration is optional for local development. Keep `AI_PROVIDER_MODE=mock` to avoid external calls. To test Groq later, set `AI_PROVIDER_MODE=groq`, configure `GROQ_API_KEY` locally, keep secrets out of source control, and enable external AI processing from the owner/admin Settings UI.
 
+AI summary jobs are database-backed and processed by a lightweight FastAPI
+lifespan worker. The worker atomically claims due jobs with PostgreSQL row
+locking, commits its lease before any provider call, and recovers stale jobs
+automatically while retaining the existing manual recovery control. `AI_JOB_WORKER_ENABLED`,
+`AI_JOB_WORKER_POLL_SECONDS`, and `AI_JOB_LEASE_SECONDS` tune this behavior;
+the defaults are suitable for one local or free Render web service.
+
 ## Frontend Setup
 
 Install and run the React dashboard from the `frontend` directory:
@@ -112,7 +119,20 @@ Phase 2 begins with operational search/filtering and the configuration foundatio
 
 Layer 2 starts with rule-based operational intelligence. Company Pulse gives owner/admin users an explainable company health snapshot. Employee Digital Twin v1 gives permitted users a privacy-safe operational work profile for one employee at a time. It summarizes assigned work, project involvement, safe availability context, skills/tags, attention areas, risks, and recommended planning actions for 7, 30, or 90 day periods. Work DNA v1 analyzes company/project/team/department work-system patterns: work type mix, recurring work, overdue and blocked patterns, deadline pressure, workflow bottlenecks, metadata coverage, template candidates, and advisory process improvements. Work DNA is not an employee ranking, productivity score, surveillance tool, personality profile, or employment-decision system. Owner/admin users can generate company-wide Work DNA, project members/owners can access permitted project scope where backend rules allow it, and department scope is owner/admin-only until a safe manager mapping exists. The core is deterministic and rule-based; no Groq key or external AI call is required. Work DNA snapshots can be suggested into Company Memory through the existing suggested-to-approved review workflow and never create autonomous work changes. The owner/admin Dashboard includes a compact Layer 2 readiness section that links Company Pulse, Work DNA, Employee Digital Twin coverage, AI queue state, and Company Memory review counts without exposing those admin-level intelligence surfaces to employee POV.
 
-Local uploaded files are stored under `backend/storage/uploads/` for development. That folder is ignored by Git and should not be committed.
+## Private File Storage
+
+FebGrid stores new Work Object and Project attachment bytes in the private
+Supabase Storage bucket named `work-files`. The database stores only safe
+attachment metadata and the object path; the backend uses its server-only
+`SUPABASE_SERVICE_ROLE_KEY` to upload, stream authorized downloads/previews,
+and remove objects. The frontend never receives this credential or a public
+bucket URL. Existing legacy attachment metadata remains readable, but legacy
+objects that were only stored on a previous local disk must be re-uploaded.
+
+Document analysis fetches an authorized object through this same storage layer.
+It supports text extraction for `.txt`, `.md`, `.csv`, `.json`, `.log`, `.pdf`,
+and `.docx`; encrypted, unreadable, unsupported, or secret-like documents are
+rejected with a safe error before any external AI processing.
 
 ## Alembic
 

@@ -126,6 +126,7 @@ interface FebGridDataState {
   archiveFile: (attachmentId: string) => Promise<void>;
   restoreFile: (attachmentId: string) => Promise<void>;
   createAIJob: (payload: Omit<AIJobCreatePayload, "company_id">) => Promise<void>;
+  refreshAIQueueModules: () => Promise<void>;
   runAIJob: (jobId: string) => Promise<void>;
   processNextAIJob: () => Promise<void>;
   retryAIJob: (jobId: string) => Promise<void>;
@@ -755,15 +756,24 @@ export function useFebGridData({ enabled = true, role = null, page = "dashboard"
     if (!selectedCompanyId) return;
     await runMutation(async () => {
       await api.createAIJob({ ...payload, company_id: selectedCompanyId });
-      await refreshModules();
+      await refreshAIQueueModules();
     });
+  }
+
+  async function refreshAIQueueModules(): Promise<void> {
+    if (!selectedCompanyId) return;
+    const [aiJobs, aiJobQueueSummary] = await Promise.all([
+      api.aiJobs(selectedCompanyId, { limit: 50 }),
+      api.aiJobQueueSummary(selectedCompanyId),
+    ]);
+    setData((current) => ({ ...current, aiJobs, aiJobQueueSummary }));
   }
 
   async function runAIJob(jobId: string): Promise<void> {
     if (!selectedCompanyId) return;
     await runMutation(async () => {
       await api.runAIJob(jobId, selectedCompanyId);
-      await refreshModules();
+      await refreshAIQueueModules();
     });
   }
 
@@ -771,7 +781,7 @@ export function useFebGridData({ enabled = true, role = null, page = "dashboard"
     if (!selectedCompanyId) return;
     await runMutation(async () => {
       await api.processNextAIJob(selectedCompanyId);
-      await refreshModules();
+      await refreshAIQueueModules();
     });
   }
 
@@ -779,7 +789,7 @@ export function useFebGridData({ enabled = true, role = null, page = "dashboard"
     if (!selectedCompanyId) return;
     await runMutation(async () => {
       await api.retryAIJob(jobId, selectedCompanyId);
-      await refreshModules();
+      await refreshAIQueueModules();
     });
   }
 
@@ -787,7 +797,7 @@ export function useFebGridData({ enabled = true, role = null, page = "dashboard"
     if (!selectedCompanyId) return;
     await runMutation(async () => {
       await api.recoverStaleAIJobs(selectedCompanyId);
-      await refreshModules();
+      await refreshAIQueueModules();
     });
   }
 
@@ -795,7 +805,7 @@ export function useFebGridData({ enabled = true, role = null, page = "dashboard"
     if (!selectedCompanyId) return;
     await runMutation(async () => {
       await api.cancelAIJob(jobId, selectedCompanyId);
-      await refreshModules();
+      await refreshAIQueueModules();
     });
   }
 
@@ -920,6 +930,7 @@ export function useFebGridData({ enabled = true, role = null, page = "dashboard"
     archiveFile,
     restoreFile,
     createAIJob,
+    refreshAIQueueModules,
     runAIJob,
     processNextAIJob,
     retryAIJob,

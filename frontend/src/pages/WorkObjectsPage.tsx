@@ -14,6 +14,7 @@ import { SectionPanel } from "../components/ui/SectionPanel";
 import { EmptyState, ErrorState, LoadingState } from "../components/ui/States";
 import { priorityTone, statusTone } from "../components/ui/tone";
 import { api } from "../services/api";
+import { aiJobTerminalError, pollAIJob } from "../services/aiJobPolling";
 import type { AIJob, Attachment, CustomFieldDefinition, Event as FebGridEvent, WorkObject, WorkObjectCreatePayload, WorkObjectUpdatePayload } from "../types/api";
 import type { ModulePageProps } from "../types/page";
 import { isSupportedAudioAttachment, isSupportedImageAttachment } from "../utils/files";
@@ -530,7 +531,9 @@ export function WorkObjectsPage({
     try {
       const job = await api.generateWorkObjectAISummary(detailWorkObject.id, selectedCompanyId);
       setAISummary(job);
-      void loadWorkObjectDetail(detailWorkObject.id);
+      const completedJob = await pollAIJob(job, selectedCompanyId, { onUpdate: setAISummary });
+      const terminalError = aiJobTerminalError(completedJob);
+      if (terminalError) setAISummaryError(terminalError);
     } catch (caughtError) {
       setAISummaryError(caughtError instanceof Error ? caughtError.message : "AI summary could not be generated.");
     } finally {
@@ -624,7 +627,9 @@ export function WorkObjectsPage({
           ? await api.generateFileAIAnalysis(fileSummaryAttachment.id, selectedCompanyId)
           : await api.generateFileAISummary(fileSummaryAttachment.id, selectedCompanyId);
       setFileAISummary(job);
-      if (detailWorkObject) void loadWorkObjectDetail(detailWorkObject.id);
+      const completedJob = await pollAIJob(job, selectedCompanyId, { onUpdate: setFileAISummary });
+      const terminalError = aiJobTerminalError(completedJob);
+      if (terminalError) setFileAISummaryError(terminalError);
     } catch (caughtError) {
       setFileAISummaryError(
         caughtError instanceof Error
@@ -739,6 +744,19 @@ export function WorkObjectsPage({
       window.URL.revokeObjectURL(objectUrl);
     } catch {
       setAttachmentError("File could not be downloaded.");
+    }
+  }
+
+  async function handlePreviewAttachment(attachment: Attachment): Promise<void> {
+    if (!selectedCompanyId) return;
+    setAttachmentError(null);
+    try {
+      const blob = await api.previewAttachment(attachment.id, selectedCompanyId);
+      const objectUrl = window.URL.createObjectURL(blob);
+      window.open(objectUrl, "_blank", "noopener,noreferrer");
+      window.setTimeout(() => window.URL.revokeObjectURL(objectUrl), 60_000);
+    } catch {
+      setAttachmentError("Preview is not available for this file type.");
     }
   }
 
@@ -1147,6 +1165,15 @@ export function WorkObjectsPage({
                               <span className="sr-only">Transcribe audio</span>
                             </Button>
                           ) : null}
+                          <Button
+                            className="size-9 px-0"
+                            aria-label={`Preview ${attachment.original_file_name}`}
+                            icon={<Eye className="size-4" aria-hidden="true" />}
+                            title={`Preview ${attachment.original_file_name}`}
+                            onClick={() => void handlePreviewAttachment(attachment)}
+                          >
+                            <span className="sr-only">Preview</span>
+                          </Button>
                           <Button className="size-9 px-0" aria-label="Download attachment" icon={<Download className="size-4" aria-hidden="true" />} onClick={() => void handleDownloadAttachment(attachment)}>
                             <span className="sr-only">Download</span>
                           </Button>

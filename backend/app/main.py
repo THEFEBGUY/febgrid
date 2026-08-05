@@ -1,5 +1,8 @@
+import asyncio
 import re
+import sys
 import time
+from contextlib import asynccontextmanager
 from uuid import uuid4
 
 from fastapi import FastAPI, Request, Response
@@ -8,14 +11,34 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.router import api_router
 from app.core.config import get_settings
 from app.core.performance import begin_request_performance, end_request_performance, log_request_performance
+from app.services.ai_job_worker import AIJobWorker
 
 
 settings = get_settings()
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    worker = None
+    worker_task = None
+    is_test_process = settings.environment.lower() in {"test", "testing"} or "unittest" in sys.modules
+    if settings.ai_job_worker_enabled and not is_test_process:
+        worker = AIJobWorker()
+        worker_task = asyncio.create_task(worker.run(), name="febgrid-ai-job-worker")
+        app.state.ai_job_worker = worker
+    try:
+        yield
+    finally:
+        if worker is not None:
+            worker.stop()
+        if worker_task is not None:
+            await worker_task
 
 app = FastAPI(
     title=settings.app_name,
     version="0.1.0",
     description="Phase 1 backend foundation for the FebGrid Business Operating System.",
+    lifespan=lifespan,
 )
 
 app.add_middleware(

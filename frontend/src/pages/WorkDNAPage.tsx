@@ -270,7 +270,7 @@ export function WorkDNAPage({ data, selectedCompany, currentUserRole }: ModulePa
                   <Badge label={latest.is_rule_based ? "Rule based" : "AI assisted"} tone="blue" />
                   <Badge label={formatLabel(latest.scope_type)} tone="teal" />
                   <Badge label={`${latest.period_days} days`} tone="slate" />
-                  {latest.ai_narrative_used ? <Badge label="Groq narrative" tone="green" /> : null}
+                  {latest.ai_narrative_used ? <Badge label="FebGuyAI narrative" tone="green" /> : null}
                 </div>
                 <h3 className="mt-4 text-lg font-black text-ink-950">Work-system snapshot</h3>
                 <p className="mt-2 text-sm font-semibold leading-6 text-ink-600">{latest.overall_summary}</p>

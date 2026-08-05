@@ -273,6 +273,10 @@ class NotificationService:
         cls._validate_employee(db, company_id=company_id, employee_id=actor_employee_id, label="Actor")
         cls._validate_user(db, company_id=company_id, user_id=actor_user_id, label="Actor user")
         if event_id is not None:
+            # EventService intentionally only adds events to the unit of work.
+            # Sessions run with autoflush disabled, so make a just-created event
+            # visible before validating the notification's event reference.
+            db.flush()
             event = db.get(Event, event_id)
             if event is None or event.company_id != company_id:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")

@@ -1,4 +1,5 @@
 import json
+import io
 import re
 import struct
 import wave
@@ -6,7 +7,9 @@ from pathlib import Path
 from typing import Any
 from uuid import UUID
 
+from docx import Document
 from fastapi import HTTPException, status
+from pypdf import PdfReader
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -50,7 +53,7 @@ COMPANY_AI_SETTINGS_KEY = "ai"
 RESERVED_AI_KEYS = {"system_prompt", "raw_prompt", "provider_api_key", "api_key", "secret", "password", "token"}
 FILE_SUMMARY_MAX_BYTES = 1 * 1024 * 1024
 FILE_SUMMARY_EXTENSIONS = {".txt", ".md", ".csv", ".json", ".log"}
-DOCUMENT_ANALYSIS_EXTENSIONS = FILE_SUMMARY_EXTENSIONS
+DOCUMENT_ANALYSIS_EXTENSIONS = FILE_SUMMARY_EXTENSIONS | {".pdf", ".docx"}
 IMAGE_ANALYSIS_MAX_BYTES = 5 * 1024 * 1024
 IMAGE_ANALYSIS_MAX_DIMENSION = 4096
 IMAGE_ANALYSIS_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
@@ -253,11 +256,8 @@ def secret_signal_count(text: str) -> int:
     return len(SECRET_VALUE_PATTERN.findall(text)) + len(BEARER_PATTERN.findall(text)) + len(PRIVATE_KEY_PATTERN.findall(text))
 
 
-def detect_image_dimensions(path: Path, extension: str) -> tuple[int, int]:
-    try:
-        header = path.read_bytes()[:4096]
-    except OSError as exc:
-        raise AIProviderError("file_not_available", "Image content is not available for analysis.") from exc
+def detect_image_dimensions(content: bytes, extension: str) -> tuple[int, int]:
+    header = content[:4096]
 
     try:
         if extension == ".png":
@@ -269,7 +269,7 @@ def detect_image_dimensions(path: Path, extension: str) -> tuple[int, int]:
             if len(header) < 4 or not header.startswith(b"\xff\xd8"):
                 raise ValueError("invalid jpeg")
             offset = 2
-            data = path.read_bytes()
+            data = content
             while offset < len(data):
                 if data[offset] != 0xFF:
                     offset += 1
@@ -316,11 +316,11 @@ def detect_image_dimensions(path: Path, extension: str) -> tuple[int, int]:
     raise AIProviderError("corrupted_image", "This image appears to be corrupted or unreadable.")
 
 
-def detect_audio_duration(path: Path, extension: str) -> float | None:
+def detect_audio_duration(content: bytes, extension: str) -> float | None:
     if extension != ".wav":
         return None
     try:
-        with wave.open(str(path), "rb") as audio_file:
+        with wave.open(io.BytesIO(content), "rb") as audio_file:
             frame_rate = audio_file.getframerate()
             frame_count = audio_file.getnframes()
             if frame_rate <= 0:
@@ -328,6 +328,26 @@ def detect_audio_duration(path: Path, extension: str) -> float | None:
             return float(frame_count) / float(frame_rate)
     except (wave.Error, EOFError, OSError) as exc:
         raise AIProviderError("corrupted_audio", "This audio file appears to be corrupted or unreadable.") from exc
+
+
+def extract_document_text(content: bytes, extension: str) -> tuple[str, str]:
+    """Extract only supported document text from bytes fetched through secure storage."""
+    if extension in FILE_SUMMARY_EXTENSIONS:
+        return content.decode("utf-8", errors="replace"), "utf8_text"
+    try:
+        if extension == ".pdf":
+            reader = PdfReader(io.BytesIO(content))
+            if reader.is_encrypted:
+                raise ValueError("encrypted pdf")
+            return "\n".join(page.extract_text() or "" for page in reader.pages), "pdf_text"
+        if extension == ".docx":
+            document = Document(io.BytesIO(content))
+            paragraphs = [paragraph.text for paragraph in document.paragraphs if paragraph.text.strip()]
+            table_cells = [cell.text for table in document.tables for row in table.rows for cell in row.cells if cell.text.strip()]
+            return "\n".join([*paragraphs, *table_cells]), "docx_text"
+    except Exception as exc:
+        raise AIProviderError("document_extraction_failed", "Text could not be extracted from this document.") from exc
+    raise AIProviderError("unsupported_file_type", "This document type is not supported for analysis yet.")
 
 
 class AIService:
@@ -636,6 +656,44 @@ class AIService:
         if job_type not in company_settings["allowed_ai_job_types"]:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="AI job type is not allowed for this company")
 
+        source_models = {
+            "work_object": WorkObject,
+            "project": Project,
+            "company": Company,
+            "file": Attachment,
+            "attachment": Attachment,
+        }
+        source_model = source_models.get(input_entity_type)
+        source_entity = (
+            db.scalar(
+                select(source_model)
+                .where(source_model.id == input_entity_id)
+                .with_for_update()
+            )
+            if source_model is not None
+            else None
+        )
+        source_version = getattr(source_entity, "updated_at", None)
+        source_version_value = source_version.isoformat() if source_version is not None else None
+        active_jobs = list(
+            db.scalars(
+                select(AIJob)
+                .where(
+                    AIJob.company_id == company_id,
+                    AIJob.job_type == job_type,
+                    AIJob.input_entity_type == input_entity_type,
+                    AIJob.input_entity_id == input_entity_id,
+                    AIJob.status.in_(("queued", "running")),
+                )
+                .order_by(AIJob.created_at.desc())
+                .limit(10)
+            ).all()
+        )
+        for active_job in active_jobs:
+            active_metadata = metadata_dict(active_job.metadata_json)
+            if active_metadata.get("source_version") in {None, source_version_value}:
+                return active_job
+
         provider_mode = cls.resolved_provider_mode(job_type, company_settings)
         requester_employee = linked_employee(db, current_user)
         job = AIJob(
@@ -666,6 +724,7 @@ class AIService:
                 "summary_feature": True,
                 "input_entity_type": input_entity_type,
                 "input_entity_id": str(input_entity_id),
+                "source_version": source_version_value,
             },
             related_entity_type=input_entity_type,
             related_entity_id=input_entity_id,
@@ -710,9 +769,6 @@ class AIService:
             input_entity_id=input_entity_id,
             current_user=current_user,
         )
-        job = cls.run_job(db, job=job, current_user=current_user)
-        if job.status in {"succeeded", "failed"}:
-            cls.record_summary_event(db, job=job, current_user=current_user, phase="succeeded" if job.status == "succeeded" else "failed")
         return job
 
     @classmethod
@@ -808,11 +864,6 @@ class AIService:
         )
         unavailable_message = "File content is not available for document analysis." if is_analysis else "File content is not available for AI summary."
         too_large_message = "This document is too large for AI document analysis v1." if is_analysis else "This file is too large for AI summary v1."
-        provider_message = (
-            "This file storage provider is not supported for document analysis yet."
-            if is_analysis
-            else "This file storage provider is not supported for AI summary yet."
-        )
         extension = file_extension(attachment)
         if is_secret_like_filename(attachment.original_file_name):
             raise AIProviderError(
@@ -825,19 +876,22 @@ class AIService:
                 unsupported_message,
                 {"unsupported_reason": "unsupported_file_type", "extension": extension},
             )
-        if attachment.storage_provider != FileService.STORAGE_PROVIDER:
-            raise AIProviderError("unsupported_storage_provider", provider_message)
         if attachment.file_size is not None and attachment.file_size > FILE_SUMMARY_MAX_BYTES:
             raise AIProviderError("file_too_large", too_large_message, {"file_size": attachment.file_size})
 
-        path = FileService.resolve_storage_path(attachment.storage_path)
-        if not path.exists() or not path.is_file():
-            raise AIProviderError("file_not_available", unavailable_message)
-        actual_size = path.stat().st_size
+        try:
+            content = FileService.read_attachment_bytes(attachment)
+        except HTTPException as exc:
+            raise AIProviderError("file_not_available", unavailable_message) from exc
+        actual_size = len(content)
         if actual_size > FILE_SUMMARY_MAX_BYTES:
             raise AIProviderError("file_too_large", too_large_message, {"file_size": actual_size})
-
-        raw_text = path.read_bytes().decode("utf-8", errors="replace")
+        try:
+            raw_text, extraction_mode = extract_document_text(content, extension) if is_analysis else (content.decode("utf-8", errors="replace"), "utf8_text")
+        except AIProviderError:
+            raise
+        if not raw_text.strip():
+            raise AIProviderError("document_extraction_failed", "Text could not be extracted from this document.")
         if PRIVATE_KEY_PATTERN.search(raw_text) or secret_signal_count(raw_text) >= 3:
             raise AIProviderError(
                 "file_contains_secrets",
@@ -888,7 +942,7 @@ class AIService:
             "text": sanitized_text,
             "truncated": truncated,
             "redacted_secret_like_values": was_redacted,
-            "extraction_mode": "utf8_text_only",
+            "extraction_mode": extraction_mode,
             "analysis_mode": purpose,
         }
 
@@ -909,18 +963,16 @@ class AIService:
                 "This image type is not supported for analysis yet.",
                 {"unsupported_reason": "unsupported_image_type", "extension": extension, "content_type": content_type or None},
             )
-        if attachment.storage_provider != FileService.STORAGE_PROVIDER:
-            raise AIProviderError("unsupported_storage_provider", "This file storage provider is not supported for image analysis yet.")
         if attachment.file_size is not None and attachment.file_size > IMAGE_ANALYSIS_MAX_BYTES:
             raise AIProviderError("image_too_large", "This image is too large for AI image analysis v1.", {"file_size": attachment.file_size})
-
-        path = FileService.resolve_storage_path(attachment.storage_path)
-        if not path.exists() or not path.is_file():
-            raise AIProviderError("file_not_available", "Image content is not available for analysis.")
-        actual_size = path.stat().st_size
+        try:
+            content = FileService.read_attachment_bytes(attachment)
+        except HTTPException as exc:
+            raise AIProviderError("file_not_available", "Image content is not available for analysis.") from exc
+        actual_size = len(content)
         if actual_size > IMAGE_ANALYSIS_MAX_BYTES:
             raise AIProviderError("image_too_large", "This image is too large for AI image analysis v1.", {"file_size": actual_size})
-        width, height = detect_image_dimensions(path, extension)
+        width, height = detect_image_dimensions(content, extension)
         if width <= 0 or height <= 0:
             raise AIProviderError("corrupted_image", "This image appears to be corrupted or unreadable.")
         if width > IMAGE_ANALYSIS_MAX_DIMENSION or height > IMAGE_ANALYSIS_MAX_DIMENSION:
@@ -985,18 +1037,16 @@ class AIService:
                 "This audio type is not supported for transcription yet.",
                 {"unsupported_reason": "unsupported_audio_type", "extension": extension, "content_type": content_type or None},
             )
-        if attachment.storage_provider != FileService.STORAGE_PROVIDER:
-            raise AIProviderError("unsupported_storage_provider", "This file storage provider is not supported for audio transcription yet.")
         if attachment.file_size is not None and attachment.file_size > AUDIO_TRANSCRIPTION_MAX_BYTES:
             raise AIProviderError("audio_too_large", "This audio file is too large for AI audio transcription v1.", {"file_size": attachment.file_size})
-
-        path = FileService.resolve_storage_path(attachment.storage_path)
-        if not path.exists() or not path.is_file():
-            raise AIProviderError("file_not_available", "Audio content is not available for transcription.")
-        actual_size = path.stat().st_size
+        try:
+            content = FileService.read_attachment_bytes(attachment)
+        except HTTPException as exc:
+            raise AIProviderError("file_not_available", "Audio content is not available for transcription.") from exc
+        actual_size = len(content)
         if actual_size > AUDIO_TRANSCRIPTION_MAX_BYTES:
             raise AIProviderError("audio_too_large", "This audio file is too large for AI audio transcription v1.", {"file_size": actual_size})
-        duration_seconds = detect_audio_duration(path, extension)
+        duration_seconds = detect_audio_duration(content, extension)
         if duration_seconds is not None and duration_seconds > AUDIO_TRANSCRIPTION_MAX_DURATION_SECONDS:
             raise AIProviderError(
                 "audio_too_long",
@@ -1428,7 +1478,7 @@ class AIService:
         db: Session,
         *,
         job: AIJob,
-        current_user: User,
+        current_user: User | None,
         error_code: str,
         error_message: str,
         metadata: dict[str, Any],

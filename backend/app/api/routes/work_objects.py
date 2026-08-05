@@ -1027,7 +1027,12 @@ def add_work_object_attachment(
     if uploaded_by_employee_id is not None:
         uploader = get_or_404(db, Employee, uploaded_by_employee_id, label="Uploader")
         ensure_company(uploader, company_id, label="Uploader")
-    stored_file = FileService.save_upload(file=file, company_id=company_id, work_object_id=work_object_id)
+    stored_file = FileService.save_upload(
+        file=file,
+        company_id=company_id,
+        linked_entity_type="work_object",
+        linked_entity_id=work_object_id,
+    )
     attachment_payload = AttachmentCreate(
         company_id=company_id,
         work_object_id=work_object_id,

@@ -1,4 +1,4 @@
-import { Archive, Eye, Pencil, Plus, UserPlus } from "lucide-react";
+import { Archive, Download, Eye, FileText, Pencil, Plus, Upload, UserPlus } from "lucide-react";
 import { type FormEvent, useCallback, useMemo, useState } from "react";
 
 import { AISummaryPanel } from "../components/ai/AISummaryPanel";
@@ -15,8 +15,10 @@ import { SectionPanel } from "../components/ui/SectionPanel";
 import { EmptyState, ErrorState, LoadingState } from "../components/ui/States";
 import { priorityTone, statusTone } from "../components/ui/tone";
 import { api } from "../services/api";
+import { aiJobTerminalError, pollAIJob } from "../services/aiJobPolling";
 import type {
   AIJob,
+  Attachment,
   Event as FebGridEvent,
   Project,
   ProjectCreatePayload,
@@ -118,6 +120,11 @@ export function ProjectsPage({
   const [detailMembers, setDetailMembers] = useState<ProjectMember[]>([]);
   const [detailEvents, setDetailEvents] = useState<FebGridEvent[]>([]);
   const [detailWorkObjects, setDetailWorkObjects] = useState<WorkObject[]>([]);
+  const [detailAttachments, setDetailAttachments] = useState<Attachment[]>([]);
+  const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
+  const [attachmentDescription, setAttachmentDescription] = useState("");
+  const [isUploadingAttachment, setIsUploadingAttachment] = useState(false);
+  const [attachmentError, setAttachmentError] = useState<string | null>(null);
   const [isDetailLoading, setIsDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
   const [aiSummary, setAISummary] = useState<AIJob | null>(null);
@@ -176,10 +183,11 @@ export function ProjectsPage({
       setProjectMemoryMessage(null);
       setProjectMemoryError(null);
       try {
-        const [membersResult, eventsResult, workObjectsResult, summaryResult] = await Promise.allSettled([
+        const [membersResult, eventsResult, workObjectsResult, attachmentsResult, summaryResult] = await Promise.allSettled([
           api.projectMembers(projectId, selectedCompanyId),
           api.projectTimeline(projectId, selectedCompanyId),
           api.projectWorkObjects(projectId, selectedCompanyId),
+          api.projectAttachments(projectId, selectedCompanyId),
           api.latestProjectAISummary(projectId, selectedCompanyId),
         ]);
         if (membersResult.status === "fulfilled") setDetailMembers(membersResult.value);
@@ -188,6 +196,8 @@ export function ProjectsPage({
         else setDetailError("Unable to load project timeline.");
         if (workObjectsResult.status === "fulfilled") setDetailWorkObjects(workObjectsResult.value);
         else setDetailError("Unable to load linked work objects.");
+        if (attachmentsResult.status === "fulfilled") setDetailAttachments(attachmentsResult.value);
+        else setAttachmentError("Unable to load project attachments.");
         if (summaryResult.status === "fulfilled") setAISummary(summaryResult.value);
         else setAISummaryError("Unable to load the latest AI project summary.");
       } finally {
@@ -299,6 +309,10 @@ export function ProjectsPage({
     setDetailMembers([]);
     setDetailEvents([]);
     setDetailWorkObjects([]);
+    setDetailAttachments([]);
+    setAttachmentFile(null);
+    setAttachmentDescription("");
+    setAttachmentError(null);
     setAISummary(null);
     setAISummaryError(null);
     setMemberForm(initialMemberForm);
@@ -380,6 +394,51 @@ export function ProjectsPage({
     }
   }
 
+  async function handleUploadAttachment(event: FormEvent<HTMLFormElement>): Promise<void> {
+    event.preventDefault();
+    if (!detailProject || !selectedCompanyId || !attachmentFile) {
+      setAttachmentError("Choose a file to upload.");
+      return;
+    }
+    setIsUploadingAttachment(true);
+    setAttachmentError(null);
+    try {
+      await api.uploadProjectAttachment(detailProject.id, selectedCompanyId, attachmentFile, attachmentDescription.trim() || null);
+      setAttachmentFile(null);
+      setAttachmentDescription("");
+      await loadProjectDetail(detailProject.id);
+    } catch {
+      setAttachmentError("File could not be uploaded. Check the type and size, then try again.");
+    } finally {
+      setIsUploadingAttachment(false);
+    }
+  }
+
+  async function handleDownloadAttachment(attachment: Attachment, preview = false): Promise<void> {
+    if (!selectedCompanyId) return;
+    setAttachmentError(null);
+    try {
+      const blob = preview
+        ? await api.previewAttachment(attachment.id, selectedCompanyId)
+        : await api.downloadAttachment(attachment.id, selectedCompanyId);
+      const objectUrl = window.URL.createObjectURL(blob);
+      if (preview) {
+        window.open(objectUrl, "_blank", "noopener,noreferrer");
+        window.setTimeout(() => window.URL.revokeObjectURL(objectUrl), 60_000);
+        return;
+      }
+      const link = document.createElement("a");
+      link.href = objectUrl;
+      link.download = attachment.original_file_name;
+      document.body.append(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(objectUrl);
+    } catch {
+      setAttachmentError(preview ? "Preview is not available for this file type." : "File could not be downloaded.");
+    }
+  }
+
   async function handleGenerateAISummary(): Promise<void> {
     if (!detailProject || !selectedCompanyId) return;
     setIsAISummaryGenerating(true);
@@ -387,7 +446,9 @@ export function ProjectsPage({
     try {
       const job = await api.generateProjectAISummary(detailProject.id, selectedCompanyId);
       setAISummary(job);
-      void loadProjectDetail(detailProject.id);
+      const completedJob = await pollAIJob(job, selectedCompanyId, { onUpdate: setAISummary });
+      const terminalError = aiJobTerminalError(completedJob);
+      if (terminalError) setAISummaryError(terminalError);
     } catch (caughtError) {
       setAISummaryError(caughtError instanceof Error ? caughtError.message : "AI project summary could not be generated.");
     } finally {
@@ -655,6 +716,48 @@ export function ProjectsPage({
               targetEntityType="project"
               onChanged={() => void loadProjectDetail(detailProject.id)}
             />
+
+            <section className="rounded-lg border border-grid-200">
+              <div className="border-b border-grid-200 px-4 py-3">
+                <h3 className="text-sm font-bold text-ink-950">Attachments</h3>
+              </div>
+              <form className="grid gap-3 border-b border-grid-100 p-4 sm:grid-cols-[1fr_1fr_auto]" onSubmit={handleUploadAttachment}>
+                <FieldShell label="File">
+                  <TextInput
+                    accept=".png,.jpg,.jpeg,.webp,.pdf,.csv,.txt,.md,.json,.log,.doc,.docx,.mp3,.wav,.m4a,.ogg"
+                    type="file"
+                    onChange={(event) => setAttachmentFile(event.target.files?.[0] ?? null)}
+                  />
+                </FieldShell>
+                <FieldShell label="Description">
+                  <TextInput value={attachmentDescription} onChange={(event) => setAttachmentDescription(event.target.value)} />
+                </FieldShell>
+                <div className="flex items-end">
+                  <Button disabled={isUploadingAttachment || !attachmentFile} type="submit" variant="primary" icon={<Upload className="size-4" aria-hidden="true" />}>
+                    {isUploadingAttachment ? "Uploading..." : "Upload"}
+                  </Button>
+                </div>
+              </form>
+              {attachmentError ? <ErrorState message={attachmentError} onRetry={() => void loadProjectDetail(detailProject.id)} /> : null}
+              {detailAttachments.length === 0 && !attachmentError ? (
+                <EmptyState description="Project files and supporting documents will appear here." title="No attachments yet" />
+              ) : (
+                <div className="divide-y divide-grid-100">
+                  {detailAttachments.map((attachment) => (
+                    <article key={attachment.id} className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="min-w-0">
+                        <p className="flex items-center gap-2 truncate text-sm font-bold text-ink-950"><FileText className="size-4 shrink-0 text-ink-500" aria-hidden="true" />{attachment.original_file_name}</p>
+                        <p className="mt-1 text-xs font-semibold text-ink-500">{compactList([attachment.content_type ?? "Unknown type", formatDate(attachment.created_at)])}</p>
+                      </div>
+                      <div className="flex shrink-0 gap-2">
+                        <Button className="size-9 px-0" aria-label={`Preview ${attachment.original_file_name}`} title={`Preview ${attachment.original_file_name}`} icon={<Eye className="size-4" aria-hidden="true" />} onClick={() => void handleDownloadAttachment(attachment, true)}><span className="sr-only">Preview</span></Button>
+                        <Button className="size-9 px-0" aria-label={`Download ${attachment.original_file_name}`} title={`Download ${attachment.original_file_name}`} icon={<Download className="size-4" aria-hidden="true" />} onClick={() => void handleDownloadAttachment(attachment)}><span className="sr-only">Download</span></Button>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              )}
+            </section>
 
             <section className="grid gap-4 lg:grid-cols-2">
               <div className="rounded-lg border border-grid-200">

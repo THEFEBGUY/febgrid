@@ -461,6 +461,9 @@ export const api = {
   updateProjectPriority: (projectId: string, payload: { company_id: string; priority: string }) => request<Project>(`/projects/${projectId}/priority`, jsonInit("PATCH", payload)),
   updateProjectOwner: (projectId: string, payload: { company_id: string; owner_employee_id?: string | null; owner_user_id?: string | null }) => request<Project>(`/projects/${projectId}/owner`, jsonInit("PATCH", payload)),
   projectMembers: (projectId: string, companyId: string) => request<ProjectMember[]>(companyPath(`/projects/${projectId}/members`, companyId)),
+  projectAttachments: (projectId: string, companyId: string) => request<Attachment[]>(companyPath(`/projects/${projectId}/attachments`, companyId)),
+  uploadProjectAttachment: (projectId: string, companyId: string, file: File, description?: string | null) =>
+    request<Attachment>(`/projects/${projectId}/attachments`, { method: "POST", body: attachmentFormData(file, companyId, description) }),
   addProjectMember: (projectId: string, payload: ProjectMemberCreatePayload) => request<ProjectMember>(`/projects/${projectId}/members`, jsonInit("POST", payload)),
   removeProjectMember: (projectId: string, companyId: string, employeeId: string) => request<void>(companyPath(`/projects/${projectId}/members/${employeeId}`, companyId), { method: "DELETE" }),
   projectTimeline: (projectId: string, companyId: string) => request<Event[]>(companyPath(`/projects/${projectId}/timeline`, companyId)),
@@ -488,6 +491,7 @@ export const api = {
   updateAttachment: (attachmentId: string, companyId: string, payload: AttachmentUpdatePayload) => request<Attachment>(companyPath(`/attachments/${attachmentId}`, companyId), jsonInit("PATCH", payload)),
   deleteAttachment: (attachmentId: string, companyId: string) => request<void>(companyPath(`/attachments/${attachmentId}`, companyId), { method: "DELETE" }),
   downloadAttachment: (attachmentId: string, companyId: string) => requestBlob(companyPath(`/attachments/${attachmentId}/download`, companyId)),
+  previewAttachment: (attachmentId: string, companyId: string) => requestBlob(companyPath(`/attachments/${attachmentId}/preview`, companyId)),
   files: (companyId: string, params: { q?: string; content_type?: string; include_archived?: boolean; include_deleted?: boolean } = {}) => {
     const searchParams = new URLSearchParams({ company_id: companyId });
     Object.entries(params).forEach(([key, value]) => {
@@ -527,6 +531,7 @@ export const api = {
     });
     return request<AIJob[]>(`/ai/jobs?${searchParams.toString()}`);
   },
+  aiJob: (jobId: string, companyId: string) => request<AIJob>(companyPath(`/ai/jobs/${jobId}`, companyId)),
   aiJobQueueSummary: (companyId: string) => request<AIJobQueueSummary>(companyPath("/ai/jobs/queue-summary", companyId)),
   processNextAIJob: (companyId: string) => request<AIJobProcessResult>(companyPath("/ai/jobs/process-next", companyId), jsonInit("POST", {})),
   recoverStaleAIJobs: (companyId: string) => request<AIJobRecoveryResult>(companyPath("/ai/jobs/recover-stale", companyId), jsonInit("POST", {})),

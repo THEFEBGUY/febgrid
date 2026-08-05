@@ -33,6 +33,12 @@ services:
         value: mock
       - key: AI_EXTERNAL_PROCESSING_ENABLED
         value: "false"
+      - key: AI_JOB_WORKER_ENABLED
+        value: "true"
+      - key: AI_JOB_WORKER_POLL_SECONDS
+        value: "2"
+      - key: AI_JOB_LEASE_SECONDS
+        value: "600"
 
   - type: web
     runtime: docker

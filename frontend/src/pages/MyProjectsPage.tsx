@@ -11,6 +11,7 @@ import { SectionPanel } from "../components/ui/SectionPanel";
 import { EmptyState, ErrorState, LoadingState } from "../components/ui/States";
 import { priorityTone, statusTone } from "../components/ui/tone";
 import { api } from "../services/api";
+import { aiJobTerminalError, pollAIJob } from "../services/aiJobPolling";
 import type { AIJob, Event as FebGridEvent, Project, WorkObject } from "../types/api";
 import type { ModulePageProps } from "../types/page";
 import { compactList, formatDate, formatLabel, formatTime } from "../utils/format";
@@ -86,7 +87,9 @@ export function MyProjectsPage({
     try {
       const job = await api.generateProjectAISummary(detailProject.id, selectedCompanyId);
       setAISummary(job);
-      void loadDetail(detailProject.id);
+      const completedJob = await pollAIJob(job, selectedCompanyId, { onUpdate: setAISummary });
+      const terminalError = aiJobTerminalError(completedJob);
+      if (terminalError) setAISummaryError(terminalError);
     } catch (caughtError) {
       setAISummaryError(caughtError instanceof Error ? caughtError.message : "AI project summary could not be generated.");
     } finally {

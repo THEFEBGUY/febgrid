@@ -26,6 +26,7 @@ import { SectionPanel } from "../components/ui/SectionPanel";
 import { EmptyState, ErrorState, LoadingState } from "../components/ui/States";
 import { priorityTone, statusTone } from "../components/ui/tone";
 import { api } from "../services/api";
+import { aiJobTerminalError, pollAIJob } from "../services/aiJobPolling";
 import type { AIJob, CompanyPulseSnapshot, DashboardSummary, Employee } from "../types/api";
 import type { Metric } from "../types/domain";
 import type { ModulePageProps } from "../types/page";
@@ -150,6 +151,9 @@ export function DashboardPage({
     try {
       const job = await api.generateCompanyAIBrief(companyId);
       setCompanyBrief(job);
+      const completedJob = await pollAIJob(job, companyId, { onUpdate: setCompanyBrief });
+      const terminalError = aiJobTerminalError(completedJob);
+      if (terminalError) setBriefError(terminalError);
     } catch (error) {
       setBriefError(error instanceof Error ? error.message : "Unable to generate the company brief.");
     } finally {

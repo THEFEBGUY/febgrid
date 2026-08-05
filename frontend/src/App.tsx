@@ -272,6 +272,7 @@ export function App(): JSX.Element {
             onCreateCustomField={febGrid.createCustomField}
             onCreateWorkObjectType={febGrid.createWorkObjectType}
             onProcessNextAIJob={febGrid.processNextAIJob}
+            onRefreshAIJobs={febGrid.refreshAIQueueModules}
             onRecoverStaleAIJobs={febGrid.recoverStaleAIJobs}
             onRetryAIJob={febGrid.retryAIJob}
             onRunAIJob={febGrid.runAIJob}

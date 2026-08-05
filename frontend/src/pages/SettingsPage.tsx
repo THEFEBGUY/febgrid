@@ -12,6 +12,7 @@ import { ModuleBoundary } from "../components/ui/ModuleBoundary";
 import { SectionPanel } from "../components/ui/SectionPanel";
 import { EmptyState } from "../components/ui/States";
 import { api } from "../services/api";
+import { aiJobTerminalError, pollAIJob } from "../services/aiJobPolling";
 import type {
   Attachment,
   AttachmentUpdatePayload,
@@ -32,6 +33,7 @@ import type {
 import type { ModulePageProps } from "../types/page";
 import { isSupportedAudioAttachment, isSupportedImageAttachment } from "../utils/files";
 import { compactList, formatDate, formatLabel } from "../utils/format";
+import { AI_CAPABILITIES_HEADING, displayAIModel, displayAIProvider, displayAIText } from "../utils/aiDisplay";
 
 interface SettingsPageProps extends ModulePageProps {
   currentUserRole: UserRole | null;
@@ -44,6 +46,7 @@ interface SettingsPageProps extends ModulePageProps {
   onCreateCustomField: (payload: Omit<CustomFieldCreatePayload, "company_id">) => Promise<void>;
   onCreateWorkObjectType: (payload: Omit<WorkObjectTypeCreatePayload, "company_id">) => Promise<void>;
   onProcessNextAIJob: () => Promise<void>;
+  onRefreshAIJobs: () => Promise<void>;
   onRecoverStaleAIJobs: () => Promise<void>;
   onRetryAIJob: (jobId: string) => Promise<void>;
   onRunAIJob: (jobId: string) => Promise<void>;
@@ -153,6 +156,7 @@ export function SettingsPage({
   onCreateCustomField,
   onCreateWorkObjectType,
   onProcessNextAIJob,
+  onRefreshAIJobs,
   onRecoverStaleAIJobs,
   onRetryAIJob,
   onRunAIJob,
@@ -450,7 +454,7 @@ export function SettingsPage({
       ),
     },
     { key: "status", label: "Status", render: (job) => <Badge label={formatLabel(job.status)} tone={aiJobTone(job.status)} /> },
-    { key: "provider", label: "Provider", render: (job) => <Badge label={formatLabel(job.provider_mode)} tone="slate" /> },
+    { key: "provider", label: "Provider", render: (job) => <Badge label={displayAIProvider(job.provider_mode)} tone="slate" /> },
     {
       key: "attempts",
       label: "Attempts",
@@ -628,6 +632,9 @@ export function SettingsPage({
           ? await api.generateFileAIAnalysis(editingFile.id, selectedCompany.id)
           : await api.generateFileAISummary(editingFile.id, selectedCompany.id);
       setFileAISummary(job);
+      const completedJob = await pollAIJob(job, selectedCompany.id, { onUpdate: setFileAISummary });
+      const terminalError = aiJobTerminalError(completedJob);
+      if (terminalError) setFileAISummaryError(terminalError);
     } catch (caughtError) {
       setFileAISummaryError(
         caughtError instanceof Error
@@ -891,7 +898,7 @@ export function SettingsPage({
   const aiProviderStatus = data.aiProviderStatus;
   const aiSafetySettings = data.aiSafetySettings;
   const displayedProviderMode = aiProviderStatus?.provider_mode ?? data.aiCapabilities?.provider_mode ?? "mock";
-  const displayedModelName = aiProviderStatus?.model_name ?? (displayedProviderMode === "mock" ? "mock-deterministic" : "Not configured");
+  const displayedModelName = displayAIModel(aiProviderStatus?.model_name ?? (displayedProviderMode === "mock" ? "mock-deterministic" : null));
   const externalProcessingAllowed = Boolean(aiSafetySettings?.external_ai_processing_allowed ?? aiProviderStatus?.external_processing_allowed);
   const aiEnabled = Boolean(aiSafetySettings?.ai_enabled ?? aiProviderStatus?.ai_enabled ?? true);
   const imageAnalysisRealSupported = Boolean(aiProviderStatus?.supported_real_job_types.includes("image_analysis_safe"));
@@ -1118,6 +1125,9 @@ export function SettingsPage({
             <Button disabled={!canManage || !selectedCompany || isMutating} icon={<Play className="size-4" aria-hidden="true" />} onClick={() => void handleProcessNextAIJob()}>
               Process next
             </Button>
+            <Button disabled={!canManage || !selectedCompany || isMutating} icon={<RotateCcw className="size-4" aria-hidden="true" />} onClick={() => void onRefreshAIJobs()}>
+              Refresh jobs
+            </Button>
             <Button disabled={!canManage || !selectedCompany || isMutating} icon={<RotateCcw className="size-4" aria-hidden="true" />} onClick={() => void handleRecoverStaleAIJobs()}>
               Recover stale
             </Button>
@@ -1128,9 +1138,9 @@ export function SettingsPage({
           <div className="grid gap-3 lg:grid-cols-[0.9fr_1.1fr]">
             <MagicBentoCard className="p-4" tone="teal">
               <p className="text-xs font-black uppercase tracking-normal text-ink-500">Provider mode</p>
-              <p className="mt-2 text-2xl font-black text-ink-950">{formatLabel(displayedProviderMode)}</p>
+              <p className="mt-2 text-2xl font-black text-ink-950">{displayAIProvider(displayedProviderMode)}</p>
               <p className="mt-1 text-sm font-semibold text-ink-500">
-                {aiProviderStatus?.message ?? "AI provider status loads after company modules finish."}
+                {displayAIText(aiProviderStatus?.message) ?? "AI provider status loads after company modules finish."}
               </p>
             </MagicBentoCard>
             <div className="febgrid-muted-surface rounded-lg p-4">
@@ -1176,7 +1186,7 @@ export function SettingsPage({
                 </div>
               </div>
               <p className="mt-3 text-sm font-semibold text-ink-500">
-                Groq is the current real AI provider target. Switching providers later should only require environment/config changes.
+                FebGuyAI powers secure, provider-managed intelligence across supported FebGrid workflows.
               </p>
             </div>
           </div>
@@ -1205,7 +1215,7 @@ export function SettingsPage({
               </div>
             </div>
             <div className="rounded-lg border border-grid-200 bg-white/70 p-4">
-              <p className="text-sm font-bold text-ink-950">Capabilities prepared for Phase 3</p>
+              <p className="text-sm font-bold text-ink-950">{AI_CAPABILITIES_HEADING}</p>
               <div className="mt-3 flex flex-wrap gap-2">
                 {(data.aiCapabilities?.capabilities ?? []).map((capability) => (
                   <Badge key={capability.job_type} label={capability.label} tone={capability.mock_only ? "blue" : "teal"} />
@@ -1292,7 +1302,7 @@ export function SettingsPage({
             FebGrid will only send server-built, allowlisted context for supported jobs. Secrets, passwords, tokens, unsupported raw files, file paths, and API keys must never be sent.
           </div>
           <p className="text-sm font-semibold text-ink-600">
-            Groq is the current real provider target. If `GROQ_API_KEY` is not configured locally, real jobs will fail safely without exposing any secret.
+            FebGuyAI uses server-managed provider configuration. When it is unavailable, real jobs fail safely without exposing credentials or provider secrets.
           </p>
           <div className="flex justify-end gap-2 border-t border-grid-200 pt-4">
             <Button onClick={() => setIsExternalAIWarningOpen(false)}>Cancel</Button>

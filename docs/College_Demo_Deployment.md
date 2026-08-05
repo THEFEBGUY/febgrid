@@ -45,7 +45,10 @@ PUBLIC_APP_URL=https://<your-vercel-production-domain>
 CORS_ORIGINS=https://<your-vercel-production-domain>,http://localhost:5173
 SUPABASE_URL=https://<your-project-ref>.supabase.co
 SUPABASE_ANON_KEY=<Supabase publishable/anon key>
+SUPABASE_SERVICE_ROLE_KEY=<server-only Supabase service-role key>
 SUPABASE_AUTH_TIMEOUT_SECONDS=10
+SUPABASE_STORAGE_BUCKET=work-files
+SUPABASE_STORAGE_TIMEOUT_SECONDS=30
 JAVA_BULK_INVITE_BASE_URL=https://<your-java-validator-service>.onrender.com
 JAVA_BULK_INVITE_SERVICE_KEY=<random value shared only with Java>
 JAVA_BULK_INVITE_TIMEOUT_SECONDS=20
@@ -53,10 +56,19 @@ BULK_INVITE_MAX_ROWS=500
 BULK_INVITE_MAX_FILE_BYTES=2097152
 AI_PROVIDER_MODE=mock
 AI_EXTERNAL_PROCESSING_ENABLED=false
+AI_JOB_WORKER_ENABLED=true
+AI_JOB_WORKER_POLL_SECONDS=2
+AI_JOB_LEASE_SECONDS=600
 ```
 
 `PUBLIC_APP_URL` is the sole source of generated acceptance links. Its local
 default remains `http://localhost:5173`, so local invite links keep working.
+
+The existing `work-files` Supabase Storage bucket must remain **private**. Set
+`SUPABASE_SERVICE_ROLE_KEY` only on the FastAPI Render service; never add it to
+Vercel or any `VITE_*` variable. FebGrid streams authorized file downloads and
+previews through FastAPI, so it does not need public bucket access or persistent
+local upload storage.
 
 ### Render Java validator web service
 
