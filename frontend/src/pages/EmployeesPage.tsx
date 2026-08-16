@@ -10,6 +10,7 @@ import {
   Power,
   RotateCcw,
   Send,
+  Trash2,
   UserRoundCheck,
   XCircle,
 } from "lucide-react";
@@ -44,7 +45,8 @@ import { compactList, formatDate, formatLabel } from "../utils/format";
 interface EmployeesPageProps extends ModulePageProps {
   onCreateEmployee: (payload: Omit<EmployeeCreatePayload, "company_id">) => Promise<void>;
   onUpdateEmployee: (employeeId: string, payload: EmployeeUpdatePayload) => Promise<void>;
-  onDeactivateEmployee: (employeeId: string) => Promise<void>;
+  onDeleteEmployee: (employeeId: string) => Promise<void>;
+  onUpdateEmployeeActivation: (employeeId: string, isActive: boolean) => Promise<void>;
   onUpdateEmployeeStatus: (employeeId: string, currentStatus: string) => Promise<void>;
   onCreateInvitation: (payload: Omit<EmployeeInvitationCreatePayload, "company_id">) => Promise<EmployeeInvitationActionResult | null>;
   onResendInvitation: (invitationId: string) => Promise<EmployeeInvitationActionResult | null>;
@@ -159,7 +161,8 @@ export function EmployeesPage({
   onRetry,
   onCreateEmployee,
   onUpdateEmployee,
-  onDeactivateEmployee,
+  onDeleteEmployee,
+  onUpdateEmployeeActivation,
   onUpdateEmployeeStatus,
   onCreateInvitation,
   onResendInvitation,
@@ -186,6 +189,7 @@ export function EmployeesPage({
   const [isBulkInviteOpen, setIsBulkInviteOpen] = useState(false);
   const [isConfirmInviteOpen, setIsConfirmInviteOpen] = useState(false);
   const [linkResult, setLinkResult] = useState<LinkResult | null>(null);
+  const [deletingEmployee, setDeletingEmployee] = useState<Employee | null>(null);
   const [rejectingInvitation, setRejectingInvitation] = useState<EmployeeInvitation | null>(null);
   const [rejectionReason, setRejectionReason] = useState("");
   const [searchFilter, setSearchFilter] = useState("");
@@ -295,14 +299,39 @@ export function EmployeesPage({
     }
   }
 
-  async function handleDeactivateEmployee(employeeId: string): Promise<void> {
+  function confirmDelete(employee: Employee): void {
+    setDeletingEmployee(employee);
+    setRowActionError(null);
+  }
+
+  async function handleDeleteEmployee(): Promise<void> {
+    if (!deletingEmployee || pendingEmployeeIds.has(deletingEmployee.id)) return;
+    const employeeId = deletingEmployee.id;
+    setPendingEmployeeIds((current) => new Set(current).add(employeeId));
+    setRowActionError(null);
+    try {
+      await onDeleteEmployee(employeeId);
+      setDeletingEmployee(null);
+    } catch (error) {
+      setRowActionError(error instanceof Error ? error.message : "Unable to delete this employee.");
+      setDeletingEmployee(null);
+    } finally {
+      setPendingEmployeeIds((current) => {
+        const next = new Set(current);
+        next.delete(employeeId);
+        return next;
+      });
+    }
+  }
+
+  async function handleUpdateEmployeeActivation(employeeId: string, isActive: boolean): Promise<void> {
     if (pendingEmployeeIds.has(employeeId)) return;
     setPendingEmployeeIds((current) => new Set(current).add(employeeId));
     setRowActionError(null);
     try {
-      await onDeactivateEmployee(employeeId);
+      await onUpdateEmployeeActivation(employeeId, isActive);
     } catch (error) {
-      setRowActionError(error instanceof Error ? error.message : "Unable to deactivate this employee.");
+      setRowActionError(error instanceof Error ? error.message : "Unable to update this employee's activation status.");
     } finally {
       setPendingEmployeeIds((current) => {
         const next = new Set(current);
@@ -355,16 +384,26 @@ export function EmployeesPage({
       ),
     },
     {
-      key: "account",
-      label: "Account",
-      render: (employee) => (
-        <div className="flex flex-col gap-1">
-          <Badge label={formatLabel(employee.account_status)} tone={accountStatusTone(employee.account_status)} />
-          <span className="text-xs font-medium text-ink-500">{formatLabel(employee.activation_status)}</span>
-        </div>
-      ),
+      key: "active",
+      label: "Active",
+      render: (employee) => {
+        const isActive = employee.is_active;
+        const toneClasses = isActive
+          ? "border-green-200 bg-green-50 text-green-700 hover:bg-green-100 focus:border-green-500 focus:ring-green-100"
+          : "border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 focus:border-rose-500 focus:ring-rose-100";
+        return (
+          <button
+            type="button"
+            onClick={() => void handleUpdateEmployeeActivation(employee.id, !isActive)}
+            disabled={isMutating || pendingEmployeeIds.has(employee.id)}
+            aria-label={`Toggle activation for ${employee.full_name}`}
+            className={`inline-flex h-8 min-w-[72px] items-center justify-center rounded-md border px-3 text-xs font-bold shadow-sm transition-colors focus:outline-none focus:ring-4 disabled:cursor-not-allowed disabled:opacity-50 ${toneClasses}`}
+          >
+            <span className="truncate">{isActive ? "Active" : "Inactive"}</span>
+          </button>
+        );
+      },
     },
-    { key: "active", label: "Active", render: (employee) => <Badge label={employee.is_active ? "Active" : "Inactive"} tone={employee.is_active ? "green" : "slate"} /> },
     {
       key: "actions",
       label: "Actions",
@@ -378,13 +417,13 @@ export function EmployeesPage({
           </Button>
           <Button
             className="size-9 px-0"
-            aria-label="Deactivate employee"
-            title="Deactivate employee"
-            disabled={isMutating || pendingEmployeeIds.has(employee.id) || !employee.is_active}
-            icon={<Power className="size-4" aria-hidden="true" />}
-            onClick={() => void handleDeactivateEmployee(employee.id)}
+            aria-label="Delete employee"
+            title="Delete employee"
+            disabled={isMutating || pendingEmployeeIds.has(employee.id)}
+            icon={<Trash2 className="size-4 text-danger-600" aria-hidden="true" />}
+            onClick={() => confirmDelete(employee)}
           >
-            <span className="sr-only">Deactivate employee</span>
+            <span className="sr-only">Delete employee</span>
           </Button>
         </div>
       ),
@@ -1041,6 +1080,17 @@ export function EmployeesPage({
             />
           </div>
         ) : null}
+      </Modal>
+
+      <Modal description={`Are you sure you want to delete ${deletingEmployee?.full_name}? This will permanently remove their profile. Company work history/audit history that must be retained will be preserved according to the existing database relationships.`} isOpen={!!deletingEmployee} title="Delete employee permanently?" onClose={() => setDeletingEmployee(null)}>
+        <div className="flex justify-end gap-3 p-5 border-t border-grid-200">
+          <Button variant="secondary" onClick={() => setDeletingEmployee(null)}>
+            Cancel
+          </Button>
+          <Button variant="primary" className="bg-danger-600 hover:bg-danger-700 text-white border-danger-600 focus:ring-danger-100" disabled={isMutating || (deletingEmployee != null && pendingEmployeeIds.has(deletingEmployee.id))} onClick={() => void handleDeleteEmployee()}>
+            Delete employee
+          </Button>
+        </div>
       </Modal>
     </>
   );

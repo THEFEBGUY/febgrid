@@ -14,7 +14,7 @@ from app.models.employee import Employee
 from app.models.event import Event
 from app.models.team import Team, TeamMember
 from app.models.user import User
-from app.schemas.employee import EmployeeCreate, EmployeeRead, EmployeeSelfUpdate, EmployeeStatusUpdate, EmployeeUpdate
+from app.schemas.employee import EmployeeActivationUpdate, EmployeeCreate, EmployeeRead, EmployeeSelfUpdate, EmployeeStatusUpdate, EmployeeUpdate
 from app.schemas.event import EventRead
 from app.services.event_service import EventService
 from app.services.invitation_service import InvitationService
@@ -161,7 +161,7 @@ def list_employees(
     current_user: User = Depends(get_current_user),
     status_filter: str | None = Query(default=None, alias="status"),
     team_id: UUID | None = None,
-    include_inactive: bool = False,
+    include_inactive: bool = True,
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
 ) -> list[Employee]:
@@ -288,18 +288,65 @@ def delete_employee(
     ensure_role(current_user, OWNER_ADMIN_ROLES)
     employee = get_or_404(db, Employee, employee_id, label="Employee")
     ensure_company(employee, company_id, label="Employee")
-    employee.is_active = False
+    
+    user = db.get(User, employee.user_id) if employee.user_id else None
+    
     EventService.record_event(
         db,
         company_id=company_id,
         actor_employee_id=actor_employee_id,
-        event_type="employee.deactivated",
-        title=f"{employee.full_name} deactivated",
+        event_type="employee.deleted",
+        title=f"{employee.full_name} deleted",
+        target_entity_type="employee",
+        target_entity_id=employee.id,
+    )
+    
+    if user:
+        user.is_active = False
+        
+    db.delete(employee)
+    db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.patch("/{employee_id}/activation", response_model=EmployeeRead)
+def update_employee_activation(
+    employee_id: UUID,
+    payload: EmployeeActivationUpdate,
+    db: Session = Depends(db_session),
+    current_user: User = Depends(get_current_user),
+) -> Employee:
+    ensure_company_access(current_user, payload.company_id)
+    ensure_role(current_user, OWNER_ADMIN_ROLES)
+    employee = get_or_404(db, Employee, employee_id, label="Employee")
+    ensure_company(employee, payload.company_id, label="Employee")
+    
+    if employee.is_active == payload.is_active:
+        return employee
+        
+    employee.is_active = payload.is_active
+    user = db.get(User, employee.user_id) if employee.user_id else None
+    
+    if user:
+        user.is_active = payload.is_active
+
+    if not payload.is_active:
+        employee.status = "offline"
+        
+    event_type = "employee.activated" if payload.is_active else "employee.deactivated"
+    title = f"{employee.full_name} activated" if payload.is_active else f"{employee.full_name} deactivated"
+    
+    EventService.record_event(
+        db,
+        company_id=payload.company_id,
+        actor_employee_id=payload.actor_employee_id,
+        event_type=event_type,
+        title=title,
         target_entity_type="employee",
         target_entity_id=employee.id,
     )
     db.commit()
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
+    return employee
 
 
 @router.patch("/{employee_id}/status", response_model=EmployeeRead)

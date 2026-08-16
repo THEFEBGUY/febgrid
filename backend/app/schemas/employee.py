@@ -92,6 +92,12 @@ class EmployeeStatusUpdate(FebGridModel):
     actor_employee_id: UUID | None = None
 
 
+class EmployeeActivationUpdate(FebGridModel):
+    company_id: UUID
+    is_active: bool
+    actor_employee_id: UUID | None = None
+
+
 class EmployeeRead(EmployeeBase, Timestamped):
     id: UUID
 

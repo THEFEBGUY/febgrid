@@ -415,7 +415,8 @@ export const api = {
   employeeDigitalTwinSignals: (employeeId: string, companyId: string, periodDays = 30) =>
     request<EmployeeDigitalTwinSignals>(companyPath(`/employees/${employeeId}/digital-twin/signals?period_days=${encodeURIComponent(String(periodDays))}`, companyId)),
   updateEmployee: (employeeId: string, companyId: string, payload: EmployeeUpdatePayload) => request<Employee>(companyPath(`/employees/${employeeId}`, companyId), jsonInit("PUT", payload)),
-  deactivateEmployee: (employeeId: string, companyId: string) => request<void>(companyPath(`/employees/${employeeId}`, companyId), { method: "DELETE" }),
+  deleteEmployee: (employeeId: string, companyId: string) => request<void>(companyPath(`/employees/${employeeId}`, companyId), { method: "DELETE" }),
+  updateEmployeeActivation: (employeeId: string, payload: { company_id: string; is_active: boolean }) => request<Employee>(`/employees/${employeeId}/activation`, jsonInit("PATCH", payload)),
   updateEmployeeStatus: (employeeId: string, payload: { company_id: string; current_status: string }) => request<Employee>(`/employees/${employeeId}/status`, jsonInit("PATCH", payload)),
   invitations: (companyId: string, statusFilter?: string) => {
     const searchParams = new URLSearchParams({ company_id: companyId });

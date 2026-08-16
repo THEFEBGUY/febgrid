@@ -7,25 +7,25 @@ import {
   displayAIText,
 } from "./aiDisplay";
 
-describe("AI display labels", () => {
-  it("brands the Groq provider without changing its internal value", () => {
-    const provider = "groq";
-
-    expect(displayAIProvider(provider)).toBe("FebGuyAI");
-    expect(provider).toBe("groq");
+describe("aiDisplay", () => {
+  it("formats AI provider", () => {
+    expect(displayAIProvider("groq")).toBe("FebGuyAI");
+    expect(displayAIProvider("anthropic")).toBe("Anthropic");
+    expect(displayAIProvider(null)).toBe("AI");
   });
 
-  it("brands the configured model without changing its internal value", () => {
-    const model = "llama-3.3-70b-versatile";
-
+  it("formats AI model", () => {
+    const model = "openai/gpt-oss-120b";
     expect(displayAIModel(model)).toBe("FebGuyAI Model");
-    expect(model).toBe("llama-3.3-70b-versatile");
+    expect(displayAIModel("gpt-4")).toBe("gpt-4");
+    expect(displayAIModel(null)).toBe("Not configured");
   });
 
-  it("sanitizes provider status copy for display", () => {
-    expect(displayAIText("Groq is configured with llama-3.3-70b-versatile.")).toBe(
-      "FebGuyAI is configured with FebGuyAI Model.",
+  it("filters AI text", () => {
+    expect(displayAIText("Groq is configured with openai/gpt-oss-120b.")).toBe(
+      "FebGuyAI is configured with FebGuyAI Model."
     );
+    expect(displayAIText(null)).toBeNull();
   });
 
   it("exposes the new safeguards heading", () => {

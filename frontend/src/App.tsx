@@ -163,7 +163,8 @@ export function App(): JSX.Element {
             onApproveInvitation={febGrid.approveInvitation}
             onCreateEmployee={febGrid.createEmployee}
             onCreateInvitation={febGrid.createInvitation}
-            onDeactivateEmployee={febGrid.deactivateEmployee}
+            onDeleteEmployee={febGrid.deleteEmployee}
+            onUpdateEmployeeActivation={febGrid.updateEmployeeActivation}
             onRejectInvitation={febGrid.rejectInvitation}
             onResendInvitation={febGrid.resendInvitation}
             onRevokeInvitation={febGrid.revokeInvitation}

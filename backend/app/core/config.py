@@ -28,7 +28,7 @@ class Settings(BaseSettings):
     ai_provider_mode: str = Field(default="mock", validation_alias="AI_PROVIDER_MODE")
     ai_external_processing_enabled: bool = Field(default=False, validation_alias="AI_EXTERNAL_PROCESSING_ENABLED")
     groq_api_key: SecretStr | None = Field(default=None, validation_alias="GROQ_API_KEY")
-    groq_model: str = Field(default="llama-3.3-70b-versatile", validation_alias="GROQ_MODEL")
+    groq_model: str = Field(default="openai/gpt-oss-120b", validation_alias="GROQ_MODEL")
     groq_base_url: str = Field(default="", validation_alias="GROQ_BASE_URL")
     groq_timeout_seconds: int = Field(default=30, validation_alias="GROQ_TIMEOUT_SECONDS")
     groq_max_retries: int = Field(default=2, validation_alias="GROQ_MAX_RETRIES")

@@ -49,11 +49,11 @@ def get_ai_provider_config() -> AIProviderConfig:
         provider_mode=provider_mode,
         external_processing_enabled=bool(settings.ai_external_processing_enabled),
         groq_api_key=groq_secret or None,
-        groq_model=settings.groq_model.strip() or "llama-3.3-70b-versatile",
+        groq_model=settings.groq_model.strip() or "openai/gpt-oss-120b",
         groq_base_url=groq_base_url or None,
         groq_timeout_seconds=max(1, min(int(settings.groq_timeout_seconds), 120)),
         groq_max_retries=max(0, min(int(settings.groq_max_retries), 5)),
         groq_max_input_chars=max(1_000, min(int(settings.groq_max_input_chars), 50_000)),
         default_temperature=max(0.0, min(float(settings.ai_default_temperature), 2.0)),
-        default_max_tokens=max(64, min(int(settings.ai_default_max_tokens), 4_000)),
+        default_max_tokens=max(64, min(int(settings.ai_default_max_tokens), 8_000)),
     )

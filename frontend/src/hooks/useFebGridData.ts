@@ -84,7 +84,8 @@ interface FebGridDataState {
   createCompany: (payload: CompanyCreatePayload) => Promise<void>;
   createEmployee: (payload: Omit<EmployeeCreatePayload, "company_id">) => Promise<void>;
   updateEmployee: (employeeId: string, payload: EmployeeUpdatePayload) => Promise<void>;
-  deactivateEmployee: (employeeId: string) => Promise<void>;
+  deleteEmployee: (employeeId: string) => Promise<void>;
+  updateEmployeeActivation: (employeeId: string, isActive: boolean) => Promise<void>;
   updateEmployeeStatus: (employeeId: string, currentStatus: string) => Promise<void>;
   createInvitation: (payload: Omit<EmployeeInvitationCreatePayload, "company_id">) => Promise<EmployeeInvitationActionResult | null>;
   resendInvitation: (invitationId: string) => Promise<EmployeeInvitationActionResult | null>;
@@ -388,12 +389,20 @@ export function useFebGridData({ enabled = true, role = null, page = "dashboard"
     });
   }
 
-  async function deactivateEmployee(employeeId: string): Promise<void> {
+  async function deleteEmployee(employeeId: string): Promise<void> {
     if (!selectedCompanyId) return;
     setModuleErrors({});
     setError(null);
-    await api.deactivateEmployee(employeeId, selectedCompanyId);
-    setData((current) => markEntityInactive(current, "employees", employeeId));
+    await api.deleteEmployee(employeeId, selectedCompanyId);
+    setData((current) => ({ ...current, employees: current.employees.filter((e) => e.id !== employeeId) }));
+  }
+
+  async function updateEmployeeActivation(employeeId: string, isActive: boolean): Promise<void> {
+    if (!selectedCompanyId) return;
+    await runMutation(async () => {
+      const employee = await api.updateEmployeeActivation(employeeId, { company_id: selectedCompanyId, is_active: isActive });
+      setData((current) => replaceEntity(current, "employees", employee));
+    });
   }
 
   async function updateEmployeeStatus(employeeId: string, currentStatus: string): Promise<void> {
@@ -888,7 +897,8 @@ export function useFebGridData({ enabled = true, role = null, page = "dashboard"
     createCompany,
     createEmployee,
     updateEmployee,
-    deactivateEmployee,
+    deleteEmployee,
+    updateEmployeeActivation,
     updateEmployeeStatus,
     createInvitation,
     resendInvitation,

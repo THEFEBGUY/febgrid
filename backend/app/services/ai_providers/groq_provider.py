@@ -33,16 +33,22 @@ class GroqAIProvider(BaseAIProvider):
         if Groq is None:
             raise AIProviderError("provider_unavailable", "Groq SDK dependency is not installed.")
 
+        kwargs: dict[str, Any] = {
+            "model": self.config.groq_model,
+            "messages": request.messages,
+            "temperature": self.config.default_temperature,
+            "max_tokens": self.config.default_max_tokens,
+            "response_format": {"type": "json_object"},
+        }
+
+        # GPT-OSS 120B reasoning models require reasoning_format="hidden" to use JSON mode correctly.
+        if "gpt-oss" in self.config.groq_model.lower() or "reasoning" in self.config.groq_model.lower():
+            kwargs["extra_body"] = {"reasoning_format": "hidden"}
+
         started = time.perf_counter()
         try:
             with measure_external("groq"):
-                completion = self._client().chat.completions.create(
-                    model=self.config.groq_model,
-                    messages=request.messages,
-                    temperature=self.config.default_temperature,
-                    max_tokens=self.config.default_max_tokens,
-                    response_format={"type": "json_object"},
-                )
+                completion = self._client().chat.completions.create(**kwargs)
         except APITimeoutError as exc:
             raise AIProviderError("provider_timeout", "Groq request timed out.") from exc
         except AuthenticationError as exc:
@@ -132,6 +138,14 @@ class GroqAIProvider(BaseAIProvider):
         if status_code == 429:
             return AIProviderError("provider_rate_limited", "Groq rate limit reached.", metadata)
         if status_code == 400:
+            if hasattr(exc, "response"):
+                try:
+                    data = exc.response.json()
+                    failed_gen = data.get("error", {}).get("failed_generation", "")
+                    with open("groq_failed_generation.log", "w") as f:
+                        f.write(failed_gen)
+                except Exception:
+                    pass
             return AIProviderError("provider_bad_request", "Groq rejected the safe request.", metadata)
         if status_code in {401, 403}:
             return AIProviderError("provider_auth_failed", "Groq credentials are missing or invalid.", metadata)

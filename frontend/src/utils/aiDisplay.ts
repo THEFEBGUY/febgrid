@@ -9,12 +9,12 @@ export function displayAIProvider(provider: string | null | undefined): string {
 
 export function displayAIModel(model: string | null | undefined): string {
   if (!model) return "Not configured";
-  return model.toLowerCase() === "llama-3.3-70b-versatile" ? "FebGuyAI Model" : model;
+  return model.toLowerCase() === "openai/gpt-oss-120b" ? "FebGuyAI Model" : model;
 }
 
 export function displayAIText(value: string | null | undefined): string | null {
   if (!value) return null;
   return value
-    .replace(/llama-3\.3-70b-versatile/gi, "FebGuyAI Model")
+    .replace(/openai\/gpt-oss-120b/gi, "FebGuyAI Model")
     .replace(/\bGroq\b/gi, "FebGuyAI");
 }
