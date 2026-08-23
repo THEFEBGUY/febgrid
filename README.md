@@ -10,8 +10,6 @@ FebGrid is a Business Operating System built around Work Objects, Events, Compan
 - Everything is AI-readable.
 - Everything contributes to Company Memory.
 
-All of the Project is Built with Codex with the help of GPT-5.6 SOL Model.
-
 ## Phase 1 Scope
 
 Phase 1 focuses on the backend foundation:
